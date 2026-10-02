@@ -6,7 +6,7 @@
 //   R Special    the weapon's own skill.
 // Cooldowns shrink with the attack-speed stat. Big area skills are worth most with several creatures packed
 // close, so gather them first and then spend the skills on the pack.
-import { dodge, dangersOf, inDanger } from './dodge.mjs';
+import { dodge, dangersOf, inDanger, unstick } from './dodge.mjs';
 const Q = 0, W = 1, E = 2, R = 3;
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
 
@@ -45,6 +45,14 @@ export async function useSkill(bot, index) {
   await sleep(bot.rng.between(index === E ? 450 : 200, index === E ? 700 : 380));
 }
 
+/** Open ground on the straight line from a to b (trees, rocks and water block it), asked in one call. */
+async function clearPath(bot, a, b) {
+  const d = Math.hypot(b.x - a.x, b.z - a.z), n = Math.max(2, Math.ceil(d / .5)), points = [];
+  for (let i = 1; i <= n; i++) points.push([a.x + (b.x - a.x) * i / n, a.z + (b.z - a.z) * i / n]);
+  const flags = await bot.page.evaluate(points => points.map(([x, z]) => window.__zg.blocked(x, z)), points);
+  return !flags.some(Boolean);
+}
+
 /** Arrow keys for a direction in world space (in this game → is +x and ↓ is +z). */
 function keysFor(dx, dz) {
   const keys = [];
@@ -67,17 +75,26 @@ export async function gatherPack(bot, { pack, radius = 5, laps = 1.5 } = {}) {
   const group = s.enemies.filter(e => Math.hypot(e.x - anchor.x, e.z - anchor.z) < 6);
   const c = { x: group.reduce((n, e) => n + e.x, 0) / group.length, z: group.reduce((n, e) => n + e.z, 0) / group.length };
   const startHp = s.hp, turn = rng.chance(.5) ? 1 : -1, end = Date.now() + 14000;
-  let angle = Math.atan2(s.player.z - c.z, s.player.x - c.x), travelled = 0, held = [];
+  let angle = Math.atan2(s.player.z - c.z, s.player.x - c.x), travelled = 0, held = [], turnSign = turn, from = s.player, still = 0;
   try {
     while (Date.now() < end && travelled < laps * Math.PI * 2) {
       s = await game.snap();
       if (around(s, 3.5).length >= 3) return true;
       if (inDanger(s.player, dangersOf(s))) { for (const k of held) await page.keyboard.up(k); held = []; await dodge(bot, { away: c }); continue; }
       if (s.hp < Math.max(s.maxHp * .55, startHp - s.maxHp * .25)) return around(s, 4.4).length >= 2;
-      // Next point on the circle, a little ahead of the explorer.
-      angle += turn * .55; travelled += .55;
-      const tx = c.x + Math.cos(angle) * radius, tz = c.z + Math.sin(angle) * radius;
-      const dx = tx - s.player.x, dz = tz - s.player.z, d = Math.hypot(dx, dz) || 1;
+      // Caught on a tree or rock: step clear and circle the other way.
+      if (Math.hypot(s.player.x - from.x, s.player.z - from.z) < .12) { if (++still >= 2) { for (const k of held) await page.keyboard.up(k); held = []; await unstick(bot); turnSign = -turnSign; still = 0; s = await game.snap(); } } else still = 0;
+      from = s.player;
+      // Next point on the circle, a little ahead; if a tree or rock is in the way, try a wider or tighter
+      // circle or a little further round, so the explorer runs around obstacles instead of into them.
+      angle += turnSign * .55; travelled += .55;
+      let next = null;
+      for (const [da, r] of [[0, radius], [0, radius + 1.5], [0, radius - 1.5], [turnSign * .4, radius], [turnSign * .4, radius + 2.5], [-turnSign * .3, radius + 1]]) {
+        const q = { x: c.x + Math.cos(angle + da) * r, z: c.z + Math.sin(angle + da) * r };
+        if (await clearPath(bot, s.player, q)) { next = q; break; }
+      }
+      if (!next) { turnSign = -turnSign; continue; }
+      const dx = next.x - s.player.x, dz = next.z - s.player.z, d = Math.hypot(dx, dz) || 1;
       const keys = keysFor(dx / d, dz / d);
       for (const k of held.filter(k => !keys.includes(k))) await page.keyboard.up(k);
       for (const k of keys.filter(k => !held.includes(k))) await page.keyboard.down(k);
