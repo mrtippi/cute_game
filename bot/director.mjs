@@ -12,12 +12,17 @@ import { parseArgs } from 'node:util';
 import { fileURLToPath } from 'node:url';
 import { createRng } from './lib/rng.mjs';
 import { CLIPS, planDay, clipTitle } from './clips.mjs';
+import { loadAccount } from './accounts.mjs';
 
 const { values: opt, positionals } = parseArgs({ allowPositionals: true, options: {
   date: { type: 'string' }, from: { type: 'string', default: '1' }, clips: { type: 'string', default: '10' }, minutes: { type: 'string', default: '60' },
   profile: { type: 'string', default: 'D:/autogame/bot-data/profile' }, root: { type: 'string', default: 'D:/autogame/bot-data/director' },
   pause: { type: 'string', default: '20' },
+  // An account (accounts.mjs): its profile, its days folder, its videos (recorded per clip), its window spot.
+  account: { type: 'string' }, record: { type: 'boolean', default: false }, pos: { type: 'string', default: '0,0' }, mute: { type: 'boolean', default: false },
 } });
+const account = opt.account ? loadAccount(opt.account) : null;
+if (account) { opt.profile = account.profile; opt.root = account.days; }
 const command = positionals[0] ?? 'plan', date = opt.date ?? new Date().toISOString().slice(0, 10);
 const dayDir = `${opt.root}/${date}`; mkdirSync(dayDir, { recursive: true });
 const PLAY = fileURLToPath(new URL('./play.mjs', import.meta.url));
@@ -26,7 +31,7 @@ const PLAY = fileURLToPath(new URL('./play.mjs', import.meta.url));
 function latestSave() {
   const found = [];
   const walk = dir => { if (!existsSync(dir)) return; for (const name of readdirSync(dir)) { const p = `${dir}/${name}`; if (statSync(p).isDirectory()) walk(p); else if (name === 'save.json') found.push({ p, t: statSync(p).mtimeMs }); } };
-  walk(opt.root); walk('D:/autogame/bot-data/sessions');
+  walk(opt.root); if (!account) walk('D:/autogame/bot-data/sessions');
   found.sort((a, b) => b.t - a.t);
   try { return found.length ? JSON.parse(readFileSync(found[0].p, 'utf8')) : { level: 1 }; } catch { return { level: 1 }; }
 }
@@ -41,8 +46,8 @@ function seriesDay() {
 function loadPlan() {
   const file = `${dayDir}/plan.json`;
   if (existsSync(file)) return JSON.parse(readFileSync(file, 'utf8'));
-  const save = latestSave(), day = seriesDay(), rng = createRng('director:' + date);
-  const themes = planDay(save, rng, Number(opt.clips));
+  const save = latestSave(), day = seriesDay(), rng = createRng(`director:${account?.id ?? ''}:${date}`);
+  const themes = planDay(save, rng, Number(opt.clips), account?.style);
   const plan = { date, day, startLevel: save.level ?? 1, clips: themes.map((theme, i) => ({ index: i + 1, theme, seed: `${date}-c${String(i + 1).padStart(2, '0')}`, status: 'planned' })) };
   writeFileSync(file, JSON.stringify(plan, null, 1));
   return plan;
@@ -57,7 +62,12 @@ function show(plan) {
 /** One clip: play.mjs with the clip's theme and title, the clip folder under the day folder. */
 function playClip(clip, title) {
   return new Promise(resolve => {
-    const child = spawn(process.execPath, [PLAY, '--minutes', opt.minutes, '--seed', clip.seed, '--clip', clip.theme, '--title', title, '--profile', opt.profile, '--out', dayDir], { stdio: 'inherit' });
+    const args = [PLAY, '--minutes', opt.minutes, '--seed', clip.seed, '--clip', clip.theme, '--title', title, '--profile', opt.profile, '--out', dayDir, '--pos', opt.pos];
+    if (account) args.push('--account', account.id);
+    if (opt.mute) args.push('--mute');
+    // Videos: <account>_<date>_cNN.mp4 in the account's videos folder (or the day folder without an account).
+    if (opt.record) { clip.video = `${account?.videos ?? dayDir}/${account ? account.id + '_' : ''}${clip.seed}.mp4`; args.push('--record', clip.video); }
+    const child = spawn(process.execPath, args, { stdio: 'inherit' });
     child.on('exit', code => resolve(code ?? 1));
   });
 }
@@ -68,7 +78,7 @@ else if (command === 'run') {
   for (const clip of plan.clips.filter(c => c.index >= Number(opt.from))) {
     if (clip.status === 'done') continue;
     const before = latestSave().level ?? 1;
-    clip.title = clipTitle(clip.theme, { day: plan.day, level: before, index: clip.index }); clip.levelBefore = before; clip.status = 'playing'; clip.started = new Date().toISOString(); savePlan(plan);
+    clip.title = clipTitle(clip.theme, { day: plan.day, level: before, index: clip.index, name: account?.name }); clip.levelBefore = before; clip.status = 'playing'; clip.started = new Date().toISOString(); savePlan(plan);
     console.log(`\n=== clip ${clip.index}/${plan.clips.length}: ${clip.title}`);
     const code = await playClip(clip, clip.title);
     const after = existsSync(`${dayDir}/${clip.seed}/save.json`) ? JSON.parse(readFileSync(`${dayDir}/${clip.seed}/save.json`, 'utf8')) : null;

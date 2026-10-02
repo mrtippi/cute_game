@@ -8,7 +8,12 @@ import {TITLES,RARITY_ORDER,rarityOf,titleHint} from './titles.ts';
 import './farm.css';
 import './joystick.css';
 import { FishingProof } from './fishing-proof.ts';
-import { installBotBridge } from './bot-bridge.ts';
+import { installBotBridge, BOT_MODE } from './bot-bridge.ts';
+/**
+ * Bot windows may draw fewer frames (?bot&fps=30): the recordings are 30 fps, and several bots share one PC.
+ * The automatic graphics quality is judged against the cap, so a capped window is not mistaken for a slow one.
+ */
+const FRAME_CAP=BOT_MODE?Math.max(0,Number(new URLSearchParams(location.search).get('fps'))||0):0;
 import '@fontsource-variable/nunito';
 // Japanese glyphs only: Nunito still draws Latin text, and these unicode-range slices download only when kana or kanji appear.
 import '@fontsource/m-plus-rounded-1c/500.css';
@@ -1294,7 +1299,7 @@ const releasePointer=(e:PointerEvent)=>{gestures.up(e.pointerId,e.type!=='pointe
 document.addEventListener('pointerup',releasePointer);document.addEventListener('pointercancel',releasePointer);document.addEventListener('lostpointercapture',releasePointer);
 window.addEventListener('blur',()=>{movement.clear();fishGame?.input.clear();gestures.clear();save();});window.addEventListener('beforeunload',save);document.addEventListener('visibilitychange',()=>{movement.clear();fishGame?.input.clear();gestures.clear();save();});
 let previous=performance.now(),wasAirborne=false;
-function frame(now:number){frameTime=frameTime*.9+(now-previous)*.1;const realDt=Math.min(1,(now-previous)/1000);previous=now;elapsed+=realDt;uiElapsed+=realDt;
+function frame(now:number){if(FRAME_CAP&&now-previous<1000/FRAME_CAP-3){requestAnimationFrame(frame);return;}frameTime=frameTime*.9+(now-previous)*.1;const realDt=Math.min(1,(now-previous)/1000);previous=now;elapsed+=realDt;uiElapsed+=realDt;
   if(flight&&!arriving){updateSpace(realDt);if(uiElapsed>.12){uiElapsed=0;updateHud();}if(elapsed>8){elapsed=0;save();}requestAnimationFrame(frame);return;}
   ship.update(realDt,world.time);
   // Hit-stop: after a critical hit the world runs at a tenth of its speed for a heartbeat.
@@ -1314,7 +1319,7 @@ function frame(now:number){frameTime=frameTime*.9+(now-previous)*.1;const realDt
   if(!fishGame&&!$('#reel-button').hidden&&!$('#reel-button').classList.contains('hunt')&&(performance.now()>recastUntil||world.moving))showReel(false);
   // Resizing the WebGL canvas clears its drawing buffer. Apply automatic quality changes
   // before drawing, so the browser never presents an empty frame during a quality transition.
-  const graphicsChange=graphics.sample(realDt,started&&!document.hidden&&!uiBlocked()&&performance.now()>settledAt);if(graphicsChange)world.applyGraphics(graphics.profile,graphics.ratio);if(graphics.takeSave())saveGraphics(graphics);
+  const graphicsChange=graphics.sample(FRAME_CAP?realDt*FRAME_CAP/60:realDt,started&&!document.hidden&&!uiBlocked()&&performance.now()>settledAt);if(graphicsChange)world.applyGraphics(graphics.profile,graphics.ratio);if(graphics.takeSave())saveGraphics(graphics);
   world.render();positionLabels();minimap.frame(realDt);fx?.updateText(realDt,innerWidth,innerHeight);
   for(const listener of frameListeners)listener(dt);
   if(uiElapsed>.12){uiElapsed=0;world.syncCrops();updateHud();updateLabels();if(modal==='plot'){const p=state.plots[activePlot];if(p?.crop){$('#grow-fill').style.width=`${M.cropProgress(p)*100}%`;$('#grow-time').textContent=t(growText(p));}}if(modal==='pen'){if(penSignature(state)!==penShown)penDialog();else tickPen($('#dialog-body'),state);}}

@@ -63,11 +63,13 @@ const MIDDLE = { fishing: 2, hunt: 3, boss: 2, space: 2, titan: 2, story: 2, vil
  * The day's ten clips: the morning chores first and the quiet evening last; in between a weighted pick of the open
  * themes, never the same theme twice in a row and each at most twice a day. `save` is the latest save (level etc.).
  */
-export function planDay(save, rng, count = 10) {
-  const open = Object.entries(MIDDLE).filter(([id]) => CLIPS[id].open(save));
+export function planDay(save, rng, count = 10, style = {}) {
+  // An account's play style (accounts.mjs) weighs its favourite themes more.
+  const open = Object.entries(MIDDLE).filter(([id]) => CLIPS[id].open(save)).map(([id, w]) => [id, w * (style[id] ?? 1)]);
   const used = {}, middle = [];
   for (let i = 0; i < count - 2; i++) {
-    const choices = open.filter(([id]) => id !== middle.at(-1) && (used[id] ?? 0) < 2);
+    // Early on few themes are open: then a theme may come back more often (still never twice in a row).
+    const fresh = open.filter(([id]) => id !== middle.at(-1) && (used[id] ?? 0) < 2), choices = fresh.length ? fresh : open.filter(([id]) => id !== middle.at(-1));
     const total = choices.reduce((n, [, w]) => n + w, 0); let draw = rng.between(0, total), pick = choices[0][0];
     for (const [id, w] of choices) { draw -= w; if (draw <= 0) { pick = id; break; } }
     middle.push(pick); used[pick] = (used[pick] ?? 0) + 1;
@@ -76,4 +78,4 @@ export function planDay(save, rng, count = 10) {
 }
 
 /** The YouTube title of a clip: series, day, level and the theme's line. */
-export const clipTitle = (theme, { day, level, index }) => `【Zoo Garden 自動プレイ】${day}日目 #${index} ${CLIPS[theme].icon}${CLIPS[theme].ja}（Lv.${level}）`;
+export const clipTitle = (theme, { day, level, index, name }) => `【Zoo Garden 自動プレイ】${name ? name + ' ' : ''}${day}日目 #${index} ${CLIPS[theme].icon}${CLIPS[theme].ja}（Lv.${level}）`;

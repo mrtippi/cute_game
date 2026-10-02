@@ -7,10 +7,14 @@ import { wearTitle } from './tasks/titles.mjs';
 import { createPlanner } from './planner.mjs';
 import { dress } from './tasks/wardrobe.mjs';
 import { CLIPS } from './clips.mjs';
+import { loadAccount } from './accounts.mjs';
+import { startRecording } from './lib/recorder.mjs';
 
 const { values: opt } = parseArgs({ options: {
   minutes: { type: 'string', default: '10' }, seed: { type: 'string' }, profile: { type: 'string', default: 'D:/autogame/bot-data/profile' },
-  url: { type: 'string', default: 'http://127.0.0.1:8787/' }, theme: { type: 'string' }, clip: { type: 'string' }, title: { type: 'string' }, out: { type: 'string', default: 'D:/autogame/bot-data/sessions' },
+  url: { type: 'string', default: 'http://127.0.0.1:8787/' }, theme: { type: 'string' }, clip: { type: 'string' }, title: { type: 'string' },
+  // An account (accounts.mjs) supplies the profile, the explorer's name and colour and its own debugging port.
+  account: { type: 'string' }, record: { type: 'string' }, pos: { type: 'string' }, mute: { type: 'boolean', default: false }, out: { type: 'string', default: 'D:/autogame/bot-data/sessions' },
 } });
 const day = opt.seed ?? new Date().toISOString().slice(0, 10), rng = createRng(day);
 const dir = `${opt.out}/${day}`; mkdirSync(dir, { recursive: true });
@@ -19,7 +23,11 @@ const clock = () => { const s = Math.floor((Date.now() - started) / 1000); retur
 const log = text => { const line = `[${clock()}] ${text}`; console.log(line); appendFileSync(`${dir}/session.log`, line + '\n'); };
 const note = (text, tag = 'info') => { log(`★ ${text}`); appendFileSync(`${dir}/events.jsonl`, JSON.stringify({ t: (Date.now() - started) / 1000, tag, text }) + '\n'); };
 
-const { context, page, hands, game } = await openSession({ profile: opt.profile, url: opt.url, rng, log });
+const account = opt.account ? loadAccount(opt.account) : null;
+const [px, py] = (opt.pos ?? '0,0').split(',').map(Number);
+const { context, page, hands, game } = await openSession({ profile: account?.profile ?? opt.profile, url: opt.url, rng, log, name: account?.name, color: account?.color, port: account?.port, position: { x: px, y: py }, mute: opt.mute, fps: opt.record || account ? 30 : 0 });
+// The clip's video (lib/recorder.mjs): from the first frame of play to the end of the session.
+const recording = opt.record ? await startRecording(page, opt.record, { log }) : null;
 // A clip from the director (clips.mjs): its focus steers the planner; its wardrobe and title themes dress the explorer.
 const clip = opt.clip ? CLIPS[opt.clip] : null;
 if (opt.clip && !clip) throw new Error('unknown clip theme ' + opt.clip);
@@ -51,4 +59,5 @@ while (Date.now() < deadline) {
 s = await game.snap();
 note(`end · Lv.${s.level} · ϟ${s.energy}`, 'session');
 writeFileSync(`${dir}/save.json`, await game.saveJson());
+if (recording) { const r = await recording.stop(); note(`video ${r.seconds}s → ${r.file}`, 'session'); }
 await context.close();
