@@ -11,7 +11,7 @@
   background: linear-gradient(180deg, #c6a8ff, #8f6cf5);
   color: #fff;
   box-shadow: 0 4px 0 rgba(44, 58, 38, .18);
-  font: 900 13px 'Nunito Variable', sans-serif;
+  font: 900 13px var(--font);
   cursor: pointer;
 }
 .social-dialog {
@@ -53,7 +53,7 @@
   border-radius: 11px;
   background: #fff;
   color: #2c3a26;
-  font: 900 13px 'Nunito Variable', sans-serif;
+  font: 900 13px var(--font);
   box-shadow: 0 2px 0 #e2cf9f;
   cursor: pointer;
 }
@@ -97,7 +97,7 @@
   border: 2px solid #efe2c2;
   border-radius: 11px;
   background: #fff;
-  font: 800 14px 'Nunito Variable', sans-serif;
+  font: 800 14px var(--font);
   color: inherit;
 }
 .social-dialog .social-primary {

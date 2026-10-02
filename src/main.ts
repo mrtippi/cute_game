@@ -969,7 +969,7 @@ function rebuildHomePresentation(planet:M.PlanetId){
   world.build(planet);if(enemies)world.applyEnemySnapshots(enemies);if(environment)world.applyEnvironmentSnapshot(environment);
 }
 const sharedKills=new Set<string>();
-installBotBridge({state:()=>state,world:()=>world,modal:()=>modal,started:()=>started,uiBlocked,flight:()=>!!flight,shipBusy:()=>!!shipSequence?.busy,cooldowns:()=>cooldowns,
+installBotBridge({drops:()=>drops.sim.drops,space:()=>flight?{flight,camera:spaceView.camera}:null,state:()=>state,world:()=>world,modal:()=>modal,started:()=>started,uiBlocked,flight:()=>!!flight,shipBusy:()=>!!shipSequence?.busy,cooldowns:()=>cooldowns,
   fishing:()=>fishGame?{phase:fishGame.simulation.phase,tension:fishGame.simulation.tension,surge:fishGame.simulation.surge,progress:fishGame.simulation.progress}:null});
 export const gameBridge:GameBridge={
   getState:()=>state,getWorld:()=>world,

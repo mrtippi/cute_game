@@ -8,7 +8,7 @@
   background: linear-gradient(180deg, #8fe06a, #4cc93a);
   color: #fff;
   box-shadow: 0 4px 0 rgba(44, 58, 38, .18);
-  font: 900 13px 'Nunito Variable', sans-serif;
+  font: 900 13px var(--font);
   cursor: pointer;
 }
 .platform-tools button[hidden] { display: none; }

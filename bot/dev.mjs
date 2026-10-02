@@ -39,6 +39,14 @@ try {
     const near = [...s.entities, ...s.enemies].filter(e => e.d < 25).sort((a, b) => a.d - b.d).slice(0, 12);
     console.log(JSON.stringify({ planet: s.planet, level: s.level, energy: s.energy, hp: `${s.hp}/${s.maxHp}`, atk: s.attack, def: s.defense, modal: s.modal, dialog: s.dialog, player: s.player, gear: s.gear, bag: s.bag, fishing: s.fishing, reel: s.reel, bounty: s.bounty }, null, 1));
     console.log(near.map(e => `${e.kind ?? 'enemy'}:${e.name} d=${e.d}${e.level ? ' lv' + e.level : ''}`).join('\n'));
+  } else if (command === 'visit' || command === 'buttons') {
+    // visit <kind>: walk there and open its panel; buttons: list the open panel's buttons.
+    if (command === 'visit') { const r = await game.goTo(n => n.entities.filter(e => e.kind === rest[0]).sort((a, b) => a.d - b.d)[0], { label: rest[0], done: n => n.modal && n, timeout: 60000 }); console.log('panel:', r?.modal); }
+    const list = await page.$$eval('#dialog button', bs => bs.map(b => [b.dataset.action, Object.entries(b.dataset).filter(([k]) => k !== 'action').map(([k, v]) => `${k}=${v}`).join(' '), b.disabled ? 'off' : 'on', b.textContent.trim().replace(/\s+/g, ' ').slice(0, 40)].join(' | ')));
+    console.log(list.join('\n'));
+  } else if (command === 'reload') {
+    await page.reload(); await page.waitForFunction(() => !!window.__zg); await page.waitForTimeout(2500);
+    console.log('started:', !!(await startGame({ page, hands, game, rng }))?.started);
   } else if (command === 'shot') {
     await page.screenshot({ path: rest[0] ?? 'C:/Users/Admin/AppData/Local/Temp/claude/d--autogame/8f73f40f-5ff7-43e1-a6b1-1a77299db25a/scratchpad/live.png' }); console.log('saved');
   } else if (command === 'eval') {

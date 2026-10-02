@@ -5,9 +5,20 @@ const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
 export class Game {
   constructor(page, hands, rng, log) { this.page = page; this.hands = hands; this.rng = rng; this.log = log; }
 
-  snap() { return this.page.evaluate(() => window.__zg.snapshot()); }
+  /** Every loop reads the screen through snap(), so a task past its deadline stops at its next look. */
+  snap() { if (this.deadline && Date.now() > this.deadline) { this.deadline = 0; throw new Error('task took too long'); } return this.page.evaluate(() => window.__zg.snapshot()); }
   quests() { return this.page.evaluate(() => window.__zg.quests()); }
   project(x, z, y = 0) { return this.page.evaluate(([x, z, y]) => window.__zg.project(x, z, y), [x, z, y]); }
+  pick(x, y) { return this.page.evaluate(([x, y]) => window.__zg.pick(x, y), [x, y]); }
+  /** A point on the target that a tap would really select: another thing in front (the rocket over a bed) is avoided. */
+  async aimAt(e, s) {
+    const base = e.screen ?? await this.project(e.x, e.z, .6);
+    for (const [dx, dy] of [[0, 0], [0, 14], [-14, 6], [14, 6], [0, 26], [-24, 14], [24, 14]]) {
+      const p = { x: base.x + dx, y: base.y + dy, visible: base.visible };
+      if (await this.safe(p, s) && await this.pick(p.x, p.y) === e.id) return p;
+    }
+    return null;
+  }
   saveJson() { return this.page.evaluate(() => window.__zg.save()); }
 
   async waitFor(check, { timeout = 8000, every = 150 } = {}) {
@@ -23,7 +34,8 @@ export class Game {
   async safe(point, s) {
     if (!point?.visible) return false;
     const { w, h } = s.viewport;
-    if (point.x < 70 || point.x > w - 70 || point.y < 90 || point.y > h - 90) return false;
+    // A thin edge only: worldAt() already rejects the HUD, so places near the bottom (the cottage door) stay reachable.
+    if (point.x < 30 || point.x > w - 30 || point.y < 30 || point.y > h - 30) return false;
     return this.worldAt(point.x, point.y);
   }
 
@@ -59,12 +71,24 @@ export class Game {
   // ---- moving around ------------------------------------------------------------------------
   /** One step across open ground toward (x, z); picks a nearby clear spot when the HUD is in the way. */
   async stepToward(x, z, s) {
+    // Follow the game's own route (around fences, through the village gate): tap the furthest waypoint
+    // within reach that is open ground, so the explorer never walks into a fence toward a straight-line goal.
+    const route = await this.page.evaluate(([x, z]) => window.__zg.route(x, z), [x, z]).catch(() => []);
+    if (route.length) {
+      const reach = []; let walked = 0, from = s.player;
+      for (const p of route) { walked += Math.hypot(p.x - from.x, p.z - from.z); from = p; if (walked > 14) break; reach.push(p); }
+      for (const p of reach.reverse()) {
+        const screen = await this.project(p.x, p.z);
+        if (await this.safe(screen, s) && await this.pick(screen.x, screen.y) === null) { await this.hands.click(screen.x, screen.y); return true; }
+      }
+    }
     const dx = x - s.player.x, dz = z - s.player.z, d = Math.hypot(dx, dz) || 1;
     for (const len of [this.rng.between(6, 10), 4.5, 2.5]) for (const turn of [0, .35, -.35, .7, -.7]) {
       const a = Math.atan2(dz, dx) + turn, l = Math.min(len, d);
       const px = s.player.x + Math.cos(a) * l, pz = s.player.z + Math.sin(a) * l;
       const p = await this.project(px, pz);
-      if (await this.safe(p, s)) { await this.hands.click(p.x, p.y); return true; }
+      // Open ground only: a tap on the cottage would walk inside, a tap on a stall would open it.
+      if (await this.safe(p, s) && await this.pick(p.x, p.y) === null) { await this.hands.click(p.x, p.y); return true; }
     }
     return false;
   }
@@ -80,8 +104,8 @@ export class Game {
       if (s.modal || s.dialog) { if (done?.(s)) return s; await this.closePanel(); continue; }
       const e = find(s); if (!e) { this.log?.('goTo: no ' + label); return null; }
       if (done?.(s, e)) return s;
-      const screen = e.screen ?? await this.project(e.x, e.z, .6);
-      if (e.d < 40 && await this.safe(screen, s)) {
+      const screen = e.d < 40 ? await this.aimAt(e, s) : null;
+      if (screen) {
         await this.hands.click(screen.x, screen.y);
         const reached = await this.waitFor(n => {
           if (done?.(n, find(n))) return n;

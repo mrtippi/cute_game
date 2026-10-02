@@ -11,7 +11,8 @@ const CURSOR = readFileSync(fileURLToPath(new URL('./cursor.js', import.meta.url
 export async function openSession({ url = 'http://127.0.0.1:8787/', profile, rng, name = 'さくら', width = 1920, height = 1080, log = console.log, speed = 1 }) {
   const context = await chromium.launchPersistentContext(profile, {
     channel: 'chrome', headless: false, viewport: { width, height }, locale: 'ja-JP', timezoneId: 'Asia/Tokyo',
-    args: [`--window-size=${width},${height + 140}`, '--window-position=0,0', '--disable-background-timer-throttling', '--disable-renderer-backgrounding', '--disable-backgrounding-occluded-windows', '--autoplay-policy=no-user-gesture-required'],
+    // The debugging port lets bot/dev.mjs inspect a running session.
+    args: ['--remote-debugging-port=9333', `--window-size=${width},${height + 140}`, '--window-position=0,0', '--disable-background-timer-throttling', '--disable-renderer-backgrounding', '--disable-backgrounding-occluded-windows', '--autoplay-policy=no-user-gesture-required'],
     ignoreDefaultArgs: ['--mute-audio'],
   });
   await context.addInitScript(CURSOR);
