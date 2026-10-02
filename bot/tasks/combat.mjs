@@ -1,5 +1,6 @@
 // Fighting the way a careful player does: only creatures it can beat, skills when ready, back off
 // early, and get up again after a fall.
+import { dodge, dangersOf, inDanger } from '../lib/dodge.mjs';
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
 
 /**
@@ -34,6 +35,8 @@ export async function recoverBag(bot) {
   const { game, note } = bot;
   const s = await game.snap(); if (!s.dropped || s.planet !== 'home') return false;
   const bag = s.entities.find(e => e.kind === 'dropped'); if (!bag) return false;
+  // Not into a boss's den: a live boss next to the bag would knock the explorer out again. Wait for it to fall.
+  if ((s.bosses ?? []).some(b => b.alive && Math.hypot(b.x - bag.x, b.z - bag.z) < 15)) return false;
   const done = await game.goTo(n => n.entities.find(e => e.kind === 'dropped'), { label: 'dropped bag', done: n => !n.dropped && n, timeout: 90000 });
   if (done) note('picked up the dropped bag', 'combat');
   return !!done;
@@ -121,6 +124,9 @@ export async function fight(bot, { count = 3, type, timeout = 180000, range = 30
       const e = s.enemies.find(x => x.id === id);
       if (!e) { kills++; focus = null; note(`defeated ${target.name}`, 'combat'); await new Promise(r => setTimeout(r, rng.between(300, 700))); await collectLoot(bot); break; }
       if (e.d > range + 25) { log('fight: it got away'); focus = null; break; }
+      // Ordinary creatures telegraph too: step out of any circle under the explorer first.
+      const dangers = dangersOf(s);
+      if (dangers.length && inDanger(s.player, dangers)) { await dodge(bot, { away: e }); engaged = false; best.at = Date.now(); continue; }
       if (e.hp < best.hp - .5 || e.d < best.d - .8) best = { hp: Math.min(best.hp, e.hp), d: Math.min(best.d, e.d), at: Date.now() };
       else if (Date.now() - best.at > 6000) {
         // Not getting closer: take the game's route around (the gate, past the trees) before giving up.

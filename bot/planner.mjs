@@ -67,6 +67,9 @@ export function createPlanner(bot, { minutesLeft }) {
     // Keep a stock of cooked food: it is what heals the explorer in the field.
     const s = await game.snap(), meals = count(s.bag, id => id.startsWith('cooked_'));
     if (meals < 6) add(['cook'], 4);
+    // Bosses wanted but none beatable yet: get stronger and stock up on food first.
+    const bossWanted = g.tasks.some(t => ['boss', 'titan', 'tierUp'].includes(t.event)) || ['boss', 'titan'].includes(g.story.event) || ['titans', 'stars'].includes(g.story.condition);
+    if (bossWanted && !huntable(s).length) { add(['crystal'], 3); add(['shop'], 2); add(['garden', 'cook'], 2); }
     // Village orders: deliver what is ready, and work toward what is missing.
     for (const o of s.orders) {
       if (o.have >= o.count) { add(['market'], 5); continue; }
@@ -92,7 +95,8 @@ export function createPlanner(bot, { minutesLeft }) {
     if (s.space) { await game.waitFor(n => !n.space && n, { timeout: 60000 }); return 'waited for landing'; }
     if (s.hp < s.maxHp * .6) { await recover(bot); return 'recovered'; }
     if (inside(s)) { await leaveHouse(bot); return 'left the cottage'; }
-    if (s.dropped && s.planet === 'home' && s.hp >= s.maxHp * .9) { await recoverBag(bot); return 'picked up the bag'; }
+    // The dropped bag, unless it lies by a live boss (then try again in a few minutes).
+    if (s.dropped && s.planet === 'home' && s.hp >= s.maxHp * .9 && ready('bag')) { if (await recoverBag(bot)) return 'picked up the bag'; rest('bag', 240000); }
     if (ago('claim') > 90000 && (await claimable(game)).length) { lastRun.claim = Date.now(); return 'rewards → ' + await claimRewards(bot); }
 
     const { score } = await needs();
