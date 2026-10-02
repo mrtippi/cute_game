@@ -265,7 +265,7 @@ export function collectProducts(s: SaveState, now = Date.now(), uids?: readonly 
       // Duplicate requested IDs or malformed in-memory copies can never grant the same animal twice.
       for (let index = animals.length - 1; index >= 0; index--) if (animals[index].uid === uid) animals.splice(index, 1);
     } else { a.cycleAt = full ? now : a.cycleAt + firstDuration(a) + (count - 1) * productDuration(a); a.fed = false; a.timerVersion = 2; delete a.legacyFirstCycleMs; }
-    gainXp(s, ANIMALS[a.kind].xp * count, now); for (let i = 0; i < count; i++) out.push({ uid: a.uid, kind: a.kind, item });
+    gainXp(s, ANIMALS[a.kind].xp * count, now); recordEvent(s, 'animal', count, a.kind, now); for (let i = 0; i < count; i++) out.push({ uid: a.uid, kind: a.kind, item });
   }
   return out;
 }

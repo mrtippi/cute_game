@@ -3660,6 +3660,8 @@ const FRUIT_FACTS: Record<string, any> = {
   peach: { name: 'Immortal Peach', lvl: 18, time: 14 * 3600, exp: 1400, energy: 2200, heal: 9999, buff: { atk: .2, def: 15, regen: 5, xp: .5, time: 300 } },
 };
 Object.assign(CROP_FACTS, FRUIT_FACTS);
+/** The long-growing fruit crops; harvesting one counts for fruit quests. */
+export const FRUIT_IDS: readonly string[] = Object.freeze(Object.keys(FRUIT_FACTS));
 const cropIcons: Record<string, string> = { apple: '🍎', grape: '🍇', mango: '🥭', pineapple: '🍍', coconut: '🥥', durian: '🌳', lychee: '🔴', peach: '🍑', radish: '🌱', carrot: '🥕', pumpkin: '🎃', mint: '🌿', chili: '🌶️', candy: '🍭', bean: '🫘', star: '⭐', berry: '🍓', coffee: '☕', moonflower: '🌼', magnetmelon: '🧲', melon: '🍉', clover: '🍀', glowshroom: '🍄', iceberry: '🫐', goldcorn: '🌽', dragonfruit: '🐉', rainbowrose: '🌹' };
 const typeIcons: Record<string, string> = { material: '💎', food: '🍲', farm: '🌿', bait: '🪱', fish: '🐟', junk: '🥾', weapon: '⚔️', hat: '🎩', armor: '🧥', feet: '👟', pet: '🐾', decor: '🏡', placeable: '🌱', disguise: '🎭' };
 const slots: Record<string, GearSlot> = { weapon: 'weapon', hat: 'hat', armor: 'outfit', feet: 'boots', pet: 'pet', disguise: 'disguise' };
@@ -3794,6 +3796,33 @@ export const STORY_STEPS: {
     { title: 'Discover every planet', condition: 'visited', target: 9, chapter: 3, icon: '🔭' },
     { title: 'Defeat ten bosses', event: 'boss', target: 10, chapter: 3, icon: '👑' },
     { title: 'Reach level 25', condition: 'level', target: 25, chapter: 3, icon: '⭐', end: { starshard: 3, moonstone: 1, thunderstone: 2, seed_star: 3 } },
+    // Chapter 5: the farm grows up (animals, fruit, fertilizer, the guard dog).
+    { title: 'Build the animal pen', condition: 'pen', target: 1, chapter: 4, icon: '🐔' },
+    { title: 'Raise three animals', condition: 'animals', target: 3, chapter: 4, icon: '🐄' },
+    { title: 'Collect ten animal products', event: 'animal', target: 10, chapter: 4, icon: '🥚' },
+    { title: 'Harvest a fruit crop', event: 'fruit', target: 1, chapter: 4, icon: '🍎' },
+    { title: 'Fertilize five crops', event: 'fertilize', target: 5, chapter: 4, icon: '🧪' },
+    { title: 'Adopt a guard dog', condition: 'dog', target: 1, chapter: 4, icon: '🐶' },
+    { title: 'Eat three foods with bonus effects', event: 'eat', target: 3, chapter: 4, icon: '🍽️' },
+    { title: 'Reach level 28', condition: 'level', target: 28, chapter: 4, icon: '⭐', end: { seed_star: 3, spore: 4, plot_kit: 1 } },
+    // Chapter 6: the forge and the hunt (forging, harpoon, hawks, mysterious shadows).
+    { title: 'Try weapon forging three times', event: 'forge', target: 3, chapter: 5, icon: '🔨' },
+    { title: 'Forge a weapon to +3', condition: 'forgeMax', target: 3, chapter: 5, icon: '⚒️' },
+    { title: 'Get a hunting harpoon', condition: 'harpoon', target: 1, chapter: 5, icon: '🔱' },
+    { title: 'Hunt ten fish with the harpoon', event: 'harpoon', target: 10, chapter: 5, icon: '🐟' },
+    { title: 'Defeat three Great Forest Hawks', event: 'hawk', target: 3, chapter: 5, icon: '🦅' },
+    { title: 'Reel in three mysterious shadows', event: 'mystery', target: 3, chapter: 5, icon: '❓' },
+    { title: 'Forge a weapon to +5', condition: 'forgeMax', target: 5, chapter: 5, icon: '⚒️' },
+    { title: 'Reach level 32', condition: 'level', target: 32, chapter: 5, icon: '⭐', end: { starshard: 3, moonstone: 1, thunderstone: 2 } },
+    // Chapter 7: the nine Titans, one world boss on each planet.
+    { title: 'Collect 100 stardust', event: 'stardust', target: 100, chapter: 6, icon: '✨' },
+    { title: 'Defeat your first Titan', condition: 'titans', target: 1, chapter: 6, icon: '🗿' },
+    { title: 'Forge a weapon to +8', condition: 'forgeMax', target: 8, chapter: 6, icon: '⚒️' },
+    { title: 'Defeat three different Titans', condition: 'titans', target: 3, chapter: 6, icon: '🗿' },
+    { title: 'Collect 50 animal products', event: 'animal', target: 50, chapter: 6, icon: '🥚' },
+    { title: 'Defeat six different Titans', condition: 'titans', target: 6, chapter: 6, icon: '🗿' },
+    { title: 'Reach level 40', condition: 'level', target: 40, chapter: 6, icon: '⭐' },
+    { title: 'Defeat all nine Titans', condition: 'titans', target: 9, chapter: 6, icon: '👑', end: { starshard: 5, moonstone: 2, thunderstone: 3, seed_star: 5 } },
 ];
 // Keep optional metadata absent when it has no value.
 for (const item of Object.values(ITEMS))

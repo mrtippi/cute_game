@@ -33,6 +33,8 @@ export interface ProgressionState {
         index: number;
         progress: number;
     };
+    /** How many fixed story steps existed when this save was written; endless rounds follow them. */
+    storySteps: number;
     totals: Record<string, number>;
     daily: {
         key: string;
@@ -82,10 +84,17 @@ type TaskSpec = {
 };
 const DAILY: Record<string, TaskSpec> = {
     kill: { event: 'kill', targets: [12, 25, 40], title: 'Defeat creatures', icon: '⚔️' }, boss: { event: 'boss', targets: [1], title: 'Defeat a boss', icon: '👑', level: 4 }, harvest: { event: 'harvest', targets: [6, 10, 16], title: 'Harvest crops', icon: '🌾' }, fish: { event: 'fish', targets: [3, 5, 8], title: 'Catch fish', icon: '🎣' }, rare: { event: 'fishrare', targets: [1], title: 'Catch a rare fish', icon: '🐠', level: 3 }, cook: { event: 'cook', targets: [3, 6, 10], title: 'Cook meals', icon: '🔥', level: 5 }, mine: { event: 'mine', targets: [5, 10], title: 'Mine deposits', icon: '⛏️', level: 14 }, sell: { event: 'sell', targets: [100, 250, 500], title: 'Earn energy from sales', icon: '🧺' }, skill: { event: 'skill', targets: [20, 40], title: 'Use skills', icon: '🌀' }, craft: { event: 'craft', targets: [1, 2], title: 'Craft or buy items', icon: '🔨' }, planet: { event: 'planet', targets: [1], title: 'Visit another planet', icon: '🚀', level: 6 },
+    animal: { event: 'animal', targets: [4, 8, 12], title: 'Collect animal products', icon: '🥚', level: 2 }, fertilize: { event: 'fertilize', targets: [2, 3, 5], title: 'Fertilize crops', icon: '🧪', level: 2 }, upgrade: { event: 'upgrade', targets: [1, 2], title: 'Buy a crystal upgrade', icon: '💎', level: 2 }, eat: { event: 'eat', targets: [1, 2, 3], title: 'Eat food with a bonus effect', icon: '🍽️', level: 2 },
+    mystery: { event: 'mystery', targets: [1], title: 'Reel in a mysterious shadow', icon: '❓', level: 3 }, fruit: { event: 'fruit', targets: [1, 2], title: 'Harvest fruit crops', icon: '🍎', level: 3 }, decorate: { event: 'decorate', targets: [1], title: 'Place a decoration', icon: '🏡', level: 4 }, hawk: { event: 'hawk', targets: [1, 2, 3], title: 'Defeat Great Forest Hawks', icon: '🦅', level: 5 },
+    stardust: { event: 'stardust', targets: [10, 20, 30], title: 'Collect stardust in space', icon: '✨', level: 6 }, forge: { event: 'forge', targets: [1, 2, 3], title: 'Try weapon forging', icon: '⚒️', level: 6 }, harpoon: { event: 'harpoon', targets: [3, 5, 8], title: 'Hunt fish with the harpoon', icon: '🔱', level: 8 }, legendFish: { event: 'legendFish', targets: [1], title: 'Catch a legendary fish', icon: '🐋', level: 10 },
 };
 const WEEKLY: Record<string, TaskSpec> = {
     kill: { ...DAILY.kill, targets: [150, 300, 500] }, boss: { ...DAILY.boss, targets: [4, 8, 12] }, harvest: { ...DAILY.harvest, targets: [60, 120, 200] }, fish: { ...DAILY.fish, targets: [20, 40, 60] }, cook: { ...DAILY.cook, targets: [15, 30] }, mine: { ...DAILY.mine, targets: [30, 60] }, planet: { ...DAILY.planet, targets: [4, 8] }, sell: { ...DAILY.sell, targets: [1500, 4000, 8000] }, bounty: { event: 'bounty', targets: [3, 5], title: 'Complete bounties', icon: '🎯' }, chal: { event: 'chal', targets: [10, 20], title: 'Win quick challenges', icon: '⏱️' },
+    dailyDone: { event: 'dailyDone', targets: [10, 15], title: 'Complete daily quests', icon: '📅' }, animal: { ...DAILY.animal, targets: [30, 60, 90] }, mystery: { event: 'mystery', targets: [3, 5], title: 'Reel in mysterious shadows', icon: '❓', level: 3 },
+    stardust: { ...DAILY.stardust, targets: [100, 200, 300] }, forgeOk: { event: 'forgeOk', targets: [2, 3, 5], title: 'Forge successfully', icon: '⚒️', level: 6 }, titan: { event: 'titan', targets: [1, 2, 3], title: 'Defeat Titans', icon: '🗿', level: 12 },
 };
+/** Every daily and weekly task type and achievement line, read-only (for listings and tests). */
+export const TASK_SPECS: Readonly<{ daily: Readonly<Record<string, TaskSpec>>; weekly: Readonly<Record<string, TaskSpec>> }> = { daily: DAILY, weekly: WEEKLY };
 const BONUS = ['potion', 'spore', 'honey', 'worm', 'seed_ice', 'seed_fire', 'claw', 'nectar', 'plot_kit'];
 const ENDLESS: [
     string,
@@ -100,12 +109,15 @@ const ACHIEVEMENTS: [
     number[],
     string,
     string
-][] = [['kills', 'kill', [50, 200, 1000, 5000], 'Creature hunter', '⚔️'], ['boss', 'boss', [1, 10, 50, 200], 'Boss hunter', '👑'], ['farm', 'harvest', [20, 100, 500, 2000], 'Gardener', '🌾'], ['fish', 'fish', [10, 50, 200, 1000], 'Angler', '🎣'], ['legend', 'legendFish', [1, 3, 10], 'Legendary angler', '🐋'], ['cook', 'cook', [10, 50, 200], 'Volcano chef', '🔥'], ['mine', 'mine', [20, 100, 500], 'Space miner', '⛏️'], ['planets', 'visited', [2, 3, 5, 9], 'Explorer', '🔭'], ['decor', 'decor', [3, 10, 25], 'Decorator', '🏡'], ['quests', 'questsDone', [5, 30, 100, 300], 'Helpful neighbor', '📜'], ['bounty', 'bounty', [1, 10, 50, 150], 'Bounty hunter', '🎯'], ['chal', 'chal', [5, 30, 100, 300], 'Challenge champion', '⏱️'], ['streak', 'bestStreak', [3, 5, 8, 12], 'Winning streak', '🔥'], ['story', 'story', [9, 15, 21, 29], 'Storyteller', '🧭'], ['level', 'level', [5, 10, 20, 30], 'Growing stronger', '⭐']];
+][] = [['kills', 'kill', [50, 200, 1000, 5000], 'Creature hunter', '⚔️'], ['boss', 'boss', [1, 10, 50, 200], 'Boss hunter', '👑'], ['farm', 'harvest', [20, 100, 500, 2000], 'Gardener', '🌾'], ['fish', 'fish', [10, 50, 200, 1000], 'Angler', '🎣'], ['legend', 'legendFish', [1, 3, 10], 'Legendary angler', '🐋'], ['cook', 'cook', [10, 50, 200], 'Volcano chef', '🔥'], ['mine', 'mine', [20, 100, 500], 'Space miner', '⛏️'], ['planets', 'visited', [2, 3, 5, 9], 'Explorer', '🔭'], ['decor', 'decor', [3, 10, 25], 'Decorator', '🏡'], ['quests', 'questsDone', [5, 30, 100, 300], 'Helpful neighbor', '📜'], ['bounty', 'bounty', [1, 10, 50, 150], 'Bounty hunter', '🎯'], ['chal', 'chal', [5, 30, 100, 300], 'Challenge champion', '⏱️'], ['streak', 'bestStreak', [3, 5, 8, 12], 'Winning streak', '🔥'], ['story', 'story', [9, 15, 21, 29], 'Storyteller', '🧭'], ['level', 'level', [5, 10, 20, 30], 'Growing stronger', '⭐'],
+    ['rancher', 'animal', [25, 100, 500, 2000], 'Rancher', '🥚'], ['orchard', 'fruit', [1, 10, 50, 200], 'Orchard keeper', '🍎'], ['smith', 'forgeOk', [1, 10, 30, 60], 'Blacksmith', '⚒️'], ['harpoon', 'harpoon', [10, 50, 200, 1000], 'Harpoon hunter', '🔱'],
+    ['shadow', 'mystery', [1, 10, 30, 100], 'Shadow seeker', '❓'], ['pilot', 'stardust', [50, 300, 1000, 5000], 'Stardust pilot', '✨'], ['titan', 'titans', [1, 3, 6, 9], 'Titan slayer', '🗿'], ['visitor', 'login', [7, 30, 100, 365], 'Regular visitor', '🗓️']];
+export const ACHIEVEMENT_TITLES: readonly string[] = ACHIEVEMENTS.map(a => a[3]);
 const CHALLENGES: Record<string, {
     target: number;
     seconds: number;
 }> = { kill: { target: 4, seconds: 75 }, skill: { target: 8, seconds: 45 }, harvest: { target: 4, seconds: 100 }, fish: { target: 2, seconds: 120 }, boss: { target: 1, seconds: 150 } };
-export function createProgression(): ProgressionState { return { story: { index: 0, progress: 0 }, totals: {}, daily: { key: '', tasks: [], chest: false, rerolled: false }, weekly: { key: '', tasks: [], chest: false }, pass: { season: '', stars: 0, claimed: [] }, achievements: {}, login: { day: '', streak: 0 }, bounty: null, challenge: null, streak: 0, bestStreak: 0 }; }
+export function createProgression(): ProgressionState { return { story: { index: 0, progress: 0 }, storySteps: STORY_STEPS.length, totals: {}, daily: { key: '', tasks: [], chest: false, rerolled: false }, weekly: { key: '', tasks: [], chest: false }, pass: { season: '', stars: 0, claimed: [] }, achievements: {}, login: { day: '', streak: 0 }, bounty: null, challenge: null, streak: 0, bestStreak: 0 }; }
 function day(now: number) { return new Date(now).toISOString().slice(0, 10); }
 function week(now: number) { const d = new Date(now); d.setUTCDate(d.getUTCDate() - (d.getUTCDay() + 6) % 7); return d.toISOString().slice(0, 10); }
 function hash(text: string) { let value = 2166136261; for (const c of text)
@@ -136,7 +148,7 @@ export function refreshProgress(s: SaveState, now = Date.now()) {
     }
 }
 export function storyStep(index: number) { if (index < STORY_STEPS.length)
-    return STORY_STEPS[index]; const round = index - STORY_STEPS.length, [event, base, title, icon] = ENDLESS[round % ENDLESS.length]; return { event, target: Math.round(base * (1 + Math.floor(round / ENDLESS.length) * .5)), title, icon, chapter: 4, condition: undefined, end: undefined }; }
+    return STORY_STEPS[index]; const round = index - STORY_STEPS.length, [event, base, title, icon] = ENDLESS[round % ENDLESS.length]; return { event, target: Math.round(base * (1 + Math.floor(round / ENDLESS.length) * .5)), title, icon, chapter: STORY_STEPS[STORY_STEPS.length - 1].chapter + 1, condition: undefined, end: undefined }; }
 function condition(s: SaveState, key: string) { switch (key) {
     case 'level': return s.level;
     case 'visited': return s.visited.length;
@@ -146,10 +158,17 @@ function condition(s: SaveState, key: string) { switch (key) {
     case 'decor': return s.decorations.length;
     case 'story': return s.progression.story.index;
     case 'bestStreak': return s.progression.bestStreak;
+    case 'pen': return Number(!!s.farm?.built);
+    case 'animals': return s.farm?.animals.filter(a => a.kind !== 'dog').length ?? 0;
+    case 'dog': return Number(!!s.farm?.animals.some(a => a.kind === 'dog'));
+    case 'forgeMax': return Math.max(0, ...Object.values(s.forge ?? {}));
+    case 'harpoon': return Number((s.bag.harpoon ?? 0) > 0 || s.gear.weapon === 'harpoon');
+    // Distinct Titans, from the defeated-boss list ("planet:titan_turtle").
+    case 'titans': return new Set((s.bosses ?? []).map(key => key.split(':')[1]).filter(type => type?.startsWith('titan_'))).size;
     default: return s.progression.totals[key] || 0;
 } }
 export function recordEvent(s: SaveState, event: string, amount = 1, detail?: string, now = Date.now()) {
-    if (!Number.isFinite(amount) || amount <= 0 || !Number.isFinite(now) || !Object.hasOwn({ kill: 1, harvest: 1, sell: 1, craft: 1, fish: 1, skill: 1, upgrade: 1, boss: 1, fishrare: 1, legendFish: 1, cook: 1, mine: 1, planet: 1, expand: 1, decorate: 1, bounty: 1, chal: 1 }, event))
+    if (!Number.isFinite(amount) || amount <= 0 || !Number.isFinite(now) || !Object.hasOwn({ kill: 1, harvest: 1, sell: 1, craft: 1, fish: 1, skill: 1, upgrade: 1, boss: 1, fishrare: 1, legendFish: 1, cook: 1, mine: 1, planet: 1, expand: 1, decorate: 1, bounty: 1, chal: 1, animal: 1, fertilize: 1, eat: 1, mystery: 1, fruit: 1, hawk: 1, stardust: 1, forge: 1, forgeOk: 1, harpoon: 1, titan: 1, dailyDone: 1, login: 1 }, event))
         return;
     refreshProgress(s, now);
     const p = s.progression;
@@ -234,6 +253,7 @@ export function claimProgress(s: SaveState, kind: ProgressKind, id: string, now 
         if (tail === 'login') {
             reward = loginReward(s, now);
             p.login = { day: day(now), streak: p.login.day === day(now - 86400000) ? p.login.streak + 1 : 1 };
+            recordEvent(s, 'login', 1, undefined, now);
         }
         else if (tail === 'chest') {
             state.chest = true;
@@ -244,6 +264,8 @@ export function claimProgress(s: SaveState, kind: ProgressKind, id: string, now 
             task.claimed = true;
             reward = taskReward(s, task, weekly);
             p.totals.questsDone = (p.totals.questsDone || 0) + 1;
+            if (!weekly)
+                recordEvent(s, 'dailyDone', 1, undefined, now);
         }
     }
     else if (kind === 'pass') {
@@ -283,7 +305,7 @@ export function normalizeProgression(raw: unknown, s: SaveState): ProgressionSta
     const text = (v: unknown) => typeof v === 'string' ? v.slice(0, 100) : '';
     const p = createProgression();
     if (!record(raw)) {
-        p.story.index = s.quest;
+        p.story.index = Math.min(s.quest, 29);
         const old: Record<string, number> = { kill: s.counters.kills, harvest: s.counters.harvests, sell: s.counters.sold, craft: s.counters.bought, fish: s.counters.fish, skill: s.counters.skills, upgrade: s.counters.upgrades };
         p.totals = old;
         const step = storyStep(s.quest);
@@ -292,6 +314,11 @@ export function normalizeProgression(raw: unknown, s: SaveState): ProgressionSta
     }
     if (record(raw.story))
         p.story = { index: number(raw.story.index, 1e6), progress: number(raw.story.progress) };
+    // Saves from before the 29-step story grew may already be in its endless rounds. Those rounds
+    // carried nothing forward, so such players start the first new chapter instead of landing mid-way.
+    const savedSteps = number(raw.storySteps, STORY_STEPS.length) || 29;
+    if (savedSteps < STORY_STEPS.length && p.story.index >= savedSteps)
+        p.story = { index: savedSteps, progress: 0 };
     if (record(raw.totals))
         for (const [k, v] of Object.entries(raw.totals))
             if (/^[a-zA-Z]{1,30}$/.test(k) && !['constructor', 'prototype', '__proto__'].includes(k))

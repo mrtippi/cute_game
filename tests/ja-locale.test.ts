@@ -7,16 +7,18 @@ import { VI_ONLINE } from '../src/locales/vi-online.ts';
 import { VI_UI } from '../src/locales/vi-ui.ts';
 import { VI_FRIENDS } from '../src/locales/vi-friends.ts';
 import { VI_HOUSE } from '../src/locales/vi-house.ts';
+import { VI_QUESTS } from '../src/locales/vi-quests.ts';
 import { JA_CATALOG } from '../src/locales/ja-catalog.ts';
 import { JA_GAMEPLAY } from '../src/locales/ja-gameplay.ts';
 import { JA_SOCIAL } from '../src/locales/ja-social.ts';
 import { JA_UI } from '../src/locales/ja-ui.ts';
+import { JA_QUESTS } from '../src/locales/ja-quests.ts';
 afterEach(() => setLanguage('en'));
 
 // Vietnamese is the reference: its own tests require every item, world, enemy and label.
 // Japanese must cover the same English keys, so it inherits that coverage.
-const vi: Record<string, string> = Object.assign({}, VI_CATALOG, VI_GAMEPLAY, VI_ONLINE, VI_UI, VI_FRIENDS, VI_HOUSE);
-const ja: Record<string, string> = Object.assign({}, JA_CATALOG, JA_GAMEPLAY, JA_SOCIAL, JA_UI);
+const vi: Record<string, string> = Object.assign({}, VI_CATALOG, VI_GAMEPLAY, VI_ONLINE, VI_UI, VI_FRIENDS, VI_HOUSE, VI_QUESTS);
+const ja: Record<string, string> = Object.assign({}, JA_CATALOG, JA_GAMEPLAY, JA_SOCIAL, JA_UI, JA_QUESTS);
 const placeholders = (text: string) => (text.match(/\{\w+\}/g) ?? []).sort().join(',');
 const VIETNAMESE = /[ăâđêôơưạảãáàầấậẩẫằắặẳẵẹẻẽéèềếệểễịỉĩíìọỏõóòồốộổỗờớợởỡụủũúùừứựửữỵỷỹýỳ]/i;
 

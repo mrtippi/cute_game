@@ -6,7 +6,11 @@ import { ANIMALS } from '../src/farm.ts';
 import { ENEMY_TYPES } from '../src/enemy-types.ts';
 import { BASE_SKILLS, SPECIALS } from '../src/combat.ts';
 import { LAVA_EVENT_INFO } from '../src/lava-weather.ts';
-import { VI_CATALOG } from '../src/locales/vi-catalog.ts';
+import { VI_CATALOG as CATALOG } from '../src/locales/vi-catalog.ts';
+import { VI_QUESTS } from '../src/locales/vi-quests.ts';
+
+// Quest titles (story steps included) live in their own catalog.
+const VI_CATALOG: Record<string, string> = { ...CATALOG, ...VI_QUESTS };
 
 function translated(text: string, location: string) {
   assert.ok(Object.hasOwn(VI_CATALOG, text), `${location}: missing Vietnamese for ${JSON.stringify(text)}`);

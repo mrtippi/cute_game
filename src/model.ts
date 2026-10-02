@@ -4,7 +4,7 @@ import { parseHelper, type HelperState } from './helper-state.ts';
 import { parseFriends, parseBosses, noteBossDefeat, type Friend } from './friends-state.ts';
 import { clearOfPen, inYard, emptyFarm, parseFarm, type FarmState } from './farm.ts';
 import { forgeLevel, parseForge } from './weapon-forge.ts';
-import { LEGACY_CROP_IDS } from './content.ts';
+import { LEGACY_CROP_IDS, FRUIT_IDS } from './content.ts';
 import { parseHunting, type HuntingState } from './fish-hunting.ts';
 export * from './weapon-forge.ts';
 export * from './content.ts';
@@ -185,7 +185,8 @@ export function cropDuration(p: Plot) { const def = p.crop && Object.hasOwn(CROP
 export function cropProgress(p: Plot, now = Date.now()) { const duration = cropDuration(p); return duration ? Math.max(0, Math.min(1, (now - p.plantedAt) / duration)) : 0; }
 export function harvest(s: SaveState, index: number, now = Date.now()): CropId | null { const p = s.plots[index]; if (!Number.isFinite(now) || now < 0 || !p?.crop || !(cropProgress(p, now) >= 1))
     return null; const id = p.crop; if (!addItem(s, id))
-    return null; p.crop = null; p.plantedAt = 0; delete p.growDuration; delete p.generation; gainXp(s, CROPS[id].xp, now); recordEvent(s, 'harvest', 1, id, now); return id; }
+    return null; p.crop = null; p.plantedAt = 0; delete p.growDuration; delete p.generation; gainXp(s, CROPS[id].xp, now); recordEvent(s, 'harvest', 1, id, now); if (FRUIT_IDS.includes(id))
+    recordEvent(s, 'fruit', 1, id, now); return id; }
 export function harvestAll(s: SaveState, now = Date.now()) { const harvested: CropId[] = []; s.plots.forEach((_, i) => { const id = harvest(s, i, now); if (id)
     harvested.push(id); }); return harvested; }
 export function fertilize(s: SaveState, index: number, timeOrItem: number | string = Date.now(), raw = 'spore') {
@@ -204,6 +205,7 @@ export function fertilize(s: SaveState, index: number, timeOrItem: number | stri
         return false;
     // Each dose advances a fixed share of the original timer; excess never carries into the next crop.
     plot.plantedAt = now - Math.min(duration, elapsed + duration * grow);
+    recordEvent(s, 'fertilize', 1, id, now);
     return true;
 }
 /**
@@ -373,7 +375,7 @@ export function unequip(s: SaveState, slot: GearSlot) { if (!s.gear[slot])
 export function eat(s: SaveState, raw: ItemId, now = Date.now()) { const id = canonicalItem(raw), item = Object.hasOwn(ITEMS, id) ? ITEMS[id] : undefined; if (!item || !item.heal && !item.buff || !item.buff && s.hp >= maxHp(s) || !removeItem(s.bag, id))
     return false; if (item.heal)
     s.hp = Math.min(maxHp(s), s.hp + item.heal); if (item.buff)
-    addBuff(s, item.buff, id, now); return true; }
+    { addBuff(s, item.buff, id, now); recordEvent(s, 'eat', 1, id, now); } return true; }
 export function cook(s: SaveState, raw: ItemId, count = 1) { const id = canonicalItem(raw), result = `cooked_${id}`; if (!Object.hasOwn(ITEMS, result) || s.planet !== 'home' || !Number.isSafeInteger(count) || count < 1 || !Number.isSafeInteger((s.bag[result] || 0) + count) || !removeItem(s.bag, id, count))
     return false; addItem(s, result, count); recordEvent(s, 'cook', count); return true; }
 export function transfer(s: SaveState, raw: ItemId, toChest: boolean) { const id = canonicalItem(raw); if (toChest && looseQuantity(s, id) < 1)
@@ -408,7 +410,7 @@ export function travel(s: SaveState, id: PlanetId) { if (!canLand(s, id))
     recordEvent(s, 'planet'); return true; }
 /** Stardust collected in space: a little energy and, now and then, a star shard. */
 export function collectStardust(s: SaveState, rng: () => number = Math.random) { s.energy += 3; const shard = rng() < .08; if (shard)
-    addItem(s, 'starshard'); return shard; }
+    addItem(s, 'starshard'); recordEvent(s, 'stardust'); return shard; }
 export const QUESTS = STORY_STEPS.map((q, i) => ({ title: q.title, task: q.title, target: q.target, icon: q.icon, counter: q.condition || q.event || 'level', energy: 0, xp: 0, hint: `Chapter ${q.chapter + 1} · Step ${i + 1}` }));
 export function questProgress(s: SaveState) { return progressEntries(s, 'story')[0]?.progress || 0; }
 export function claimQuest(s: SaveState) { return claimProgress(s, 'story', `story:${s.progression.story.index}`); }
@@ -422,7 +424,9 @@ export function rollLoot(type: string, luck = 0, rng: () => number = Math.random
 /** bank=false leaves the loot out of the bag: the game tosses it onto the ground instead (drops.ts). */
 export function grantDefeat(s: SaveState, type: string, xp: number, boss = false, rng: () => number = Math.random, bank = true) { gainXp(s, xp); const loot = rollLoot(type, activeStats(s).luck, rng); if (bank) for (const item of loot)
     addItem(s, item.id, item.count); recordEvent(s, 'kill', 1, type); if (boss)
-    { recordEvent(s, 'boss', 1, type); noteBossDefeat(s, type); } return loot; }
+    { recordEvent(s, 'boss', 1, type); noteBossDefeat(s, type); } if (type.startsWith('titan_'))
+    { recordEvent(s, 'titan', 1, type); noteBossDefeat(s, type); } if (type === 'forest_raptor')
+    recordEvent(s, 'hawk', 1, type); return loot; }
 export function chooseFish(s: SaveState, water: string = s.planet, rng: () => number = Math.random) { const choices = FISH_WEIGHTS[water] || FISH_WEIGHTS.home, luck = activeStats(s).luck, weighted = choices.map(([id, weight]) => [id, weight * (ITEMS[id].legend ? 1 + luck * 1.5 : ITEMS[id].rare ? 1 + luck : 1)] as const); let draw = rng() * weighted.reduce((sum, [, w]) => sum + w, 0); for (const [id, weight] of weighted) {
     draw -= weight;
     if (draw <= 0)
@@ -437,12 +441,13 @@ export function grantCatch(s: SaveState, raw: ItemId, size?: number, hugeCatch =
 /** Mystery catches are resolved once by the caller's authority, including unusual treasure. */
 export function grantMysteryCatch(s: SaveState, raw: ItemId, size?: number, supergiant = false) {
     const id = canonicalItem(raw), fish = FISH[id];
-    if (!fish) return addItem(s,id);
-    if (!supergiant) return grantCatch(s,id,size,false);
+    if (!fish) { const ok = addItem(s,id); if (ok) recordEvent(s,'mystery'); return ok; }
+    if (!supergiant) { const ok = grantCatch(s,id,size,false); if (ok) recordEvent(s,'mystery'); return ok; }
     if (!Number.isSafeInteger(s.energy + fish.sell*2) || !addItem(s,id)) return false;
     gainXp(s,fish.xp*4); s.energy += fish.sell*2;
     if (size && Number.isFinite(size)) s.fishRecords[id] = Math.max(s.fishRecords[id]||0,size);
     recordEvent(s,'fish'); if (ITEMS[id].rare || ITEMS[id].legend) recordEvent(s,'fishrare'); if (ITEMS[id].legend) recordEvent(s,'legendFish');
+    recordEvent(s,'mystery');
     return true;
 }
 export function placeDecoration(s: SaveState, raw: ItemId, x: number, z: number, rotation = 0) { const id = canonicalItem(raw), item = Object.hasOwn(ITEMS, id) ? ITEMS[id] : undefined; if (item?.type === 'placeable')

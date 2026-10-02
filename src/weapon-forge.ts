@@ -1,5 +1,6 @@
 import { ITEMS, canonicalItem, type Inventory } from './content.ts';
 import type { SaveState } from './model.ts';
+import { recordEvent } from './progression.ts';
 
 export const MAX_FORGE_LEVEL = 15;
 export const FORGE_SUCCESS_CHANCE = .3;
@@ -30,6 +31,7 @@ export function forgeWeapon(state: SaveState, raw: string, random: () => number 
   for (const [material, count] of Object.entries(cost.materials)) { state.bag[material]! -= count!; if (!state.bag[material]) delete state.bag[material]; }
   const success = roll < FORGE_SUCCESS_CHANCE;
   (state.forge ??= {})[id] = level + Number(success);
+  recordEvent(state, 'forge', 1, id); if (success) recordEvent(state, 'forgeOk', 1, id);
   return { id, success, level: level + Number(success), ...cost };
 }
 export function parseForge(value: unknown): Record<string, number> {

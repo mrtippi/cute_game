@@ -2,6 +2,7 @@ import { FISH, FISH_WEIGHTS, ITEMS } from './content.ts';
 import { FISH_PER_WATER } from './fishing.ts';
 import { zoneAt } from './environments.ts';
 import { grantCatch, type SaveState } from './model.ts';
+import { recordEvent } from './progression.ts';
 
 export const FISH_HUNT_COOLDOWN_MS = 1300;
 export const FISH_HUNT_RESTOCK_MS = 12_000;
@@ -66,6 +67,7 @@ export function huntFish(s: SaveState, intent: FishHuntIntent, from: Point, now 
   const hit = Math.hypot(target.x - intent.aim.x, target.z - intent.aim.z) <= FISH_HUNT_HIT_RADIUS;
   // A failed inventory grant keeps both the fish and the shot available.
   if (hit && !grantCatch(s, target.id, target.size, false)) return null;
+  if (hit) recordEvent(s, 'harpoon', 1, target.id, now);
   const hunting = s.hunting ??= { lastShotAt: 0, readyAt: {} }; hunting.lastShotAt = now; hunting.hasShot = true;
   if (hit) hunting.readyAt[key] = now + FISH_HUNT_RESTOCK_MS;
   return { hit, count: hit ? 1 : 0, id: target.id, size: target.size, huge: false, pondId: pond.id, slot: target.slot, readyAt: hunting.readyAt[key] ?? 0, shotReadyAt: now + FISH_HUNT_COOLDOWN_MS, serverNow: now };
