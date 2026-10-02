@@ -4,8 +4,11 @@ import './farm.css';
 import './joystick.css';
 import { FishingProof } from './fishing-proof.ts';
 import '@fontsource-variable/nunito';
+// Japanese glyphs only: Nunito still draws Latin text, and these unicode-range slices download only when kana or kanji appear.
+import '@fontsource/m-plus-rounded-1c/500.css';
+import '@fontsource/m-plus-rounded-1c/800.css';
 import './style.css';
-import { t, localizeHtml, getLanguage, setLanguage, onLanguageChange, bindLanguage } from './i18n.ts';
+import { t, localizeHtml, getLanguage, setLanguage, onLanguageChange, bindLanguage, LANGUAGES, LANGUAGE_NAMES, isLanguage } from './i18n.ts';
 import './menus.css';
 import { Box3, Vector3 } from 'three';
 import { World, type Entity, type Enemy } from './world.ts';
@@ -101,7 +104,7 @@ let shipSequence:ShipSequence|undefined,flight:SpaceFlight|null=null,arriving=fa
 // arriving and shaders compiling, and those hitches say nothing about how fast the device is.
 let settledAt=0;const settle=()=>{settledAt=performance.now()+4000;};
 const frameListeners=new Set<(dt:number)=>void>(),actionListeners=new Set<(action:GameAction)=>void>();
-function languageSelector(place:string){return `<div class="language-picker"><label for="language-${place}">Language</label><select id="language-${place}" data-language aria-label="Language"><option value="en" data-i18n-skip ${getLanguage()==='en'?'selected':''}>English</option><option value="vi" data-i18n-skip ${getLanguage()==='vi'?'selected':''}>Tiếng Việt</option></select></div>`;}
+function languageSelector(place:string){return `<div class="language-picker"><label for="language-${place}">Language</label><select id="language-${place}" data-language aria-label="Language">${LANGUAGES.map(code=>`<option value="${code}" data-i18n-skip ${getLanguage()===code?'selected':''}>${LANGUAGE_NAMES[code]}</option>`).join('')}</select></div>`;}
 const app = $('#app');
 app.innerHTML = `
   <div id="darkness" hidden></div><div id="world-labels" aria-label="Nearby places"></div>
@@ -1244,7 +1247,7 @@ function refreshDocumentLanguage(){
   document.querySelector('meta[name="description"]')?.setAttribute('content',t('A cozy little 3D world. Plant a garden, catch fish, battle monsters, and explore new planets.'));
 }
 refreshDocumentLanguage();
-app.addEventListener('change',event=>{const input=event.target;if(input instanceof HTMLSelectElement&&input.hasAttribute('data-language'))setLanguage(input.value==='vi'?'vi':'en');});
+app.addEventListener('change',event=>{const input=event.target;if(input instanceof HTMLSelectElement&&input.hasAttribute('data-language'))setLanguage(isLanguage(input.value)?input.value:'en');});
 onLanguageChange(()=>{
   refreshStaticLanguage();refreshWorldLanguage();refreshDocumentLanguage();
   app.querySelectorAll<HTMLSelectElement>('[data-language]').forEach(input=>{input.value=getLanguage();});

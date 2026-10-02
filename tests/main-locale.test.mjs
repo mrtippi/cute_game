@@ -5,7 +5,7 @@ import vm from 'node:vm';
 import ts from 'typescript';
 import * as M from '../src/model.ts';
 import * as P from '../src/progression.ts';
-import {t,localizeHtml,setLanguage,getLanguage} from '../src/i18n.ts';
+import {t,localizeHtml,setLanguage,getLanguage,LANGUAGES,LANGUAGE_NAMES} from '../src/i18n.ts';
 import {canTryOn} from '../src/try-on.ts';
 import {ENEMY_TYPES} from '../src/enemy-types.ts';
 import {produceLots,upgradeCards} from '../src/item-views.ts';
@@ -39,7 +39,7 @@ function fixture(advanced=true){
   P.refreshProgress(state);
   let panels=[];
   const art=(id,icon)=>`<span data-art="${id}">${icon}</span>`,mini=id=>`<span data-item="${id}">${M.ITEMS[id]?.icon??'✨'}</span>`;
-  const context={M,planRoutes,...P,STORY_STEPS:P.STORY_STEPS,t,helperRow,localizeHtml,getLanguage,esc,art,mini,ENEMY_TYPES,produceLots,upgradeCards,dishesHtml,penHtml,penSignature,QUALITY,ZOOM:{},state,saved:state,app:{innerHTML:''},tryingOn:null,canTryOn,visiting:null,activePlot:0,selectedItem:advanced?'manure':null,shopTab:'Weapons',journalTab:'story',craftStation:'craft',craftTab:'All',penShown:'',graphics:{setting:'auto',level:'high',ratio:2,fps:60},world:{zoom:1,planet:'home'},saveFailed:false,persistence:null,
+  const context={M,planRoutes,LANGUAGES,LANGUAGE_NAMES,...P,STORY_STEPS:P.STORY_STEPS,t,helperRow,localizeHtml,getLanguage,esc,art,mini,ENEMY_TYPES,produceLots,upgradeCards,dishesHtml,penHtml,penSignature,QUALITY,ZOOM:{},state,saved:state,app:{innerHTML:''},tryingOn:null,canTryOn,visiting:null,activePlot:0,selectedItem:advanced?'manure':null,shopTab:'Weapons',journalTab:'story',craftStation:'craft',craftTab:'All',penShown:'',graphics:{setting:'auto',level:'high',ratio:2,fps:60},world:{zoom:1,planet:'home'},saveFailed:false,persistence:null,
     HELP_TOPICS,joystickEnabled:()=>state.settings.movePad??false,
     openDialog:(type,title,html,kicker,icon)=>{panels.push({type,title:t(title),html:localizeHtml(html),kicker:t(kicker||''),icon});},
     $:()=>({insertAdjacentHTML:(_where,html)=>{panels.at(-1).html+=localizeHtml(html);}}),toast:()=>{},formatSize:cm=>`${cm} cm`,harvestNearby:()=>{},
@@ -66,6 +66,28 @@ function suite(app){
   for(const station of ['craft','forge']){app.ctx.craftStation=station;result.push(...app.render('crafting'));}
   return result;
 }
+
+// Visible text of a rendered panel: tags, entities, keyboard keys and data-i18n-skip content removed.
+const visibleText=html=>html.replace(/<(kbd|code)[^>]*>[\s\S]*?<\/\1>/g,' ').replace(/<[^>]*data-i18n-skip[^>]*>[^<]*/g,' ').replace(/<[^>]*>/g,' ').replace(/&[#\w]+;/g,' ');
+// Abbreviations and names that stay Latin in Japanese UI.
+const LATIN_OK=new Set(['GitHub','Pages','fps','EXP','HP','XP','Lv','Space','Shift','Enter','Esc','Tab','Carrot','Send','name','English','Vi','Tiếng','Việt','FPS','cm','km']);
+
+test('all main menus switch to Japanese with identical game actions and no English left behind',()=>{
+  const app=fixture();setLanguage('en');const english=suite(app),saved=JSON.stringify(app.state);
+  setLanguage('ja');const japanese=suite(app);
+  assert.equal(japanese.length,english.length);
+  const leftovers=new Map();
+  for(let i=0;i<english.length;i++){
+    assert.equal(japanese[i].type,english[i].type);
+    assert.deepEqual(actions(japanese[i].html),actions(english[i].html),`${english[i].type}: translated controls must retain their actions and enabled states`);
+    assert.notEqual(japanese[i].title,english[i].title,`${english[i].type}: visible title must change`);
+    for(const word of visibleText(japanese[i].html+' '+japanese[i].title).match(/[A-Za-z]{3,}/g)??[])if(!LATIN_OK.has(word))leftovers.set(word,english[i].type);
+  }
+  assert.deepEqual([...leftovers],[],'English words left in Japanese panels');
+  const byType=type=>japanese.find(panel=>panel.type===type).html;
+  assert.match(byType('settings'),/言語/);assert.match(byType('bag'),/リュック/);
+  assert.equal(JSON.stringify(app.state),saved,'translation must not rewrite game data or progression');
+});
 
 test('all main menus switch Vietnamese and back with identical game actions and saved state',()=>{
   const app=fixture();setLanguage('en');const english=suite(app),saved=JSON.stringify(app.state);
@@ -103,6 +125,10 @@ test('welcome shell keeps a player name and native language option values unchan
   assert.match(vietnamese,/CHÚNG MÌNH GỌI BẠN LÀ GÌ NHỈ/);assert.match(vietnamese,/Tiếp tục phiêu lưu/);
   assert.match(vietnamese,/<option value="en" data-i18n-skip[^>]*>English<\/option>/);
   assert.match(vietnamese,/<option value="vi" data-i18n-skip[^>]*>Tiếng Việt<\/option>/);
+  setLanguage('ja');const japanese=app.shell();
+  assert.ok(japanese.includes(name));assert.match(japanese,/<option value="ja" data-i18n-skip selected>日本語<\/option>/);
+  assert.match(japanese,/<option value="vi" data-i18n-skip [^>]*>Tiếng Việt<\/option>/);
+  assert.deepEqual(actions(japanese),actions(english));
   assert.deepEqual(actions(vietnamese),actions(english));assert.equal(app.state.name,'Carrot <Send> {name}');
 });
 

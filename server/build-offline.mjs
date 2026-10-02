@@ -30,8 +30,8 @@ const urls = files.map(file => base + path.relative(dist, file).split(path.sep).
 // Gear models download only when something from them is first worn, planet scenery only
 // when that planet is first visited and the farm pen kit only when the pen is first shown,
 // so the worker keeps each one the first time it is fetched instead of fetching them all
-// at install.
-const onDemand = url => /\/assets\/models\/(gear-[a-z-]+|disguises|pets|worlds-[a-z]+|farm|creatures|helper|cage|house)\.glb$/.test(url);
+// at install. Japanese font slices are kept the same way: only Japanese text ever requests them.
+const onDemand = url => /\/assets\/models\/(gear-[a-z-]+|disguises|pets|worlds-[a-z]+|farm|creatures|helper|cage|house)\.glb$/.test(url) || /\/assets\/m-plus-rounded-1c-[^/]+\.woff2?$/.test(url);
 const assets = urls.filter(url => !onDemand(url)), later = urls.filter(onDemand);
 const hash = createHash('sha256');
 for (let index = 0; index < files.length; index++) {

@@ -4,26 +4,45 @@ import { VI_ONLINE } from './locales/vi-online.ts';
 import { VI_UI } from './locales/vi-ui.ts';
 import { VI_FRIENDS } from './locales/vi-friends.ts';
 import { VI_HOUSE } from './locales/vi-house.ts';
+import { JA_CATALOG } from './locales/ja-catalog.ts';
+import { JA_GAMEPLAY } from './locales/ja-gameplay.ts';
+import { JA_SOCIAL } from './locales/ja-social.ts';
+import { JA_UI } from './locales/ja-ui.ts';
 
-export type Language = 'en' | 'vi';
+export type Language = 'en' | 'vi' | 'ja';
+export const LANGUAGES: readonly Language[] = ['en', 'vi', 'ja'];
+/** Each language names itself, so the picker reads the same in every interface language. */
+export const LANGUAGE_NAMES: Record<Language, string> = { en: 'English', vi: 'Tiếng Việt', ja: '日本語' };
+export const isLanguage = (value: unknown): value is Language => LANGUAGES.includes(value as Language);
 export const LANGUAGE_KEY = 'cute-game-language';
-const vi: Record<string, string> = Object.assign(Object.create(null), VI_CATALOG, VI_GAMEPLAY, VI_ONLINE, VI_UI, VI_FRIENDS, VI_HOUSE);
-const folded = new Map(Object.entries(vi).map(([key, value]) => [key.toLowerCase(), value]));
+type Template = { regex: RegExp; names: string[]; target: string; specificity: number };
+/** One lookup table per translated language. Templates compile on first use, so an unused language costs nothing. */
+interface Table { exact: Record<string, string>; folded: Map<string, string>; templates?: Template[] }
+const table = (...parts: Record<string, string>[]): Table => {
+  const exact: Record<string, string> = Object.assign(Object.create(null), ...parts);
+  return { exact, folded: new Map(Object.entries(exact).map(([key, value]) => [key.toLowerCase(), value])) };
+};
+const TABLES: Record<Exclude<Language, 'en'>, Table> = {
+  vi: table(VI_CATALOG, VI_GAMEPLAY, VI_ONLINE, VI_UI, VI_FRIENDS, VI_HOUSE),
+  ja: table(JA_CATALOG, JA_GAMEPLAY, JA_SOCIAL, JA_UI),
+};
 const listeners = new Set<() => void>();
 const cache = new Map<string, string>();
 function initialLanguage(): Language {
-  try { const saved = globalThis.localStorage?.getItem(LANGUAGE_KEY); if (saved === 'en' || saved === 'vi') return saved; } catch { /* Storage is optional. */ }
-  return typeof navigator !== 'undefined' && navigator.language?.toLowerCase().startsWith('vi') ? 'vi' : 'en';
+  try { const saved = globalThis.localStorage?.getItem(LANGUAGE_KEY); if (isLanguage(saved)) return saved; } catch { /* Storage is optional. */ }
+  const browser = typeof navigator !== 'undefined' ? navigator.language?.toLowerCase() ?? '' : '';
+  return browser.startsWith('vi') ? 'vi' : browser.startsWith('ja') ? 'ja' : 'en';
 }
 let language: Language = initialLanguage();
+let active: Table | null = language === 'en' ? null : TABLES[language];
 function documentLanguage() { if (typeof document !== 'undefined') document.documentElement.lang = language; }
 documentLanguage();
 export function getLanguage(): Language { return language; }
 export function setLanguage(next: Language) {
-  if (next !== 'en' && next !== 'vi') return;
+  if (!isLanguage(next)) return;
   try { globalThis.localStorage?.setItem(LANGUAGE_KEY, next); } catch { /* Keep playing without storage. */ }
   if (language === next) { documentLanguage(); return; }
-  language = next; cache.clear(); documentLanguage();
+  language = next; active = next === 'en' ? null : TABLES[next]; cache.clear(); documentLanguage();
   for (const listener of listeners) listener();
 }
 export function onLanguageChange(callback: () => void): () => void { listeners.add(callback); return () => { listeners.delete(callback); }; }
@@ -32,24 +51,26 @@ const interpolate = (value: string, params: Params) => value.replace(/\{(\w+)\}/
 const quoteRegex = (value: string) => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 // Template matching keeps legacy generated labels localizable. Explicit parameters are
 // preferred for player text; their values are never translated or interpreted as markup.
-const templates = Object.entries(vi).filter(([key]) => /\{\w+\}/.test(key)).map(([source, target]) => {
+// Japanese durations are written without spaces ("2分30秒"), so parts may touch.
+const UNIT = '(?:h|m|s|p|g|giờ|phút|giây|時間|分|秒)';
+const compileTemplates = (exact: Record<string, string>): Template[] => Object.entries(exact).filter(([key]) => /\{\w+\}/.test(key)).map(([source, target]) => {
   const names: string[] = [], parts: string[] = []; let cursor = 0;
   for (const match of source.matchAll(/\{(\w+)\}/g)) {
     const numeric = /^(amount|count|seconds|minutes|hours|days|level|ratio|cost|price|total|current|max|progress|target|chapter|rank|step|percent|defense|hp|xp|energy|stars|index|empty|beds|caught|all|need|have|gain)$/i.test(match[1]);
     const time = /^(time|interval)$/i.test(match[1]);
-    const capture = numeric ? '([+−-]?\\d+(?:[.,]\\d+)*)' : time ? '(\\d+(?:[.,]\\d+)?(?:\\s*(?:h|m|s|p|g|giờ|phút|giây)(?:\\s+\\d+(?:[.,]\\d+)?\\s*(?:h|m|s|p|g|giờ|phút|giây))*)?)' : '(.+?)';
+    const capture = numeric ? '([+−-]?\\d+(?:[.,]\\d+)*)' : time ? `(\\d+(?:[.,]\\d+)?(?:\\s*${UNIT}(?:\\s*\\d+(?:[.,]\\d+)?\\s*${UNIT})*)?)` : '(.+?)';
     parts.push(quoteRegex(source.slice(cursor, match.index)), capture); names.push(match[1]); cursor = match.index! + match[0].length;
   }
   parts.push(quoteRegex(source.slice(cursor)));
   return { regex: new RegExp('^' + parts.join('') + '$', 'iu'), names, target, specificity: source.replace(/\{\w+\}/g, '').length };
 }).filter(rule => rule.specificity > 2).sort((a, b) => b.specificity - a.specificity);
 function translate(source: string, depth = 0): string {
-  if (!source || depth > 8) return source;
+  if (!source || depth > 8 || !active) return source;
   const core = source.trim(); if (!core) return source;
   const prefix = source.slice(0, source.indexOf(core)), suffix = source.slice(source.indexOf(core) + core.length);
-  const exact = vi[core] ?? folded.get(core.toLowerCase());
+  const exact = active.exact[core] ?? active.folded.get(core.toLowerCase());
   if (exact !== undefined) return prefix + exact + suffix;
-  for (const rule of templates) {
+  for (const rule of active.templates ??= compileTemplates(active.exact)) {
     const match = rule.regex.exec(core); if (!match) continue;
     const params: Params = {};
     rule.names.forEach((key, index) => { params[key] = /^(name|user|username|owner|player|code)$/i.test(key) ? match[index + 1] : translate(match[index + 1], depth + 1); });
@@ -57,6 +78,13 @@ function translate(source: string, depth = 0): string {
   }
   // Decorations and separators are layout, not prose. Translate each known phrase,
   // leaving unknown text intact; no substring replacement of arbitrary player text.
+  // Bullets go first: "3 of 9 found · Click the ground." must keep its final period on the
+  // second phrase, not strip it from the whole line and leave "Click the ground" unmatched.
+  const bulleted = core.split(/(\s+[·•]\s+)/);
+  if (bulleted.length > 1) {
+    const joined = bulleted.map((piece, i) => i % 2 ? piece : translate(piece, depth + 1)).join('');
+    if (joined !== core) return prefix + joined + suffix;
+  }
   const decorated = core.match(/^([^\p{L}\p{N}]*)(.*?)([^\p{L}\p{N}]*)$/u);
   if (decorated && (decorated[1] || decorated[3]) && decorated[2]) {
     // First remove only one edge. Parentheses and punctuation can belong to a
@@ -77,8 +105,8 @@ function translate(source: string, depth = 0): string {
   return source;
 }
 export function t(source: string, params?: Params): string {
-  if (language === 'en') return params ? interpolate(source, params) : source;
-  if (params) return interpolate(vi[source] ?? folded.get(source.toLowerCase()) ?? source, params);
+  if (!active) return params ? interpolate(source, params) : source;
+  if (params) return interpolate(active.exact[source] ?? active.folded.get(source.toLowerCase()) ?? source, params);
   const cached = cache.get(source); if (cached !== undefined) return cached;
   const result = translate(source); if (cache.size > 3000) cache.clear(); cache.set(source, result); return result;
 }
