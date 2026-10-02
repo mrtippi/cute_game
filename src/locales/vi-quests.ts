@@ -85,4 +85,15 @@ export const VI_QUESTS: Record<string, string> = {
   "Discover {count} kinds of fish": "Khám phá {count} loài cá",
   "Complete {count} collections": "Hoàn thành {count} bộ sưu tập",
   "Reach level {level}": "Đạt cấp {level}",
+  // Planet stars
+  "PLANET STARS": "SAO HÀNH TINH",
+  "Higher stars bring tougher creatures and better rewards. Defeat enough creatures and a boss on your highest star to open the next.": "Sao càng cao, quái càng mạnh và thưởng càng tốt. Hạ đủ quái và một trùm ở sao cao nhất để mở sao kế tiếp.",
+  "Conquer ★{tier}: {kills}/{need} creatures · boss {bosses}/1": "Chinh phục ★{tier}: {kills}/{need} quái · trùm {bosses}/1",
+  "All stars conquered": "Đã chinh phục mọi sao",
+  "Easier star": "Sao dễ hơn",
+  "Harder star": "Sao khó hơn",
+  "Star changed. It applies on your next landing.": "Đã đổi sao. Áp dụng từ lần hạ cánh tới.",
+  "Conquer planet stars": "Chinh phục sao hành tinh",
+  "Star conqueror": "Kẻ chinh phục sao",
+  "Earn {count} planet stars": "Đạt {count} sao hành tinh",
 };

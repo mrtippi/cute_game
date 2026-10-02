@@ -18,7 +18,7 @@ const EVENT_TASKS = {
   animal: ['animals'], planet: ['travel'], stardust: ['travel'], mine: ['travel', 'mine'],
   order: ['market'], forge: ['forge'], forgeOk: ['forge'], eat: [], decorate: [], dailyDone: [], login: [],
 };
-const CONDITION_TASKS = { beds: ['expand'], upgrades: ['crystal'], fishSpecies: ['fishing'], collections: ['travel', 'fight'], level: ['fight'], equipped: ['shop'], visited: ['travel'], pen: ['animals'], animals: ['animals'], dog: ['animals'], forgeMax: ['forge'], harpoon: [] };
+const CONDITION_TASKS = { stars: ['fight', 'travel'], beds: ['expand'], upgrades: ['crystal'], fishSpecies: ['fishing'], collections: ['travel', 'fight'], level: ['fight'], equipped: ['shop'], visited: ['travel'], pen: ['animals'], animals: ['animals'], dog: ['animals'], forgeMax: ['forge'], harpoon: [] };
 const CROPS = /^(radish|carrot|pumpkin|mint|chili|candy|bean|star|berry|coffee|moonflower|magnetmelon|melon|apple|grape|mango|pineapple|coconut|durian|lychee|peach)$/;
 const count = (bag, test) => Object.entries(bag).filter(([id]) => test(id)).reduce((n, [, c]) => n + c, 0);
 
@@ -80,6 +80,8 @@ export function createPlanner(bot, { minutesLeft }) {
   async function step() {
     if (await handleFall(bot)) return 'got up after a fall';
     let s = await game.snap();
+    // Where the explorer is before anything happens (a fall moves it home).
+    if (s.started && s.modal !== 'death') bot.lastPlanet = s.planet;
     if (s.modal || s.dialog) { await game.closePanel(); return 'closed a panel'; }
     if (s.space) { await game.waitFor(n => !n.space && n, { timeout: 60000 }); return 'waited for landing'; }
     if (s.hp < s.maxHp * .6) { await recover(bot); return 'recovered'; }

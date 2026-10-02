@@ -15,6 +15,15 @@ async function launch(bot, target) {
   const { game, note } = bot;
   const opened = await game.goTo(n => n.entities.find(e => e.kind === 'travel'), { label: 'starship', done: n => n.modal === 'travel' && n });
   if (!opened) return false;
+  // Pick the star to play there: the highest open one, one lower where the explorer struggled before.
+  const tier = opened.tiers?.[target];
+  if (tier) {
+    const want = Math.max(1, tier.open - (bot.struggled?.has(target) ? 1 : 0));
+    for (let i = 0; i < 9 && (await game.snap()).tiers[target].chosen !== want; i++) {
+      const now = (await game.snap()).tiers[target].chosen;
+      if (!await game.action('set-tier', { kind: target, index: now + (want > now ? 1 : -1) })) break;
+    }
+  }
   // A discovered planet can be chosen on the star map; the ship then flies itself there.
   if (opened.discovered.includes(target) && await game.action('fly-to', { kind: target })) { note(`autopilot to ${target}`, 'travel'); return 'autopilot'; }
   if (!await game.action('launch')) { await game.closePanel(); return false; }

@@ -28,22 +28,23 @@ const GOALS: Record<string, Goal> = {
   forgeMax: { title: 'Forge a weapon to +{count}', condition: 'forgeMax', icon: '⚒️', target: c => Math.min(15, 9 + Math.floor(c / 2)) },
   upgrades: { title: 'Reach {count} crystal upgrades', condition: 'upgrades', icon: '💎', target: c => 12 + 5 * c },
   species: { title: 'Discover {count} kinds of fish', condition: 'fishSpecies', icon: '🐟', target: c => Math.min(20, 8 + 2 * c) },
+  stars: { title: 'Earn {count} planet stars', condition: 'stars', icon: '🌟', target: c => Math.min(81, 2 + 5 * c) },
   collections: { title: 'Complete {count} collections', condition: 'collections', icon: '📚', target: c => Math.min(6, 1 + Math.floor(c / 2)) },
 };
 /** Seven goals per chapter, each from a different part of the game. */
 const PLANS = [
   ['kill', 'harvest', 'order', 'fish', 'beds', 'upgrades', 'hourly'],
-  ['boss', 'cook', 'mystery', 'mine', 'animal', 'chal', 'forgeMax'],
+  ['boss', 'cook', 'mystery', 'mine', 'animal', 'stars', 'forgeMax'],
   ['kill', 'titan', 'harvest', 'stardust', 'bounty', 'species', 'rare'],
   ['order', 'fish', 'forgeOk', 'animal', 'hourly', 'beds', 'upgrades'],
   ['boss', 'harvest', 'cook', 'mystery', 'mine', 'collections', 'bounty'],
-  ['kill', 'titan', 'order', 'rare', 'stardust', 'forgeMax', 'chal'],
+  ['kill', 'titan', 'order', 'rare', 'stardust', 'forgeMax', 'stars'],
   ['harvest', 'fish', 'forgeOk', 'animal', 'hourly', 'species', 'upgrades'],
   ['boss', 'cook', 'order', 'mystery', 'mine', 'beds', 'bounty'],
   ['kill', 'titan', 'rare', 'stardust', 'forgeOk', 'forgeMax', 'collections'],
-  ['harvest', 'order', 'fish', 'animal', 'hourly', 'chal', 'species'],
+  ['harvest', 'order', 'fish', 'animal', 'hourly', 'stars', 'species'],
   ['boss', 'titan', 'cook', 'mystery', 'mine', 'upgrades', 'bounty'],
-  ['kill', 'order', 'rare', 'stardust', 'forgeOk', 'forgeMax', 'hourly'],
+  ['kill', 'order', 'rare', 'stars', 'forgeOk', 'forgeMax', 'hourly'],
 ] as const;
 const CHAPTER_REWARDS: Inventory[] = [
   { starshard: 3, seed_star: 3 }, { moonstone: 1, spore: 5 }, { thunderstone: 2, starshard: 3 }, { seed_star: 4, moonstone: 1 },

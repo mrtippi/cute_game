@@ -20,7 +20,7 @@ test('chapters 5–7 hold eight steps each, and endless rounds follow the last f
 
 test('daily and weekly lists gain twelve and six task types whose events are all counted', () => {
   assert.equal(Object.keys(P.TASK_SPECS.daily).length, 24);   // + village orders (hourly-orders.test.ts)
-  assert.equal(Object.keys(P.TASK_SPECS.weekly).length, 17);
+  assert.equal(Object.keys(P.TASK_SPECS.weekly).length, 18);   // + village orders, + planet stars
   const s = M.newGame();
   for (const spec of [...Object.values(P.TASK_SPECS.daily), ...Object.values(P.TASK_SPECS.weekly)]) {
     const before = total(s, spec.event); P.recordEvent(s, spec.event, 1, undefined, start);

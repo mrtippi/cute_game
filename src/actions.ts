@@ -101,6 +101,7 @@ function reduceAction(state: Game.SaveState, intent: GameIntent, context: Action
     case 'claimQuest': result = claimProgress(state, 'story', `story:${state.progression.story.index}`, now); break;
     case 'rerollDaily': result = rerollDaily(state, index(), now); break;
     case 'deliverOrder': result = deliverOrder(state, index(), now); break;
+    case 'setTier': result = Game.setTier(state, id() as Game.PlanetId, index()); break;
     case 'startChallenge': result = startChallenge(state, p.kind === undefined ? 'kill' : kind(), now); break;
     case 'launch': result = Game.launch(state); break;
     case 'travel': result = Game.travel(state, id() as Game.PlanetId); break;

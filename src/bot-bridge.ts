@@ -62,6 +62,7 @@ export function installBotBridge(src: BotSources) {
         reel: reel && !reel.hidden ? (reel.classList.contains('hunt') ? 'hunt' : reel.classList.contains('cast') ? 'cast' : 'reel') : null,
         cooldowns: src.cooldowns().map(round),
         placement: (() => { const p = src.placement(); return p ? { x: round(p.x), z: round(p.z), ok: p.ok } : null; })(),
+        tiers: Object.fromEntries(s.discovered.map(id => [id, { ...(s.tiers?.[id] ?? { open: 1, chosen: 1, kills: 0, bosses: 0, titan: 0 }) }])),
         space: space(),
         orders: (s.progression.orders?.list ?? []).map((o, index) => ({ index, item: o.item, count: o.count, have: looseQuantity(s, o.item), type: ITEMS[o.item]?.type ?? null, energy: o.energy })),
         drops: src.drops().map(d => ({ x: round(d.x), z: round(d.z), item: d.item, count: d.count, age: round(d.age), d: round(Math.hypot(d.x - src.world().position.x, d.z - src.world().position.z)) })).sort((a, b) => a.d - b.d).slice(0, 12),

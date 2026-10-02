@@ -85,4 +85,15 @@ export const JA_QUESTS: Record<string, string> = {
   "Discover {count} kinds of fish": "魚を{count}種類見つける",
   "Complete {count} collections": "図鑑のコレクションを{count}つ完成させる",
   "Reach level {level}": "レベル{level}に到達する",
+  // Planet stars
+  "PLANET STARS": "星の階級",
+  "Higher stars bring tougher creatures and better rewards. Defeat enough creatures and a boss on your highest star to open the next.": "星が高いほどモンスターは強く、ごほうびも豪華に。いちばん高い星でモンスターとボスを倒すと、次の星が開きます。",
+  "Conquer ★{tier}: {kills}/{need} creatures · boss {bosses}/1": "★{tier}制覇：モンスター {kills}/{need} · ボス {bosses}/1",
+  "All stars conquered": "すべての星を制覇",
+  "Easier star": "やさしい星へ",
+  "Harder star": "むずかしい星へ",
+  "Star changed. It applies on your next landing.": "星を変えたよ。次の着陸から反映されます。",
+  "Conquer planet stars": "星の階級を制覇する",
+  "Star conqueror": "星の征服者",
+  "Earn {count} planet stars": "星の階級を{count}個獲得する",
 };

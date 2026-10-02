@@ -18,7 +18,9 @@ const note = (text, tag = 'info') => { log(`★ ${text}`); appendFileSync(`${dir
 
 const { context, page, hands, game } = await openSession({ profile: opt.profile, url: opt.url, rng, log });
 const bot = { page, game, hands, rng, log, note };
-game.onFall = () => note('knocked out, back home to rest', 'combat');
+// Planets where the explorer was knocked out: the next visit picks one star lower.
+bot.struggled = new Set();
+game.onFall = () => { note('knocked out, back home to rest', 'combat'); if (bot.lastPlanet) bot.struggled.add(bot.lastPlanet); };
 const minutesLeft = () => (deadline - Date.now()) / 60000;
 let s = await game.snap();
 note(`start · Lv.${s.level} · ϟ${s.energy} · ${s.planet}`, 'session');
