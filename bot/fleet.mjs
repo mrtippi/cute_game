@@ -2,7 +2,7 @@
 //
 //   node fleet.mjs new <folder-id> <日本語の名前> <colour> ['{"fishing":2}']   create an account (blue pink green orange purple red)
 //   node fleet.mjs list                                                       accounts, levels and days played
-//   node fleet.mjs run --accounts sakura,haruto [--date ...] [--clips 10] [--minutes 60] [--no-record]
+//   node fleet.mjs run --accounts sakura,haruto [--date ...] [--clips 10] [--minutes 60] [--no-record] [--show]
 //
 // Each account runs its own director (its own day plan and Chrome window). The windows cascade so every one stays
 // on screen (the game pauses in a hidden tab); the fleet mutes them; each clip is recorded to the account's videos
@@ -15,7 +15,7 @@ import { createAccount, listAccounts, loadAccount } from './accounts.mjs';
 
 const { values: opt, positionals } = parseArgs({ allowPositionals: true, options: {
   accounts: { type: 'string' }, date: { type: 'string' }, clips: { type: 'string', default: '10' }, minutes: { type: 'string', default: '60' },
-  'no-record': { type: 'boolean', default: false }, stagger: { type: 'string', default: '30' }, url: { type: 'string', default: 'http://127.0.0.1:8787/' },
+  'no-record': { type: 'boolean', default: false }, show: { type: 'boolean', default: false }, stagger: { type: 'string', default: '30' }, url: { type: 'string', default: 'http://127.0.0.1:8787/' },
 } });
 const [command = 'list', ...rest] = positionals;
 const DIRECTOR = fileURLToPath(new URL('./director.mjs', import.meta.url));
@@ -49,6 +49,8 @@ if (command === 'new') {
     const out = createWriteStream(`${a.days}/${date}/director.log`, { flags: 'a' });
     const args = [DIRECTOR, 'run', '--account', a.id, '--date', date, '--clips', opt.clips, '--minutes', opt.minutes, '--pos', `${i * 64},${i * 36}`, '--mute'];
     if (!opt['no-record']) args.push('--record');
+    // Windowless by default (lib/session.mjs HEADLESS_ARGS); --show opens real windows.
+    if (!opt.show) args.push('--headless');
     console.log(`▶ ${a.id} (${a.name}) starts`);
     const child = spawn(process.execPath, args, { stdio: ['ignore', 'pipe', 'pipe'] });
     child.stdout.pipe(out); child.stderr.pipe(out);

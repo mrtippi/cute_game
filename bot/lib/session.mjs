@@ -14,8 +14,18 @@ import { Game } from './game.mjs';
 export const WINDOW = { width: 1536, height: 864, scale: 1.25, chrome: 135 };
 export const windowArgs = ({ width, height } = WINDOW, { x = 0, y = 0 } = {}) => [`--window-size=${width},${height + WINDOW.chrome}`, `--window-position=${x},${y}`];
 
+/**
+ * Which browser: the Chromium bundled with the desktop app (ZG_BROWSER=bundled, found through PLAYWRIGHT_BROWSERS_PATH:
+ * a fixed version that no update can change), else the installed Google Chrome (development on this PC).
+ */
+export const BROWSER = process.env.ZG_BROWSER === 'bundled' ? {} : { channel: 'chrome' };
 /** Chrome switches that keep its own pop-ups off the screen while the bots play (translate offer, crash bubble, infobars). */
 export const QUIET_ARGS = ['--disable-features=Translate,TranslateUI,DownloadBubble,DownloadBubbleV2', '--hide-crash-restore-bubble', '--disable-session-crashed-bubble', '--noerrdialogs', '--disable-infobars', '--no-default-browser-check', '--no-first-run'];
+/**
+ * No window at all (the desktop app's default): Chrome's new headless mode still draws on the graphics card
+ * (measured: GTX 1660 through ANGLE/D3D11, 60 fps, screencast 30 fps), so play and recording are the same.
+ */
+export const HEADLESS_ARGS = ['--headless=new', '--use-angle=d3d11', '--enable-gpu', '--ignore-gpu-blocklist'];
 /**
  * Before a launch: mark the profile as cleanly closed (no "Restore pages?" after a killed run) and switch the
  * translate offer off in its preferences.
@@ -36,12 +46,12 @@ const CURSOR = readFileSync(fileURLToPath(new URL('./cursor.js', import.meta.url
  * Several accounts can play at once (fleet.mjs): each has its own profile, debugging port and window position, and
  * the fleet mutes them (the recordings carry no sound; music is added afterwards).
  */
-export async function openSession({ url = 'http://127.0.0.1:8787/', profile, rng, name = 'さくら', color, port = 9333, position, mute = false, fps = 0, width = WINDOW.width, height = WINDOW.height, scale = WINDOW.scale, log = console.log, speed = 1 }) {
+export async function openSession({ url = 'http://127.0.0.1:8787/', profile, rng, name = 'さくら', color, port = 9333, position, mute = false, fps = 0, headless = false, width = WINDOW.width, height = WINDOW.height, scale = WINDOW.scale, log = console.log, speed = 1 }) {
   quietProfile(profile);
   const context = await chromium.launchPersistentContext(profile, {
-    channel: 'chrome', headless: false, chromiumSandbox: true, viewport: { width, height }, deviceScaleFactor: scale, locale: 'ja-JP', timezoneId: 'Asia/Tokyo',
+    ...BROWSER, headless: false, chromiumSandbox: true, viewport: { width, height }, deviceScaleFactor: scale, locale: 'ja-JP', timezoneId: 'Asia/Tokyo',
     // The debugging port lets bot/dev.mjs inspect a running session.
-    args: [`--remote-debugging-port=${port}`, ...windowArgs({ width, height }, position), ...(mute ? ['--mute-audio'] : []), ...QUIET_ARGS, '--disable-background-timer-throttling', '--disable-renderer-backgrounding', '--disable-backgrounding-occluded-windows', '--autoplay-policy=no-user-gesture-required'],
+    args: [`--remote-debugging-port=${port}`, ...windowArgs({ width, height }, position), ...(mute ? ['--mute-audio'] : []), ...(headless ? HEADLESS_ARGS : []), ...QUIET_ARGS, '--disable-background-timer-throttling', '--disable-renderer-backgrounding', '--disable-backgrounding-occluded-windows', '--autoplay-policy=no-user-gesture-required'],
     // No "controlled by automated test software" bar.
     ignoreDefaultArgs: ['--mute-audio', '--enable-automation'],
   });

@@ -143,7 +143,7 @@ export function createPlanner(bot, { minutesLeft }) {
     const top = options.slice(0, 3), total = top.reduce((n, o) => n + o.value, 0);
     let draw = rng.between(0, total), pick = top[0];
     for (const o of top) { draw -= o.value; if (draw <= 0) { pick = o; break; } }
-    lastRun[pick.name] = Date.now();
+    lastRun[pick.name] = Date.now(); bot.mark?.('task', { task: pick.name, planet: s.planet });
     // Now and then, change into something that suits the activity (owned pieces only).
     const theme = ACTIVITY_THEME[pick.name];
     if (theme && !bot.clip && ago('dress') > 300000 && rng.chance(.45)) { lastRun.dress = Date.now(); game.deadline = Date.now() + 60000; await dress(bot, theme).catch(() => {}); await wearTitle(bot, bot.theme ?? theme).catch(() => {}); game.deadline = 0; }

@@ -22,9 +22,20 @@ export function createAccount(id, name, color = 'blue', style = {}) {
   if (!/^[a-z0-9_-]{2,24}$/i.test(id)) throw new Error('the folder id takes 2-24 letters, digits, - or _');
   const p = paths(id); if (existsSync(p.file)) throw new Error(`account "${id}" exists already`);
   const hex = COLORS[color] ?? color; if (!Object.values(COLORS).includes(hex)) throw new Error(`colour must be one of ${Object.keys(COLORS).join(', ')}`);
-  const port = 9340 + listAccounts().length;
+  const port = Math.max(9339, ...listAccounts().map(a => a.port ?? 0)) + 1;
   for (const dir of [p.dir, p.profile, p.days, p.videos]) mkdirSync(dir, { recursive: true });
   const account = { id, name: name.slice(0, 20), color: hex, style, port, created: new Date().toISOString().slice(0, 10) };
   writeFileSync(p.file, JSON.stringify(account, null, 1));
   return { ...account, ...p };
+}
+
+/** Change an account's settings (name, colour, play style, show-window switch, archived); the folder id stays. */
+export function updateAccount(id, patch) {
+  const a = loadAccount(id), next = { ...JSON.parse(readFileSync(a.file, 'utf8')) };
+  if (typeof patch.name === 'string' && patch.name.trim()) next.name = patch.name.trim().slice(0, 20);
+  if (patch.color) { const hex = COLORS[patch.color] ?? patch.color; if (Object.values(COLORS).includes(hex)) next.color = hex; }
+  if (patch.style && typeof patch.style === 'object') next.style = Object.fromEntries(Object.entries(patch.style).filter(([, v]) => Number.isFinite(v) && v > 0 && v <= 5));
+  for (const key of ['show', 'archived']) if (typeof patch[key] === 'boolean') next[key] = patch[key];
+  writeFileSync(a.file, JSON.stringify(next, null, 1));
+  return loadAccount(id);
 }

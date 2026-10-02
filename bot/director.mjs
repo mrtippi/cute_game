@@ -13,13 +13,14 @@ import { fileURLToPath } from 'node:url';
 import { createRng } from './lib/rng.mjs';
 import { CLIPS, planDay, clipTitle } from './clips.mjs';
 import { loadAccount } from './accounts.mjs';
+import { clipText } from './chapters.mjs';
 
 const { values: opt, positionals } = parseArgs({ allowPositionals: true, options: {
   date: { type: 'string' }, from: { type: 'string', default: '1' }, clips: { type: 'string', default: '10' }, minutes: { type: 'string', default: '60' },
   profile: { type: 'string', default: 'D:/autogame/bot-data/profile' }, root: { type: 'string', default: 'D:/autogame/bot-data/director' },
   pause: { type: 'string', default: '20' },
   // An account (accounts.mjs): its profile, its days folder, its videos (recorded per clip), its window spot.
-  account: { type: 'string' }, record: { type: 'boolean', default: false }, pos: { type: 'string', default: '0,0' }, mute: { type: 'boolean', default: false },
+  account: { type: 'string' }, record: { type: 'boolean', default: false }, pos: { type: 'string', default: '0,0' }, mute: { type: 'boolean', default: false }, sound: { type: 'boolean', default: false }, headless: { type: 'boolean', default: false },
 } });
 const account = opt.account ? loadAccount(opt.account) : null;
 if (account) { opt.profile = account.profile; opt.root = account.days; }
@@ -64,7 +65,8 @@ function playClip(clip, title) {
   return new Promise(resolve => {
     const args = [PLAY, '--minutes', opt.minutes, '--seed', clip.seed, '--clip', clip.theme, '--title', title, '--profile', opt.profile, '--out', dayDir, '--pos', opt.pos];
     if (account) args.push('--account', account.id);
-    if (opt.mute) args.push('--mute');
+    if (opt.mute) args.push('--mute'); if (opt.sound) args.push('--sound');
+    if (opt.headless) args.push('--headless');
     // Videos: <account>_<date>_cNN.mp4 in the account's videos folder (or the day folder without an account).
     if (opt.record) { clip.video = `${account?.videos ?? dayDir}/${account ? account.id + '_' : ''}${clip.seed}.mp4`; args.push('--record', clip.video); }
     const child = spawn(process.execPath, args, { stdio: 'inherit' });
@@ -83,6 +85,11 @@ else if (command === 'run') {
     const code = await playClip(clip, clip.title);
     const after = existsSync(`${dayDir}/${clip.seed}/save.json`) ? JSON.parse(readFileSync(`${dayDir}/${clip.seed}/save.json`, 'utf8')) : null;
     Object.assign(clip, { status: code === 0 ? 'done' : 'failed', exit: code, ended: new Date().toISOString(), levelAfter: after?.level ?? null });
+    // G5: the upload text with YouTube chapters next to the video (<video>.txt / .json).
+    if (clip.video && existsSync(clip.video)) {
+      try { const text = clipText({ dir: `${dayDir}/${clip.seed}`, video: clip.video, title: clip.title, name: account?.name, day: plan.day, index: clip.index, duration: Number(opt.minutes) * 60 }); clip.chapters = text.chapters.length; clip.text = clip.video.replace(/\.mp4$/, '.txt'); }
+      catch (error) { console.log('chapters: ' + error.message); }
+    }
     savePlan(plan);
     if (clip.index < plan.clips.length) await new Promise(r => setTimeout(r, Number(opt.pause) * 1000));
   }

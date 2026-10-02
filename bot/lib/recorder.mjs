@@ -5,6 +5,7 @@
 // video plays in real time. No audio: the clips get music in post-production.
 import { spawn, spawnSync } from 'node:child_process';
 import { existsSync } from 'node:fs';
+import { writeFile } from 'node:fs/promises';
 
 // ffmpeg 7+ wants driver 570+ for NVENC; this PC's driver 537 works with the ffmpeg 6.1 build kept in tools/.
 const FFMPEG = process.env.FFMPEG ?? (existsSync('D:/autogame/tools/ffmpeg6/bin/ffmpeg.exe') ? 'D:/autogame/tools/ffmpeg6/bin/ffmpeg.exe' : 'C:/ffmpeg/ffmpeg.exe');
@@ -20,7 +21,7 @@ export function nvencWorks() {
  * Start recording `page` into `file` (mp4). Returns { stop() } that finishes the file and resolves with stats.
  * fps 30; size 1920x1080 (the window renders 1536x864 at scale 1.25); encoder hevc_nvenc, or libx264 as a fallback.
  */
-export async function startRecording(page, file, { fps = 30, width = 1920, height = 1080, encoder = nvencWorks() ? 'hevc_nvenc' : 'libx264', log = () => {} } = {}) {
+export async function startRecording(page, file, { fps = 30, width = 1920, height = 1080, seconds = 0, encoder = nvencWorks() ? 'hevc_nvenc' : 'libx264', log = () => {}, preview } = {}) {
   // HEVC at constant quality 30: about 1 GB per hour, a third of H.264 at the same look (light uploads; YouTube
   // re-encodes anyway). hvc1 tag: plays on Apple devices too. CPU fallback: H.264 at a similar size.
   const video = encoder === 'hevc_nvenc' ? ['-c:v', 'hevc_nvenc', '-preset', 'p5', '-rc', 'vbr', '-cq', '30', '-b:v', '0', '-tag:v', 'hvc1'] : ['-c:v', 'libx264', '-preset', 'veryfast', '-crf', '28'];
@@ -40,21 +41,27 @@ export async function startRecording(page, file, { fps = 30, width = 1920, heigh
   });
   await cdp.send('Page.startScreencast', { format: 'jpeg', quality: 88, maxWidth: width, maxHeight: height, everyNthFrame: 1 });
 
-  // Real-time pacing: as many frames as the clock says, each the newest one received.
-  const started = Date.now();
+  // Real-time pacing: as many frames as the clock says, each the newest one received. With `seconds` the file ends
+  // at exactly that length (60:00 = 108000 frames at 30 fps) while the bot finishes what it was doing, unrecorded.
+  const started = Date.now(), limit = seconds > 0 ? Math.round(seconds * fps) : Infinity;
+  let full = false, previewAt = 0;
   const tick = setInterval(() => {
-    if (stopped || broken || !latest) return;
-    const due = Math.floor((Date.now() - started) * fps / 1000);
+    if (stopped || broken || full || !latest) return;
+    const due = Math.min(limit, Math.floor((Date.now() - started) * fps / 1000));
     while (written < due) { ffmpeg.stdin.write(latest); written++; }
+    if (written >= limit) { full = true; ffmpeg.stdin.end(); log(`recording reached ${seconds}s`); }
+    // A small still for the desktop app's live view, every few seconds.
+    if (preview && Date.now() - previewAt > 4000) { previewAt = Date.now(); writeFile(preview, latest).catch(() => {}); }
   }, Math.round(1000 / fps / 2));
   log(`recording → ${file} (${encoder})`);
 
   return {
-    file,
+    file, started,
+    get full() { return full; },
     async stop() {
       stopped = true; clearInterval(tick);
       await cdp.send('Page.stopScreencast').catch(() => {}); await cdp.detach().catch(() => {});
-      if (!broken) ffmpeg.stdin.end();
+      if (!broken && !full) ffmpeg.stdin.end();
       const code = await exited;
       const stats = { file, seconds: Math.round((Date.now() - started) / 1000), frames: written, received, code, errors: errors.trim() };
       log(`recording saved: ${stats.seconds}s, ${written} frames written, ${received} drawn${code ? ` · ffmpeg exit ${code}: ${stats.errors}` : ''}`);

@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="vi">
+<head>
+  <meta charset="utf-8">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; img-src 'self' file: data:; style-src 'self' 'unsafe-inline'">
+  <title>Zoo Garden – Bảng điều khiển</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <aside class="nav">
+    <div class="brand">🌱 <b>Zoo Garden</b><small>Bảng điều khiển bot</small></div>
+    <button data-page="overview" class="active">📺 Tổng quan</button>
+    <button data-page="accounts">👤 Tài khoản</button>
+    <button data-page="schedule">⏰ Lịch chạy</button>
+    <button data-page="hardware">🖥️ Phần cứng</button>
+    <button data-page="settings">⚙️ Cài đặt</button>
+    <div class="nav-load" id="nav-load"></div>
+  </aside>
+  <main>
+    <section id="page-overview" class="page active"></section>
+    <section id="page-accounts" class="page"></section>
+    <section id="page-schedule" class="page"></section>
+    <section id="page-hardware" class="page"></section>
+    <section id="page-settings" class="page"></section>
+  </main>
+  <dialog id="modal"><form method="dialog" id="modal-body"></form></dialog>
+  <div id="toast" hidden></div>
+  <script src="app.js"></script>
+</body>
+</html>

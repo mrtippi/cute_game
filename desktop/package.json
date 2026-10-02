@@ -1,0 +1,98 @@
+{
+  "name": "zoo-garden-control",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Bảng điều khiển: quản lý acc, hẹn giờ quay, đo sức máy cho bot Zoo Garden",
+  "main": "main.cjs",
+  "scripts": {
+    "start": "electron .",
+    "stage": "node scripts/stage.mjs",
+    "dist": "npm run stage && electron-builder --win nsis --publish never",
+    "release": "npm run stage && electron-builder --win nsis --publish always"
+  },
+  "devDependencies": {
+    "electron": "^44.5.1",
+    "electron-builder": "^26.15.3"
+  },
+  "dependencies": {
+    "electron-updater": "^6.8.9"
+  },
+  "allowScripts": {
+    "electron-winstaller": false
+  },
+  "author": "mrtippi",
+  "homepage": "https://github.com/mrtippi/cute_game",
+  "build": {
+    "appId": "com.mrtippi.zoogarden.control",
+    "productName": "Zoo Garden Control",
+    "directories": {
+      "output": "release"
+    },
+    "asar": false,
+    "files": [
+      "main.cjs",
+      "preload.cjs",
+      "backend.mjs",
+      "ui/**",
+      "icon.png",
+      "icon.ico",
+      "package.json"
+    ],
+    "extraResources": [
+      {
+        "from": "build/zg",
+        "to": "zg",
+        "filter": [
+          "**/*"
+        ]
+      },
+      {
+        "from": "build/zg/node_modules",
+        "to": "zg/node_modules",
+        "filter": [
+          "**/*"
+        ]
+      },
+      {
+        "from": "vendor/ms-playwright",
+        "to": "vendor/ms-playwright"
+      },
+      {
+        "from": "vendor/ffmpeg",
+        "to": "vendor/ffmpeg"
+      }
+    ],
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "icon": "icon.ico",
+      "artifactName": "ZooGardenControl-Setup-${version}.exe"
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "Zoo Garden Control",
+      "runAfterFinish": true,
+      "deleteAppDataOnUninstall": false,
+      "installerIcon": "icon.ico",
+      "uninstallerIcon": "icon.ico"
+    },
+    "publish": [
+      {
+        "provider": "github",
+        "owner": "mrtippi",
+        "repo": "cute_game",
+        "releaseType": "release"
+      }
+    ]
+  }
+}

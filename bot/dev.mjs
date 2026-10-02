@@ -9,7 +9,7 @@ import { readFileSync } from 'node:fs';
 import { createRng } from './lib/rng.mjs';
 import { Hands } from './lib/hands.mjs';
 import { Game } from './lib/game.mjs';
-import { startGame, WINDOW, windowArgs, QUIET_ARGS, quietProfile } from './lib/session.mjs';
+import { startGame, WINDOW, windowArgs, QUIET_ARGS, quietProfile, BROWSER } from './lib/session.mjs';
 
 const PORT = 9333, GAME_URL = 'http://127.0.0.1:8787/?bot';
 const [command = 'state', ...rest] = process.argv.slice(2);
@@ -18,7 +18,7 @@ if (command === 'open') {
   const profile = rest[0] ?? 'D:/autogame/bot-data/test-profile';
   quietProfile(profile);
   const context = await chromium.launchPersistentContext(profile, {
-    channel: 'chrome', headless: false, chromiumSandbox: true, viewport: { width: WINDOW.width, height: WINDOW.height }, deviceScaleFactor: WINDOW.scale, locale: 'ja-JP',
+    ...BROWSER, headless: false, chromiumSandbox: true, viewport: { width: WINDOW.width, height: WINDOW.height }, deviceScaleFactor: WINDOW.scale, locale: 'ja-JP',
     args: [`--remote-debugging-port=${PORT}`, ...windowArgs(), ...QUIET_ARGS, '--disable-background-timer-throttling', '--disable-renderer-backgrounding', '--disable-backgrounding-occluded-windows'],
   });
   await context.addInitScript(readFileSync(new URL('./lib/cursor.js', import.meta.url), 'utf8'));

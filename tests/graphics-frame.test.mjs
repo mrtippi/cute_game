@@ -23,6 +23,7 @@ function fixture() {
   graphics.sample = (dt, playing) => { samples.push(playing); events.push('sample'); return sample(dt, playing); };
   const noop = () => {};
   const context = {
+    FRAME_CAP: 0,   // main.ts: bot windows may cap their frame rate; players never do
     M, frameSteps, graphics, previous: 0, frameTime: 0, elapsed: 0, uiElapsed: 0,
     flight: null, arriving: false, started: true, blocked: false, settledAt: -1,actionHandler:null,
     wasAirborne: false, fishGame: null, recastUntil: 0, modal: '',
