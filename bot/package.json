@@ -1,0 +1,9 @@
+{
+  "name": "zoo-garden-bot",
+  "private": true,
+  "type": "module",
+  "description": "Auto-play, record and schedule daily one-hour sessions of Zoo Garden.",
+  "dependencies": {
+    "playwright": "^1.63.0"
+  }
+}

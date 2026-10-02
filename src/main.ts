@@ -3,6 +3,7 @@ import {HELP_TOPICS} from './help-topics.ts';
 import './farm.css';
 import './joystick.css';
 import { FishingProof } from './fishing-proof.ts';
+import { installBotBridge } from './bot-bridge.ts';
 import '@fontsource-variable/nunito';
 // Japanese glyphs only: Nunito still draws Latin text, and these unicode-range slices download only when kana or kanji appear.
 import '@fontsource/m-plus-rounded-1c/500.css';
@@ -968,6 +969,8 @@ function rebuildHomePresentation(planet:M.PlanetId){
   world.build(planet);if(enemies)world.applyEnemySnapshots(enemies);if(environment)world.applyEnvironmentSnapshot(environment);
 }
 const sharedKills=new Set<string>();
+installBotBridge({state:()=>state,world:()=>world,modal:()=>modal,started:()=>started,uiBlocked,flight:()=>!!flight,shipBusy:()=>!!shipSequence?.busy,cooldowns:()=>cooldowns,
+  fishing:()=>fishGame?{phase:fishGame.simulation.phase,tension:fishGame.simulation.tension,surge:fishGame.simulation.surge,progress:fishGame.simulation.progress}:null});
 export const gameBridge:GameBridge={
   getState:()=>state,getWorld:()=>world,
   getPresence:()=>({y:house.poseY(world.position.y),x:world.position.x,z:world.position.z,facing:world.facing,planet:world.planet,name:state.name,color:state.color,level:state.level,hp:state.hp,maxHp:M.maxHp(state),gear:state.gear,moving:world.moving,visible:!document.hidden,visual:world.visualSnapshot()}),
