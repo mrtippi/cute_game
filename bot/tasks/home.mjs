@@ -112,3 +112,34 @@ export async function fertilizeCrops(bot, { doses = 2 } = {}) {
   }
   return `fertilized ${used}`;
 }
+
+/** Buy one more garden bed and place it beside the others (the best investment in the game). */
+export async function expandGarden(bot) {
+  const { game, hands, rng, note, log } = bot;
+  let s = await game.snap(); if (s.planet !== 'home') return 'not home';
+  const opened = await game.goTo(n => n.entities.filter(e => e.kind === 'plot').sort((a, b) => a.d - b.d)[0], { label: 'garden bed', done: n => (n.modal === 'plant' || n.modal === 'plot') && n });
+  if (!opened) return 'garden not reached';
+  const before = s.plots.length;
+  if (!await game.action('expand')) { await game.closePanel(); return 'cannot expand now'; }
+  // By default the game places the new bed itself; with manual placement on, a ghost bed waits for a spot.
+  s = await game.waitFor(n => (n.placement || n.plots.length > before) && n, { timeout: 5000 });
+  if (s?.plots.length > before) { note(`added a garden bed (${s.plots.length} beds)`, 'garden'); await game.closePanel(); return 'placed'; }
+  if (!s) { await game.closePanel(); return 'no placement'; }
+  // Try spots next to existing beds, nearest first, until the ghost turns valid.
+  const beds = s.entities.filter(e => e.kind === 'plot');
+  const spots = rng.shuffle(beds.flatMap(b => [[2.6, 0], [-2.6, 0], [0, 2.6], [0, -2.6]].map(([dx, dz]) => ({ x: b.x + dx, z: b.z + dz }))))
+    .filter(p => !beds.some(b => Math.hypot(b.x - p.x, b.z - p.z) < 2)).slice(0, 14);
+  for (const spot of spots) {
+    const p = await game.project(spot.x, spot.z);
+    if (!await game.safe(p, s)) continue;
+    await hands.click(p.x, p.y); await new Promise(r => setTimeout(r, rng.between(250, 450)));
+    s = await game.snap();
+    if (s.placement?.ok) {
+      await hands.think(400);
+      const confirm = bot.page.locator('[data-action="confirm-place"]:visible').first();
+      if (await confirm.count()) { await hands.clickElement(confirm); await new Promise(r => setTimeout(r, 700)); note(`placed a new garden bed (${(await game.snap()).plots.length} beds)`, 'garden'); return 'placed'; }
+    }
+  }
+  log('expand: no valid spot found'); await hands.press('Escape');
+  return 'no spot';
+}

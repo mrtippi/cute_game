@@ -1,4 +1,5 @@
 import { TITAN_ITEMS, TITAN_LOOT } from './titan-content.ts';
+import { lateStory } from './story-late.ts';
 // Gameplay facts measured from the public reference client, 2026-09-30.
 // Rendering assets, descriptions and implementation code are independently authored.
 export type GearSlot = 'weapon' | 'hat' | 'outfit' | 'boots' | 'pet' | 'disguise';
@@ -3823,6 +3824,8 @@ export const STORY_STEPS: {
     { title: 'Defeat six different Titans', condition: 'titans', target: 6, chapter: 6, icon: '🗿' },
     { title: 'Reach level 40', condition: 'level', target: 40, chapter: 6, icon: '⭐' },
     { title: 'Defeat all nine Titans', condition: 'titans', target: 9, chapter: 6, icon: '👑', end: { starshard: 5, moonstone: 2, thunderstone: 3, seed_star: 5 } },
+    // Chapters 8–20: the climb to level 100 (story-late.ts).
+    ...lateStory(),
 ];
 // Keep optional metadata absent when it has no value.
 for (const item of Object.values(ITEMS))

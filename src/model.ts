@@ -124,7 +124,17 @@ export interface SaveState {
 export const COLORS = ['#4aa8ff', '#ff7ab0', '#6fd35a', '#ffb13d', '#a07bff', '#ff5a5a'];
 export const SAVE_KEY = 'cute-game-save-v1';
 export function newGame(name = 'Clover', color = COLORS[0]): SaveState { return { version: 1, contentVersion: 3, forge: {}, nextPlantId: 0, name: name.slice(0, 20) || 'Clover', color, level: 1, xp: 0, hp: 100, energy: 0, bag: {}, chest: {}, gear: {}, plots: Array.from({ length: STARTING_PLOTS }, (_, i) => ({ crop: null, plantedAt: 0, ...defaultBed(i) })), gardenLayout: GARDEN_LAYOUT, farm: emptyFarm(), counters: { harvests: 0, sold: 0, bought: 0, equipped: 0, kills: 0, upgrades: 0, fish: 0, skills: 0 }, quest: 0, healthUp: 0, attackUp: 0, defenseUp: 0, critUp: 0, planet: 'home', visited: ['home'], discovered: ['home'], settings: { sound: true, lowGraphics: false }, worldRewards: { mineReadyAt: {}, collectedGifts: {}, giftReadyAt: {}, resourceReadyAt: {}, lava: { gateOpen: false, braziers: [] } }, buffs: {}, sizeEffect: null, decorations: [], nextDecorationId: 1, collection: {}, fishRecords: {}, progression: createProgression(), dropped: null, savedAt: Date.now() }; }
-export function xpNeeded(level: number) { return Math.round(25 * Math.pow(Math.max(1, level), 1.55)); }
+export const MAX_LEVEL = 100;
+/**
+ * Levelling pace for long daily play (about ten hours a day): level 20 in an afternoon, 40 in a few
+ * days, 70 in about a month, 100 in about three. Past the knee each level needs extra experience while
+ * quest rewards stay on the gentle curve (xpReward), so the climb really slows. Tuned against the bot's
+ * measured rate; adjust these two numbers to re-pace the game.
+ */
+export const XP_CURVE = { knee: 12, power: 1.75 };
+/** The gentle curve: what rewards are measured in. */
+export function xpReward(level: number) { return Math.round(25 * Math.pow(Math.max(1, Math.min(level, MAX_LEVEL)), 1.55)); }
+export function xpNeeded(level: number) { const base = xpReward(level); return level <= XP_CURVE.knee ? base : Math.round(base * Math.pow(level / XP_CURVE.knee, XP_CURVE.power)); }
 function equipped(s: SaveState) { return Object.values(s.gear).map(id => ITEMS[id]).filter(Boolean); }
 function equipmentStat(s: SaveState, key: string) { return equipped(s).reduce((sum, item) => sum + ((item.stats as Record<string, number> | undefined)?.[key] || 0), 0); }
 function effect(s: SaveState, key: BuffKey, now = Date.now()) { const buff = s.buffs[key]; return buff && buff.expiresAt > now ? buff.value : 0; }
@@ -171,7 +181,7 @@ export function removeItem(inv: Inventory, raw: ItemId, count = 1) { const id = 
 export function gainXp(s: SaveState, amount: number, now = Date.now()): number { if (!Number.isFinite(amount) || amount <= 0)
     return 0; const before = s.level; const gained = amount * (1 + activeStats(s, now).xp); if (!Number.isFinite(gained))
     return 0; if (!Number.isFinite(s.xp + gained))
-    return 0; s.xp += gained; let guard = 0; while (s.xp >= xpNeeded(s.level) && guard++ < 10000) {
+    return 0; s.xp += gained; let guard = 0; while (s.level < MAX_LEVEL && s.xp >= xpNeeded(s.level) && guard++ < 10000) {
     s.xp -= xpNeeded(s.level);
     s.level++;
     s.hp = maxHp(s);
@@ -567,7 +577,7 @@ export function parseSave(raw: string | null): SaveState | null {
                 if (Object.hasOwn(ITEMS, id) && Number.isSafeInteger(n) && n > 0 && Number.isSafeInteger((result[id] || 0) + n))
                     result[id] = (result[id] || 0) + n;
             } return result; };
-        s.level = integer(v.level, 1, 1e9);
+        s.level = integer(v.level, 1, MAX_LEVEL);
         s.xp = typeof v.xp === 'number' && Number.isFinite(v.xp) && v.xp >= 0 ? Math.min(v.xp, xpNeeded(s.level) * 2) : 0;
         s.energy = integer(v.energy);
         s.healthUp = integer(v.healthUp, 0, 1e9);
@@ -685,7 +695,7 @@ export function parseSave(raw: string | null): SaveState | null {
         s.progression = normalizeProgression(v.progression, s);
         s.quest = s.progression.story.index;
         // Carry any old threshold overflow forward instead of silently deleting XP.
-        while (s.xp >= xpNeeded(s.level)) {
+        while (s.level < MAX_LEVEL && s.xp >= xpNeeded(s.level)) {
             s.xp -= xpNeeded(s.level);
             s.level++;
             s.hp = maxHp(s);

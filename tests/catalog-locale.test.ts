@@ -8,6 +8,7 @@ import { BASE_SKILLS, SPECIALS } from '../src/combat.ts';
 import { LAVA_EVENT_INFO } from '../src/lava-weather.ts';
 import { VI_CATALOG as CATALOG } from '../src/locales/vi-catalog.ts';
 import { VI_QUESTS } from '../src/locales/vi-quests.ts';
+import { t, setLanguage } from '../src/i18n.ts';
 
 // Quest titles (story steps included) live in their own catalog.
 const VI_CATALOG: Record<string, string> = { ...CATALOG, ...VI_QUESTS };
@@ -42,7 +43,10 @@ test('Vietnamese covers every world, enemy, story step, collection and shop cate
   }
   for (const [id, enemy] of Object.entries(ENEMY_TYPES)) translated(enemy.name, `enemy ${id}`);
   for (const [id, collection] of Object.entries(C.COLLECTIONS)) translated(collection.name, `collection ${id}`);
-  for (const step of C.STORY_STEPS) translated(step.title, 'story step');
+  // Late chapters use number templates ("Defeat {count} creatures"); check the rendered translation.
+  setLanguage('vi');
+  for (const step of C.STORY_STEPS) if (Object.hasOwn(VI_CATALOG, step.title)) translated(step.title, 'story step'); else assert.notEqual(t(step.title), step.title, `story step ${step.title}`);
+  setLanguage('en');
   for (const category of [...C.SHOP_CATEGORIES, ...C.WORKSHOP_CATEGORIES]) translated(category.tab, 'category');
   for (const recipe of C.RECIPES) translated(recipe.category, 'recipe category');
   for (const upgrade of Object.values(C.UPGRADES)) translated(upgrade.name, 'upgrade');

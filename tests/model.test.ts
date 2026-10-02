@@ -109,8 +109,9 @@ test('all public catalog labels use consistent English while identifiers remain 
   const names=[...Object.values(M.ITEMS).map(i=>i.name),...Object.values(M.CROPS).map(i=>i.name),...Object.values(M.PLANETS).map(i=>i.name),...Object.values(M.DISGUISES).flatMap(d=>[d.name,...d.skills.map(s=>s.name)]),...Object.values(M.COLLECTIONS).map(c=>c.name),...M.RECIPES.map(r=>r.category)];
   assert.ok(names.every(name=>!/[^\x00-\x7F]/.test(name)));assert.equal(M.ITEMS.carrot.name,'Carrot');assert.equal(M.PLANETS.home.name,'Clover Village');assert.equal(M.ITEMS.deco_lamp.name,'Lava lamp');
 });
-test('legitimate level1000 progress and all runtime state round-trip safely',()=>{
-  const s=M.newGame('Returning explorer');let earned=0;for(let level=1;level<=999;level++)earned+=M.xpNeeded(level);M.gainXp(s,earned+7);assert.equal(s.level,1000);const r=reload(s);assert.equal(r.level,1000);assert.equal(r.xp,7);assert.equal(r.savedAt,s.savedAt);
+// Levels stop at MAX_LEVEL (100): the long-play pacing in model.ts.
+test('legitimate max-level progress and all runtime state round-trip safely',()=>{
+  const s=M.newGame('Returning explorer');let earned=0;for(let level=1;level<M.MAX_LEVEL;level++)earned+=M.xpNeeded(level);M.gainXp(s,earned+7);assert.equal(s.level,M.MAX_LEVEL);const r=reload(s);assert.equal(r.level,M.MAX_LEVEL);assert.equal(r.xp,7);assert.equal(r.savedAt,s.savedAt);
   M.addItem(s,'sword_wood');M.equip(s,'sword_wood');M.addBuff(s,{speed:.2,time:30},'carrot',now);M.plant(s,0,'berry',now);assert.deepEqual(reload(s),s);
 });
 test('inherited IDs, non-object roots and malformed optional state cannot enter saves or operations',()=>{

@@ -9,12 +9,13 @@ const start = Date.UTC(2026, 9, 2, 12);
 const reload = (s: M.SaveState) => M.parseSave(JSON.stringify(s))!;
 const total = (s: M.SaveState, event: string) => s.progression.totals[event] || 0;
 
-test('story grows to seven chapters of fixed steps, then endless rounds in chapter 8', () => {
-  assert.equal(M.STORY_STEPS.length, 53);
+test('chapters 5–7 hold eight steps each, and endless rounds follow the last fixed chapter', () => {
+  assert.equal(M.STORY_STEPS.slice(0, 53).length, 53);
   for (const chapter of [4, 5, 6]) assert.equal(M.STORY_STEPS.filter(step => step.chapter === chapter).length, 8, `chapter ${chapter + 1}`);
   for (const chapter of [4, 5, 6]) assert.ok(M.STORY_STEPS.filter(step => step.chapter === chapter).at(-1)!.end, `chapter ${chapter + 1} ends with a reward`);
-  assert.equal(P.storyStep(53).chapter, 7);
-  assert.equal(P.storyStep(53).event, 'kill');
+  const last = M.STORY_STEPS.length;
+  assert.equal(P.storyStep(last).chapter, M.STORY_STEPS[last - 1].chapter + 1);
+  assert.equal(P.storyStep(last).event, 'kill');
 });
 
 test('daily and weekly lists gain twelve and six task types whose events are all counted', () => {
@@ -80,7 +81,7 @@ test('older saves in the endless rounds start chapter 5 instead of landing mid-c
   raw.progression.story = { index: 35, progress: 7 }; delete raw.progression.storySteps; raw.quest = 35;
   const migrated = M.parseSave(JSON.stringify(raw))!;
   assert.deepEqual(migrated.progression.story, { index: 29, progress: 0 }); assert.equal(migrated.quest, 29);
-  assert.equal(migrated.progression.storySteps, 53);
+  assert.equal(migrated.progression.storySteps, M.STORY_STEPS.length);
   // A save still inside the original 29 steps keeps its place, and current saves are left alone.
   raw.progression.story = { index: 12, progress: 1 }; assert.deepEqual(M.parseSave(JSON.stringify(raw))!.progression.story, { index: 12, progress: 1 });
   const current = M.newGame(); current.progression.story = { index: 40, progress: 2 };

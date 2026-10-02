@@ -1,6 +1,6 @@
 import { t } from './i18n.ts';
 import { ITEMS, PLANETS, COLLECTIONS, STORY_STEPS, type Inventory } from './content.ts';
-import { addItem, gainXp, xpNeeded, removeItem, looseQuantity, type SaveState } from './model.ts';
+import { addItem, gainXp, xpReward as xpNeeded, removeItem, looseQuantity, type SaveState } from './model.ts';
 import { fillOrders, parseOrders, type OrdersState, type Order } from './orders.ts';
 import { ENEMY_TYPES } from './enemy-types.ts';
 export { STORY_STEPS } from './content.ts';
@@ -131,7 +131,7 @@ const ACHIEVEMENTS: [
     number[],
     string,
     string
-][] = [['kills', 'kill', [50, 200, 1000, 5000], 'Creature hunter', '⚔️'], ['boss', 'boss', [1, 10, 50, 200], 'Boss hunter', '👑'], ['farm', 'harvest', [20, 100, 500, 2000], 'Gardener', '🌾'], ['fish', 'fish', [10, 50, 200, 1000], 'Angler', '🎣'], ['legend', 'legendFish', [1, 3, 10], 'Legendary angler', '🐋'], ['cook', 'cook', [10, 50, 200], 'Volcano chef', '🔥'], ['mine', 'mine', [20, 100, 500], 'Space miner', '⛏️'], ['planets', 'visited', [2, 3, 5, 9], 'Explorer', '🔭'], ['decor', 'decor', [3, 10, 25], 'Decorator', '🏡'], ['quests', 'questsDone', [5, 30, 100, 300], 'Helpful neighbor', '📜'], ['bounty', 'bounty', [1, 10, 50, 150], 'Bounty hunter', '🎯'], ['chal', 'chal', [5, 30, 100, 300], 'Challenge champion', '⏱️'], ['streak', 'bestStreak', [3, 5, 8, 12], 'Winning streak', '🔥'], ['story', 'story', [9, 15, 21, 29], 'Storyteller', '🧭'], ['level', 'level', [5, 10, 20, 30], 'Growing stronger', '⭐'],
+][] = [['kills', 'kill', [50, 200, 1000, 5000], 'Creature hunter', '⚔️'], ['boss', 'boss', [1, 10, 50, 200], 'Boss hunter', '👑'], ['farm', 'harvest', [20, 100, 500, 2000], 'Gardener', '🌾'], ['fish', 'fish', [10, 50, 200, 1000], 'Angler', '🎣'], ['legend', 'legendFish', [1, 3, 10], 'Legendary angler', '🐋'], ['cook', 'cook', [10, 50, 200], 'Volcano chef', '🔥'], ['mine', 'mine', [20, 100, 500], 'Space miner', '⛏️'], ['planets', 'visited', [2, 3, 5, 9], 'Explorer', '🔭'], ['decor', 'decor', [3, 10, 25], 'Decorator', '🏡'], ['quests', 'questsDone', [5, 30, 100, 300], 'Helpful neighbor', '📜'], ['bounty', 'bounty', [1, 10, 50, 150], 'Bounty hunter', '🎯'], ['chal', 'chal', [5, 30, 100, 300], 'Challenge champion', '⏱️'], ['streak', 'bestStreak', [3, 5, 8, 12], 'Winning streak', '🔥'], ['story', 'story', [9, 15, 21, 29, 53, 100, 150], 'Storyteller', '🧭'], ['level', 'level', [5, 10, 20, 30, 50, 75, 100], 'Growing stronger', '⭐'],
     ['rancher', 'animal', [25, 100, 500, 2000], 'Rancher', '🥚'], ['orchard', 'fruit', [1, 10, 50, 200], 'Orchard keeper', '🍎'], ['smith', 'forgeOk', [1, 10, 30, 60], 'Blacksmith', '⚒️'], ['harpoon', 'harpoon', [10, 50, 200, 1000], 'Harpoon hunter', '🔱'],
     ['shadow', 'mystery', [1, 10, 30, 100], 'Shadow seeker', '❓'], ['pilot', 'stardust', [50, 300, 1000, 5000], 'Stardust pilot', '✨'], ['titan', 'titans', [1, 3, 6, 9], 'Titan slayer', '🗿'], ['visitor', 'login', [7, 30, 100, 365], 'Regular visitor', '🗓️'], ['neighbor', 'order', [5, 25, 100, 500], 'Good neighbor', '📦']];
 export const ACHIEVEMENT_TITLES: readonly string[] = ACHIEVEMENTS.map(a => a[3]);
@@ -190,11 +190,15 @@ function condition(s: SaveState, key: string) { switch (key) {
     case 'forgeMax': return Math.max(0, ...Object.values(s.forge ?? {}));
     case 'harpoon': return Number((s.bag.harpoon ?? 0) > 0 || s.gear.weapon === 'harpoon');
     // Distinct Titans, from the defeated-boss list ("planet:titan_turtle").
+    case 'beds': return s.plots.length;
+    case 'upgrades': return s.healthUp + s.attackUp + s.defenseUp + s.critUp;
+    case 'fishSpecies': return Object.keys(s.fishRecords).length;
+    case 'collections': return Object.values(COLLECTIONS).filter(group => group.items.every(item => s.collection[item])).length;
     case 'titans': return new Set((s.bosses ?? []).map(key => key.split(':')[1]).filter(type => type?.startsWith('titan_'))).size;
     default: return s.progression.totals[key] || 0;
 } }
 export function recordEvent(s: SaveState, event: string, amount = 1, detail?: string, now = Date.now()) {
-    if (!Number.isFinite(amount) || amount <= 0 || !Number.isFinite(now) || !Object.hasOwn({ kill: 1, harvest: 1, sell: 1, craft: 1, fish: 1, skill: 1, upgrade: 1, boss: 1, fishrare: 1, legendFish: 1, cook: 1, mine: 1, planet: 1, expand: 1, decorate: 1, bounty: 1, chal: 1, order: 1, animal: 1, fertilize: 1, eat: 1, mystery: 1, fruit: 1, hawk: 1, stardust: 1, forge: 1, forgeOk: 1, harpoon: 1, titan: 1, dailyDone: 1, login: 1 }, event))
+    if (!Number.isFinite(amount) || amount <= 0 || !Number.isFinite(now) || !Object.hasOwn({ kill: 1, harvest: 1, sell: 1, craft: 1, fish: 1, skill: 1, upgrade: 1, boss: 1, fishrare: 1, legendFish: 1, cook: 1, mine: 1, planet: 1, expand: 1, decorate: 1, bounty: 1, chal: 1, order: 1, hourChest: 1, animal: 1, fertilize: 1, eat: 1, mystery: 1, fruit: 1, hawk: 1, stardust: 1, forge: 1, forgeOk: 1, harpoon: 1, titan: 1, dailyDone: 1, login: 1 }, event))
         return;
     refreshProgress(s, now);
     const p = s.progression;
@@ -284,7 +288,7 @@ export function claimProgress(s: SaveState, kind: ProgressKind, id: string, now 
     }
     else if (kind === 'hourly') {
         const tail = id.split(':').at(-1)!;
-        if (tail === 'chest') { p.hourly.chest = true; reward = hourlyChest(s, p.hourly.key); }
+        if (tail === 'chest') { p.hourly.chest = true; reward = hourlyChest(s, p.hourly.key); recordEvent(s, 'hourChest', 1, undefined, now); }
         else { p.hourly.tasks[Number(tail)].claimed = true; reward = hourlyReward(s); p.totals.questsDone = (p.totals.questsDone || 0) + 1; }
     }
     else if (kind === 'daily' || kind === 'weekly') {

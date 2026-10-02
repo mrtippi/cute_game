@@ -5,7 +5,7 @@ import { claimable, claimRewards, tendGarden, sellProduce } from './tasks/basics
 import { fight, safeTargets, handleFall, recoverBag, recover, inside, leaveHouse } from './tasks/combat.mjs';
 import { upgradeWeapon, crystalUpgrade, buyRod } from './tasks/shopping.mjs';
 import { goFishing, hasRod } from './tasks/fishing.mjs';
-import { cook, craftSomething, forgeOnce, tendAnimals, harpoonHunt, mine, fertilizeCrops } from './tasks/home.mjs';
+import { cook, craftSomething, forgeOnce, tendAnimals, harpoonHunt, mine, fertilizeCrops, expandGarden } from './tasks/home.mjs';
 import { travelTo, goHome, nextPlanet } from './tasks/travel.mjs';
 import { flourish } from './tasks/flourish.mjs';
 
@@ -18,7 +18,7 @@ const EVENT_TASKS = {
   animal: ['animals'], planet: ['travel'], stardust: ['travel'], mine: ['travel', 'mine'],
   order: ['market'], forge: ['forge'], forgeOk: ['forge'], eat: [], decorate: [], dailyDone: [], login: [],
 };
-const CONDITION_TASKS = { level: ['fight'], equipped: ['shop'], visited: ['travel'], pen: ['animals'], animals: ['animals'], dog: ['animals'], forgeMax: ['forge'], harpoon: [] };
+const CONDITION_TASKS = { beds: ['expand'], upgrades: ['crystal'], fishSpecies: ['fishing'], collections: ['travel', 'fight'], level: ['fight'], equipped: ['shop'], visited: ['travel'], pen: ['animals'], animals: ['animals'], dog: ['animals'], forgeMax: ['forge'], harpoon: [] };
 const CROPS = /^(radish|carrot|pumpkin|mint|chili|candy|bean|star|berry|coffee|moonflower|magnetmelon|melon|apple|grape|mango|pineapple|coconut|durian|lychee|peach)$/;
 const count = (bag, test) => Object.entries(bag).filter(([id]) => test(id)).reduce((n, [, c]) => n + c, 0);
 
@@ -46,6 +46,8 @@ export function createPlanner(bot, { minutesLeft }) {
     fight: { can: s => safeTargets(s, { range: s.planet === 'home' ? 30 : 70 }).length > 0, run: s => fight(bot, { count: rng.int(2, 4), type: s.bounty && s.bounty.progress < s.bounty.target ? s.bounty.type : undefined, range: s.planet === 'home' ? 30 : 70, timeout: 150000 }), cool: 20000, base: 4 },
     travel: { can: s => s.planet === 'home' && s.level >= 4 && s.energy >= 30 && minutesLeft() > 12 && !!nextPlanet(s, rng), run: async s => { const r = await travelTo(bot, nextPlanet(s, rng)); if (r.startsWith('landed')) awaySince = Date.now(); return r; }, cool: 900000, base: 1, limit: 300000 },
     mine: { can: s => s.planet !== 'home' && s.entities.some(e => e.kind === 'mine' && e.d < 80), run: () => mine(bot, { count: rng.int(2, 4) }), cool: 120000, base: 3 },
+    // A bed pays for itself in minutes; keep a cushion of energy for food and repairs.
+    expand: { can: s => s.planet === 'home' && s.plots.length < 33 && s.energy >= 300, run: () => expandGarden(bot), cool: 240000, base: 3 },
     browse: { can: () => true, run: () => flourish(bot), cool: 150000, base: 1.5 },
     home: { can: s => s.planet !== 'home' && (Date.now() - awaySince > rng.between(240000, 480000) || minutesLeft() < 6), run: () => goHome(bot), cool: 60000, base: 20 },
   };

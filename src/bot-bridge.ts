@@ -21,6 +21,8 @@ export interface BotSources {
   /** The ship and the space camera while flying between planets. */
   space(): { flight: SpaceFlight; camera: Camera } | null;
   /** Loot lying on the ground; the pickup magnet takes it when the explorer walks close. */
+  /** The bed or decoration being placed, and whether its spot is valid. */
+  placement(): { x: number; z: number; ok: boolean } | null;
   drops(): readonly { x: number; z: number; item: string; count: number; age: number }[];
 }
 
@@ -59,6 +61,7 @@ export function installBotBridge(src: BotSources) {
         fishing: src.fishing(),
         reel: reel && !reel.hidden ? (reel.classList.contains('hunt') ? 'hunt' : reel.classList.contains('cast') ? 'cast' : 'reel') : null,
         cooldowns: src.cooldowns().map(round),
+        placement: (() => { const p = src.placement(); return p ? { x: round(p.x), z: round(p.z), ok: p.ok } : null; })(),
         space: space(),
         orders: (s.progression.orders?.list ?? []).map((o, index) => ({ index, item: o.item, count: o.count, have: looseQuantity(s, o.item), type: ITEMS[o.item]?.type ?? null, energy: o.energy })),
         drops: src.drops().map(d => ({ x: round(d.x), z: round(d.z), item: d.item, count: d.count, age: round(d.age), d: round(Math.hypot(d.x - src.world().position.x, d.z - src.world().position.z)) })).sort((a, b) => a.d - b.d).slice(0, 12),
