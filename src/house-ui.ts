@@ -8,7 +8,7 @@ import { t, onLanguageChange } from './i18n.ts';
 import { ITEMS } from './content.ts';
 import type { SaveState } from './model.ts';
 import type { Entity, World } from './world.ts';
-import { HOUSE, INDOOR_Y } from './house.ts';
+import { HOUSE, INDOOR_Y, ATTIC_LEVEL } from './house.ts';
 import { HouseSession, type FriendEntity } from './house-session.ts';
 import { houseKit } from './house-view.ts';
 import { FRIENDS, friendsOf, type FriendId } from './friends.ts';
@@ -25,6 +25,8 @@ export interface HouseDeps {
   closeDialog(): void; modal(): string | null;
   toast(message: string, icon?: string): void; tone(kind?: string): void;
   ownGear(): void; iconUrl(id: string): string;
+  /** The title board (main.ts titlesDialog). */
+  titles(): void;
 }
 /** A save made inside resumes inside: this device remembers the explorer was in the cottage. */
 const INSIDE_KEY = 'zoo-garden-indoors';
@@ -108,7 +110,7 @@ export function initHouse(d: HouseDeps) {
     veil.style.opacity = String(fade); veil.style.display = fade > 0 ? 'block' : 'none';
     if (house.inside) {
       house.frame(innerWidth / innerHeight); house.view.update(dt, world.time);
-      if ((friendClock -= dt) <= 0) { friendClock = .25; house.syncFriends(friendList()); }
+      if ((friendClock -= dt) <= 0) { friendClock = .25; house.syncFriends(friendList()); house.syncTrophies(world.state.progression.titles); }
       // Walking into the front door from inside leaves.
       if (!pending && !d.blocked() && world.moving && world.position.z > HOUSE.spawn.z + .65 && Math.abs(world.position.x) < .75 && Math.cos(world.facing) > .5) leave();
     } else if (!pending && !d.blocked() && world.planet === 'home' && world.moving && Math.hypot(world.position.x - HOUSE.outdoorDoor.x, world.position.z - HOUSE.outdoorDoor.z) < 1.45 && Math.cos(world.facing) < -.5) enter();
@@ -132,6 +134,9 @@ export function initHouse(d: HouseDeps) {
   const interact = (e: Entity) => {
     if (e.kind === 'home') { if (!d.visiting()) void d.perform('rest').then(ok => { if (ok) d.toast('Home, sweet home. Your health is restored.', '🏡'); }); enter(); return true; }
     if (e.kind === 'house-door') { leave(); return true; }
+    // The memory room: the title board inside; before level 65 its gate is locked.
+    if (e.kind === 'house-attic-lock') { d.toast(t('The memory room opens at level {level}.', { level: ATTIC_LEVEL }), '🔒'); return true; }
+    if (e.kind === 'house-titleboard') { d.titles(); return true; }
     if (e.kind === 'house-wardrobe' || e.kind === 'house-mirror') { if (d.visiting()) d.toast('Enjoy looking around. Your own garden is waiting at home.', '🌷'); else d.ownGear(); return true; }
     // Indoor friends carry friendId; the outdoor workers (friend-crew.ts) open their status panel in main.ts instead.
     if (e.kind === 'friend' && (e as FriendEntity).friendId) { dress((e as FriendEntity).friendId); return true; }

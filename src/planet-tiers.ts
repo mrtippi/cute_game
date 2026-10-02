@@ -12,7 +12,7 @@ import { PLANETS, type PlanetId } from './content.ts';
 export const MAX_TIER = 10;
 export interface PlanetTier { open: number; chosen: number; kills: number; bosses: number; titan: number }
 export type PlanetTiers = Partial<Record<PlanetId, PlanetTier>>;
-interface TierHolder { level: number; planet: PlanetId; tiers?: PlanetTiers }
+export interface TierHolder { level: number; planet: PlanetId; tiers?: PlanetTiers }
 
 const fresh = (): PlanetTier => ({ open: 1, chosen: 1, kills: 0, bosses: 0, titan: 0 });
 export const tierOf = (s: TierHolder, planet: PlanetId = s.planet) => s.tiers?.[planet] ?? fresh();

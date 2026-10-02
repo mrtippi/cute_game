@@ -82,7 +82,7 @@ test('entering swaps in the interior and leaving restores the village, in front 
   assert.deepEqual([w.position.x, w.position.z], [HOUSE.spawn.x, HOUSE.spawn.z]);
   assert.ok(w.zoom < 1);
   const kinds = w.entities.map(e => e.kind).sort();
-  assert.deepEqual(kinds, ['friend', 'friend', 'friend', 'house-door', 'house-mirror', 'house-wardrobe']);
+  assert.deepEqual(kinds, ['friend', 'friend', 'friend', 'house-attic-lock', 'house-door', 'house-mirror', 'house-wardrobe']);   // + the memory room's locked gate (titles.test.ts)
   assert.ok(!w.entities.includes(outdoor[0]), 'no outdoor things are tappable inside');
   // Creatures stay outdoors: nothing hostile in the interior's entities or scene.
   assert.ok(w.entities.every(e => e.kind !== 'enemy'));

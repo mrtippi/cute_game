@@ -8,7 +8,8 @@
 import * as T from 'three';
 import { groundAt } from './camera-rig.ts';
 import type { Entity, World } from './world.ts';
-import { FRIEND_SPOTS, HOUSE, furnitureObstacles, useSpots, walkable } from './house.ts';
+import { FRIEND_SPOTS, HOUSE, ATTIC, ATTIC_LEVEL, ATTIC_LOCK, furnitureObstacles, atticObstacles, inAttic, useSpots, walkable } from './house.ts';
+import { lockedGateMesh, titleBoardMesh, buildTrophies } from './attic-view.ts';
 import { HouseView, friendName } from './house-view.ts';
 import { friendsOf, type Friend, type FriendId } from './friends.ts';
 
@@ -21,7 +22,8 @@ export interface FriendEntity extends Entity { friendId: FriendId }
  * (a dollhouse on a dark table, not a corner of floor and a lot of black). Centred when the view is wider.
  */
 export function houseFocus(p: { x: number; z: number }, aspect: number, zoom: number, out = new T.Vector3()) {
-  const b = HOUSE.bounds, left = groundAt(aspect, zoom, -1, 0).x, right = groundAt(aspect, zoom, 1, 0).x, far = groundAt(aspect, zoom, 0, 1).z, near = groundAt(aspect, zoom, 0, -1).z;
+  // In the memory room the frame reaches back over it too.
+  const b = inAttic(p) ? { ...HOUSE.bounds, z0: ATTIC.rect.z0, z1: -2 } : HOUSE.bounds, left = groundAt(aspect, zoom, -1, 0).x, right = groundAt(aspect, zoom, 1, 0).x, far = groundAt(aspect, zoom, 0, 1).z, near = groundAt(aspect, zoom, 0, -1).z;
   // When the view is wider than the house the limits cross: then it drifts a little with the explorer around the middle.
   const clamp = (v: number, lo: number, hi: number) => { const mid = (lo + hi) / 2, reach = lo > hi ? (lo - hi) / 4 : (hi - lo) / 2; return Math.min(mid + reach, Math.max(mid - reach, v)); };
   return out.set(clamp(p.x, b.x0 - .6 - left, b.x1 + .6 - right), 0, clamp(p.z, b.z0 - 2.2 - far, b.z1 + .6 - near));
@@ -42,7 +44,7 @@ export class HouseSession {
     if (this.saved) return;
     this.host = host;
     this.saved = { entities: host.entities, obstacles: host.obstacles, zoom: host.zoom };
-    this.syncFriends();
+    this.syncFriends(); this.syncTrophies(host.state.progression.titles);
     host.entities = this.entities(); host.obstacles = this.obstacles();
     host.interior = { scene: this.view.scene, root: this.view.root, walkable, drop: () => this.drop(), adopt: () => this.adopt() };
     this.adopt();
@@ -86,12 +88,24 @@ export class HouseSession {
       const e = add('friend', friendName(view.id), '🧑‍🌾', view.group, view.spot.x, view.spot.z, .55, 'house:friend:' + view.id) as FriendEntity;
       e.friendId = view.id;
     }
+    // The memory room: its title board from level 65, before that a locked gate in the study's back doorway.
+    if (this.open()) add('house-titleboard', 'Title board', '🏅', this.board, ATTIC.board.x, ATTIC.board.z, .9, 'house:titleboard');
+    else add('house-attic-lock', 'Memory room', '🔒', this.gate, ATTIC.door.x, ATTIC.door.z, .9, 'house:attic-lock');
     // The door hinge sits off its centre: keep its tap circle on the doorway.
     this.view.door.position.set(.53, 0, HOUSE.bounds.z1);
     return out;
   }
   private anchors = new Map<string, T.Group>();
-  private obstacles() { return [...furnitureObstacles(), ...[...this.view.friends.values()].map(v => ({ x: v.spot.x, z: v.spot.z, r: .3 }))]; }
+  private gate = lockedGateMesh(); private board = titleBoardMesh();
+  private open() { return !!this.host && this.host.state.level >= ATTIC_LEVEL; }
+  private trophies: T.Group | null = null; private trophySig = '';
+  /** Trophies for the titles held (attic-view.ts); rebuilt when the list changes. */
+  syncTrophies(titles: readonly string[]) {
+    const sig = titles.join('|'); if (sig === this.trophySig && this.trophies) return; this.trophySig = sig;
+    if (this.trophies) { this.view.root.remove(this.trophies); this.trophies.traverse(o => { if (o instanceof T.Mesh) o.geometry.dispose(); }); }
+    this.trophies = buildTrophies(titles); this.view.root.add(this.trophies);
+  }
+  private obstacles() { return [...furnitureObstacles(), ...atticObstacles(), ...(this.open() ? [] : ATTIC_LOCK), ...[...this.view.friends.values()].map(v => ({ x: v.spot.x, z: v.spot.z, r: .3 }))]; }
   /** Friends shown match the save; re-run after a give or take, or a rescue. */
   syncFriends(list: Friend[] = this.host ? friendsOf(this.host.state).filter(f => f.home) : []) {
     const before = [...this.view.friends.values()].map(v => v.group);

@@ -61,7 +61,10 @@ export const BIG_ROOM: RoomId = 'living';
 
 /** Doorway gaps (1.6 m) between rooms, as [wall, gap]. */
 export const WALLS: Wall[] = [
-  { axis: 'x', at: -7, from: -10, to: 10, height: WALL.full, gaps: [] },
+  // The back wall: full height at the ends; low between x -5 and 5, where the memory room joins (doorway in the study).
+  { axis: 'x', at: -7, from: -10, to: -5, height: WALL.full, gaps: [] },
+  { axis: 'x', at: -7, from: -5, to: 5, height: WALL.low, gaps: [[3.3, 4.9]] },
+  { axis: 'x', at: -7, from: 5, to: 10, height: WALL.full, gaps: [] },
   { axis: 'x', at: 6.5, from: -10, to: 10, height: WALL.low, gaps: [[-.85, .85]] },
   { axis: 'x', at: -2, from: -10, to: 10, height: WALL.low, gaps: [[-4.6, -3], [-.3, 1.3], [3.2, 4.8]] },
   { axis: 'z', at: -10, from: -7, to: 6.5, height: WALL.full, gaps: [] },
@@ -116,7 +119,7 @@ export const FURNITURE: Placement[] = [
   { kit: 'bed', x: -7.0, z: -5.85, block: [1.4, 2.1] },
   { kit: 'nightstand', x: -8.15, z: -6.55, block: [.5, .45] },
   { kit: 'lamp_small', x: -8.15, z: -6.55, y: .52 },
-  { kit: 'window', x: -5.2, z: -6.93 },
+  { kit: 'window', x: -7.6, z: -6.93 },
   { kit: 'wardrobe', x: -9.62, z: -3.6, rot: Q, block: [1.2, .6], use: 'wardrobe' },
   { kit: 'mirror', x: -2.35, z: -4.9, rot: -Q, block: [.6, .4], use: 'mirror' },
   { kit: 'plant_small', x: -9.6, z: -6.6, block: [.3, .3] },
@@ -125,7 +128,6 @@ export const FURNITURE: Placement[] = [
   { kit: 'duck', x: -.4, z: -6.35, y: .5 },
   { kit: 'sink', x: 2.35, z: -6.62, block: [.55, .5] },
   { kit: 'towel_rack', x: 2.72, z: -4.4, rot: -Q, block: [.7, .2] },
-  { kit: 'window', x: 1.0, z: -6.93 },
   { kit: 'rug_rect', x: .5, z: -4.6, scale: .55 },
   // Study: desk under the window, books, globe, reading chair.
   { kit: 'rug_rect', x: 6.6, z: -4.5 },
@@ -133,7 +135,7 @@ export const FURNITURE: Placement[] = [
   { kit: 'chair', x: 6.5, z: -5.7, rot: Math.PI, block: [.45, .45] },
   { kit: 'window', x: 8.6, z: -6.93 },
   { kit: 'bookshelf', x: 9.76, z: -4.4, rot: -Q, block: [1.2, .4] },
-  { kit: 'globe', x: 3.8, z: -6.4, block: [.45, .45] },
+  { kit: 'globe', x: 8.0, z: -6.4, block: [.45, .45] },
   { kit: 'armchair', x: 8.2, z: -2.9, rot: Math.PI * 1.15, block: [.9, .8] },
   { kit: 'floor_lamp', x: 9.3, z: -6.45, block: [.45, .45] },
 ];
@@ -161,7 +163,7 @@ export function doorwayRects(): Rect[] {
 }
 const WALK = [...ROOMS.map(r => inset(r.rect, WALL.thick / 2 + CLEARANCE)), ...doorwayRects()];
 /** True where the explorer's centre may stand: inside a room (clear of its walls) or in a doorway. */
-export function walkable(p: Point) { return WALK.some(r => inside(r, p)); }
+export function walkable(p: Point) { return WALK.some(r => inside(r, p)) || atticWalkable(p); }
 export function roomAt(p: Point): Room | undefined { return ROOMS.find(r => inside(r.rect, p)); }
 
 /** Circles covering a piece's footprint (navigation obstacles are circles). */
@@ -176,3 +178,49 @@ export function footprintCircles(p: Placement): Array<Point & { r: number }> {
 }
 export function furnitureObstacles() { return FURNITURE.flatMap(footprintCircles); }
 export function useSpots() { return FURNITURE.filter(p => p.use); }
+
+/**
+ * The memory room (屋根裏の思い出部屋), joined to the back of the cottage behind the low middle wall and entered through
+ * the doorway in the study's back wall. Below level 65 a locked door stands in the doorway. Trophies for every title
+ * stand on pedestals along the walls with medals hung above them (attic-view.ts); the title board picks the title to wear.
+ */
+export const ATTIC_LEVEL = 65;
+export const ATTIC = {
+  rect: { x0: -5, x1: 5, z0: -13.5, z1: -7 } as Rect,
+  floor: ['#d9a46f', '#cc9461'] as [string, string], wall: '#ffe6c4',
+  /** The doorway (study back wall, gap 3.3 to 4.9) and the title board inside. */
+  door: { x: 4.1, z: -7 } as Point,
+  board: { x: -3.0, z: -10.4 } as Point,
+};
+export const ATTIC_WALLS: Wall[] = [
+  { axis: 'x', at: ATTIC.rect.z0, from: ATTIC.rect.x0, to: ATTIC.rect.x1, height: WALL.full, gaps: [] },
+  { axis: 'z', at: ATTIC.rect.x0, from: ATTIC.rect.z0, to: ATTIC.rect.z1, height: WALL.full, gaps: [] },
+  { axis: 'z', at: ATTIC.rect.x1, from: ATTIC.rect.z0, to: ATTIC.rect.z1, height: WALL.full, gaps: [] },
+];
+export const ATTIC_FURNITURE: Placement[] = [
+  { kit: 'rug_round', x: -.4, z: -10.3 },
+  { kit: 'armchair', x: 2.3, z: -9.2, rot: -Math.PI * .85, block: [.9, .8] },
+  { kit: 'globe', x: 1.3, z: -11.7, block: [.45, .45] },
+  { kit: 'floor_lamp', x: -1.9, z: -11.8, block: [.45, .45] },
+  { kit: 'window', x: 0, z: -13.43 },
+  { kit: 'plant_big', x: -4.4, z: -7.6, block: [.6, .6] },
+];
+/** Trophy spots: cups on pedestals along the back and side walls (y .6), medals hung on the wall above (y 1.55). */
+export const TROPHY_SPOTS: Array<Point & { y: number; face: number }> = (() => {
+  const out: Array<Point & { y: number; face: number }> = [], r = ATTIC.rect;
+  for (const y of [.6, 1.55]) {
+    for (let i = 0; i < 8; i++) out.push({ x: r.x0 + 1 + i * 8 / 7, z: r.z0 + (y < 1 ? .45 : .14), y, face: 0 });
+    for (let i = 0; i < 5; i++) out.push({ x: r.x0 + (y < 1 ? .45 : .14), z: r.z0 + 1.4 + i * .9, y, face: Q });
+    for (let i = 0; i < 5; i++) out.push({ x: r.x1 - (y < 1 ? .45 : .14), z: r.z0 + 1.4 + i * .9, y, face: -Q });
+  }
+  return out;
+})();
+// Kept off the shared back wall like any room (WALL.thick / 2 + CLEARANCE): the doorway passage bridges the two.
+const ATTIC_EDGE = ATTIC.rect.z1 - WALL.thick / 2 - CLEARANCE;
+const ATTIC_WALK: Rect[] = [{ x0: ATTIC.rect.x0 + .95, x1: ATTIC.rect.x1 - .95, z0: ATTIC.rect.z0 + .95, z1: ATTIC_EDGE }, { x0: 3.6, x1: 4.3, z0: -8.2, z1: ATTIC_EDGE }];
+/** True where the explorer may stand in the memory room (clear of the pedestals along its walls). */
+export const atticWalkable = (p: Point) => ATTIC_WALK.some(r => inside(r, p));
+export const inAttic = (p: Point) => p.z < ATTIC.rect.z1;
+export const atticObstacles = () => [...ATTIC_FURNITURE.flatMap(footprintCircles), { x: ATTIC.board.x, z: ATTIC.board.z, r: .45 }];
+/** The locked door's collision while the room is closed (below level 65). */
+export const ATTIC_LOCK = [{ x: 3.7, z: -7, r: .45 }, { x: 4.5, z: -7, r: .45 }];

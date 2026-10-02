@@ -12,6 +12,7 @@ import { huntBoss, huntable } from './tasks/boss.mjs';
 import { gearGoal, huntTypes, gatherForGoal, buyWeapon } from './tasks/gear.mjs';
 import { quickChallenge, tidyChest, sightsee } from './tasks/routine.mjs';
 import { readLumi, rescueFriend, openCages, shakeOrchard } from './tasks/story.mjs';
+import { wearTitle, visitAttic } from './tasks/titles.mjs';
 import { collectCosmetic, craftCosmetic, dress, ACTIVITY_THEME } from './tasks/wardrobe.mjs';
 
 /** Which activities move a quest event forward. */
@@ -67,6 +68,8 @@ export function createPlanner(bot, { minutesLeft }) {
     expand: { can: s => s.planet === 'home' && s.plots.length < 33 && s.energy >= 300, run: () => expandGarden(bot), cool: 240000, base: 3 },
     // A boss the explorer can beat, with food in the bag: the highlight of a session.
     orchard: { can: s => s.planet === 'home' && s.orchard?.length > 0, run: () => shakeOrchard(bot), cool: 600000, base: 5 },
+    // A new title (level 65+): climb to the attic memory room to see its trophy.
+    attic: { can: s => s.planet === 'home' && s.level >= 65 && s.titles.length > (bot.atticTitles ?? s.titles.length - 1), run: () => visitAttic(bot, bot.theme ?? 'fancy'), cool: 900000, base: 8, limit: 240000 },
     rescue: { can: s => openCages(s).length > 0, run: () => rescueFriend(bot), cool: 60000, base: 12 },
     boss: { can: s => huntable(s).length > 0, run: () => huntBoss(bot), cool: 180000, base: 3, limit: 300000 },
     browse: { can: () => true, run: () => flourish(bot), cool: 150000, base: 1.5 },
@@ -139,7 +142,7 @@ export function createPlanner(bot, { minutesLeft }) {
     lastRun[pick.name] = Date.now();
     // Now and then, change into something that suits the activity (owned pieces only).
     const theme = ACTIVITY_THEME[pick.name];
-    if (theme && ago('dress') > 300000 && rng.chance(.45)) { lastRun.dress = Date.now(); game.deadline = Date.now() + 60000; await dress(bot, theme).catch(() => {}); game.deadline = 0; }
+    if (theme && ago('dress') > 300000 && rng.chance(.45)) { lastRun.dress = Date.now(); game.deadline = Date.now() + 60000; await dress(bot, theme).catch(() => {}); await wearTitle(bot, bot.theme ?? theme).catch(() => {}); game.deadline = 0; }
     log(`plan: ${options.slice(0, 4).map(o => `${o.name}(${o.value.toFixed(1)})`).join(' ')} → ${pick.name}`);
     // A hard limit per activity: past it, game.snap() throws and the task stops wherever it is.
     game.deadline = Date.now() + (pick.t.limit ?? 240000);

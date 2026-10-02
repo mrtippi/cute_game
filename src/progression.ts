@@ -6,6 +6,7 @@ import { starsEarned, titansAtTier } from './planet-tiers.ts';
 import { CHAPTERS, chapterAt } from './story.ts';
 import { FRIEND_CHAINS, PLANET_TALES, LEVEL_GIFT_STEP, levelGift, COLLECTION_TITLES, COLLECTION_KEEPSAKES, FISH_LOG_PAGES, FISH_LOG_TITLES, SIDE_TITLES, type SideChain } from './side-stories.ts';
 import { FISH } from './content.ts';
+import { earnTitles, isTitle } from './titles.ts';
 /** 2: 星灯りの村 (story.ts). */
 export const STORY_VERSION = 2;
 import { ENEMY_TYPES } from './enemy-types.ts';
@@ -44,8 +45,10 @@ export interface ProgressionState {
     storyVersion: number;
     /** Village rank 1–5: grows as the crystal's light returns (arc ends). */
     villageRank: number;
-    /** Titles earned from chapters, in order. */
+    /** Titles earned (story, side stories, long-term play: titles.ts), in order. */
     titles: string[];
+    /** The title worn under the name and above the explorer ('' for none). */
+    title: string;
     /** The last chapter whose Lumi opening was shown (-1: none yet). */
     lumiSeen: number;
     /** Side stories (side-stories.ts): the current step of each friend chain and planet tale, by "friend:id" / "tale:planet". */
@@ -158,7 +161,7 @@ const CHALLENGES: Record<string, {
     target: number;
     seconds: number;
 }> = { kill: { target: 4, seconds: 75 }, skill: { target: 8, seconds: 45 }, harvest: { target: 4, seconds: 100 }, fish: { target: 2, seconds: 120 }, boss: { target: 1, seconds: 150 } };
-export function createProgression(): ProgressionState { return { story: { index: 0, progress: 0 }, storyVersion: STORY_VERSION, villageRank: 1, titles: [], lumiSeen: -1, side: {}, gifts: [], collected: [], totals: {}, daily: { key: '', tasks: [], chest: false, rerolled: false }, weekly: { key: '', tasks: [], chest: false }, hourly: { key: '', tasks: [], chest: false }, orders: { next: 0, list: [] }, pass: { season: '', stars: 0, claimed: [] }, achievements: {}, login: { day: '', streak: 0 }, bounty: null, challenge: null, streak: 0, bestStreak: 0 }; }
+export function createProgression(): ProgressionState { return { story: { index: 0, progress: 0 }, storyVersion: STORY_VERSION, villageRank: 1, titles: [], title: '', lumiSeen: -1, side: {}, gifts: [], collected: [], totals: {}, daily: { key: '', tasks: [], chest: false, rerolled: false }, weekly: { key: '', tasks: [], chest: false }, hourly: { key: '', tasks: [], chest: false }, orders: { next: 0, list: [] }, pass: { season: '', stars: 0, claimed: [] }, achievements: {}, login: { day: '', streak: 0 }, bounty: null, challenge: null, streak: 0, bestStreak: 0 }; }
 function day(now: number) { return new Date(now).toISOString().slice(0, 10); }
 function week(now: number) { const d = new Date(now); d.setUTCDate(d.getUTCDate() - (d.getUTCDay() + 6) % 7); return d.toISOString().slice(0, 10); }
 function hash(text: string) { let value = 2166136261; for (const c of text)
@@ -180,6 +183,7 @@ export function refreshProgress(s: SaveState, now = Date.now()) {
     if (p.hourly.key !== hour)
         p.hourly = { key: hour, tasks: tasks(HOURLY, 4, hash(hour + 'h' + s.name), Math.floor(s.level / 10), s.level), chest: false };
     fillOrders(s, p.orders, xpNeeded);
+    for (const title of earnTitles(s, p.titles)) p.title ||= title;
     if (p.pass.season !== season)
         p.pass = { season, stars: 0, claimed: [] };
     const key = `${s.planet}:${Math.floor(now / 1800000)}`;
@@ -290,7 +294,10 @@ function giftReward(s: SaveState, level: number): Reward { const g = levelGift(l
 const fishSpecies = () => Object.values(FISH).filter(f => f.rarity !== 'junk').length;
 function collectionReward(s: SaveState, id: string): Reward { return { energy: 300 + s.level * 20, xp: Math.round(xpNeeded(s.level) * .25), items: { ...COLLECTION_KEEPSAKES[id], moonstone: 1 }, stars: 40 }; }
 function fishLogReward(s: SaveState, page: number): Reward { return { energy: 150 + s.level * 10 + page * 150, xp: Math.round(xpNeeded(s.level) * (.12 + page * .08)), items: page === 2 ? { deco_aquarium: 1, moonstone: 1 } : { worm: 10, starshard: 1 }, stars: 25 }; }
-const giveTitle = (p: ProgressionState, title?: string) => { if (title && !p.titles.includes(title)) p.titles.push(title); };
+/** A new title; worn at once when none is worn yet. */
+const giveTitle = (p: ProgressionState, title?: string) => { if (title && !p.titles.includes(title)) { p.titles.push(title); p.title ||= title; } };
+/** Wear a held title ('' takes it off). */
+export function wearTitle(s: SaveState, title: string) { const p = s.progression; if (title !== '' && !p.titles.includes(title)) return false; p.title = title; return true; }
 /** Unfinished side steps (for the bot's planner): the event or condition, the world it counts on, progress. */
 export function sideGoals(s: SaveState) {
     return openChains(s).flatMap(chain => { const at = sideState(s.progression, chain), st = chain.steps[at.step]; return st ? [{ key: chainKey(chain), event: st.event, condition: st.condition, planet: chain.planet, progress: st.condition ? condition(s, st.condition) : at.progress, target: st.target }] : []; }).filter(g => g.progress < g.target);
@@ -358,8 +365,7 @@ function closeChapter(p: ProgressionState, index: number) {
     const reward = CHAPTERS[at.chapter].reward;
     if (reward.villageRank)
         p.villageRank = Math.max(p.villageRank, reward.villageRank);
-    if (reward.title && !p.titles.includes(reward.title))
-        p.titles.push(reward.title);
+    giveTitle(p, reward.title);
 }
 /** Index of the first step of a chapter. */
 export function chapterStart(chapter: number) { return CHAPTERS.slice(0, chapter).reduce((n, c) => n + c.goals.length, 0); }
@@ -475,7 +481,8 @@ export function normalizeProgression(raw: unknown, s: SaveState): ProgressionSta
         p.story = { index: number(raw.story.index, 1e6), progress: number(raw.story.progress) };
     p.villageRank = Math.min(5, Math.max(1, number(raw.villageRank, 5)));
     if (Array.isArray(raw.titles))
-        p.titles = [...new Set(raw.titles.filter((v: unknown) => typeof v === 'string' && (CHAPTERS.some(c => c.reward.title === v) || SIDE_TITLES.includes(v))) as string[])];
+        p.titles = [...new Set(raw.titles.filter(isTitle))];
+    p.title = isTitle(raw.title) && p.titles.includes(raw.title) ? raw.title : '';
     if (record(raw.side))
         for (const [key, v] of Object.entries(raw.side)) { const chain = chainByKey(key); if (chain && record(v)) p.side[key] = { step: Math.min(number(v.step), chain.steps.length), progress: number(v.progress) }; }
     if (Array.isArray(raw.gifts))

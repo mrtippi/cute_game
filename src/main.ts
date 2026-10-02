@@ -4,6 +4,7 @@ import {bossTimesHtml,bossArrivals,questBoardHtml} from './hud-boards.ts';
 import {chapterLines,chapterHeading,lumiHtml} from './lumi.ts';
 import {CHAPTERS,type StoryLine} from './story.ts';
 import {decorationCap,villageRadius,villageRankFor,waitingLevel} from './village.ts';
+import {TITLES,RARITY_ORDER,rarityOf,titleHint} from './titles.ts';
 import './farm.css';
 import './joystick.css';
 import { FishingProof } from './fishing-proof.ts';
@@ -116,7 +117,7 @@ const app = $('#app');
 app.innerHTML = `
   <div id="darkness" hidden></div><div id="world-labels" aria-label="Nearby places"></div>
   <div id="hud" hidden>
-    <header class="player-card"><button class="avatar" data-action="bag" aria-label="Open character and backpack"><span>🌱</span><b id="level-badge">1</b></button><div class="player-details"><div class="player-name"><strong id="player-name"></strong><span id="level-text">Lv. 1</span></div><div class="meter health"><div id="hp-fill"></div><span id="hp-text">100 / 100</span></div><div class="meter experience"><div id="xp-fill"></div><span id="xp-text">EXP 0 / 32</span></div><div class="location"><span class="location-dot"></span><span id="zone-name">Clover Village</span></div></div></header>
+    <header class="player-card"><button class="avatar" data-action="bag" aria-label="Open character and backpack"><span>🌱</span><b id="level-badge">1</b></button><div class="player-details"><div class="player-name"><strong id="player-name"></strong><span id="level-text">Lv. 1</span></div><button id="player-title" class="title-tag" data-action="titles" hidden></button><div class="meter health"><div id="hp-fill"></div><span id="hp-text">100 / 100</span></div><div class="meter experience"><div id="xp-fill"></div><span id="xp-text">EXP 0 / 32</span></div><div class="location"><span class="location-dot"></span><span id="zone-name">Clover Village</span></div></div></header>
     <nav class="top-actions" aria-label="Game menu"><div class="energy"><span>ϟ</span><b id="energy">0</b></div><button class="icon-button" data-action="bag" title="Backpack · I" aria-label="Backpack">🎒</button><button class="icon-button" data-action="quests" title="Journal · J" aria-label="Quest journal">📖<i id="quest-dot"></i></button><div id="social-slot"></div><button class="icon-button secondary-icon" data-action="help" title="How to play" aria-label="How to play">?</button><button class="icon-button" data-action="settings" title="Settings" aria-label="Settings">⚙</button><div id="platform-slot"></div></nav>
     <div class="tracker-stack"><button id="tracker-chip" class="tracker-chip" data-action="trackers" aria-label="Show quest and bounty" hidden><span id="chip-quest">🥕 0/3</span><span id="chip-bounty">🎯</span><i>▸</i></button><div class="tracker-panels"><aside class="quest-tracker"><button class="tracker-fold" data-action="trackers" aria-label="Fold quest and bounty">▾ Fold</button><div class="eyebrow">ADVENTURE <span id="quest-chapter">1 / 9</span></div><button id="quest-summary" data-action="quests"><span class="quest-icon" id="quest-icon">🥕</span><span><strong id="quest-title">A little green beginning</strong><small id="quest-task">Harvest 3 crops · 0 / 3</small></span><b class="tracker-count" id="quest-count"></b><span class="chevron">›</span></button><div class="quest-progress"><i id="quest-fill"></i></div><button id="quick-claim" data-action="claim" hidden>Collect your reward ✨</button></aside>
     <button id="bounty-tracker" class="bounty-tracker" data-action="journal-tab" data-kind="bounties"><span>🎯</span><div><strong id="bounty-title">A new bounty</strong><small id="bounty-task">Find your next adventure</small></div><b class="tracker-count" id="bounty-count"></b></button><aside id="boss-times" class="hud-board boss-times" aria-live="polite" hidden></aside><aside id="quest-board" class="hud-board quest-board" hidden></aside></div><div id="buff-bar" aria-label="Active effects"></div><div class="quick-eat"><button id="quick-eat" class="idle" data-action="quick-eat" title="Eat · H" aria-label="Eat"><span id="quick-eat-icon" aria-hidden="true">🍽️</span><b id="quick-eat-count">0</b></button><button class="quick-eat-pick" data-action="quick-eat-pick" aria-label="Choose food" aria-expanded="false">▾</button><div id="quick-eat-menu" hidden></div></div></div><button class="minimap" data-action="map" aria-label="Open village map"><canvas id="minimap" width="150" height="150"></canvas><span>N</span><small id="map-caption">CLOVER VILLAGE</small></button>
@@ -273,13 +274,20 @@ function updateBoards(){
   const bosses=bossTimesHtml(world.enemies,world.position,t),board=questBoardHtml(state,t);
   $('#boss-times').hidden=!bosses;if(bosses)$('#boss-times').innerHTML=bosses;
   $('#quest-board').hidden=false;$('#quest-board').innerHTML=board;
+  // New titles from any source (claims, long-term play): announced once each.
+  const titles=state.progression.titles;if(titlesSeen<0)titlesSeen=titles.length;for(;titlesSeen<titles.length;titlesSeen++){const title=titles[titlesSeen];setTimeout(()=>toast(t('New title: {name}',{name:t(title)}),'🏅'),900);updateHud();}
 }
+let titlesSeen=-1;
+/** The worn title floats over the explorer, coloured by rarity (outdoors and in the cottage alike). */
+const titleFloat=document.createElement('div');titleFloat.className='title-float';titleFloat.hidden=true;$('#world-labels').append(titleFloat);
+frameListeners.add(()=>{const worn=started&&!visiting&&!flight?state.progression.title:'';if(!worn){titleFloat.hidden=true;return;}const p=world.screen(world.position.x,2.75,world.position.z);titleFloat.hidden=!p.visible;if(titleFloat.dataset.title!==worn){titleFloat.dataset.title=worn;titleFloat.dataset.rarity=rarityOf(worn);titleFloat.textContent=t(worn);}titleFloat.style.transform=`translate(${Math.round(p.x)}px,${Math.round(p.y)}px) translate(-50%,-100%)`;});
 function updateHud() {
   updateBoards();
   const known=new Set(world.state.discovered),discoveryCount=t('Discovered {count}/{total} planets',{count:known.size,total:Object.keys(M.PLANETS).length});
   $('#discovery-text').innerHTML=`<strong>🔭 ${esc(world.state.name)}</strong><span>${esc(discoveryCount)}</span><small aria-hidden="true">${Object.entries(M.PLANETS).map(([id,planet])=>known.has(id as M.PlanetId)?planet.icon:'🌑').join(' ')}</small>`;
   $('#discovery-progress').setAttribute('aria-label',`${world.state.name} · ${discoveryCount} · ${t('Discovery log')}`);
   $('#world').dataset.status=JSON.stringify({position:[+world.position.x.toFixed(2),+world.position.z.toFixed(2)],route:world.route.length,next:world.route[0]?[world.route[0].x,world.route[0].z]:null,visibility:document.visibilityState,modal,started,frameMs:Math.round(frameTime),drawCalls:world.renderer.info.render.calls});
+  {const worn=state.progression.title,tag=$('#player-title');tag.hidden=!worn||!!visiting;if(worn){tag.textContent=t(worn);tag.dataset.rarity=rarityOf(worn);}}
   $('#player-name').textContent=state.name;$('#level-badge').textContent=t(String(state.level));$('#level-text').textContent=t(`Lv. ${state.level}`);$('#energy').textContent=t(state.energy.toLocaleString());
   $('#hp-fill').style.width=`${state.hp/M.maxHp(state)*100}%`;$('#hp-text').textContent=t(`${Math.ceil(state.hp)} / ${M.maxHp(state)}`);$('#xp-fill').style.width=`${state.xp/M.xpNeeded(state.level)*100}%`;
   updateQuickEat();
@@ -849,7 +857,7 @@ void fishKit.load().then(()=>{if(fishKit.ready&&!fishGame)stockPonds();});
 // Gear and pet files load on demand as the explorer puts them on (see World.kitFor).
 void heroKit.load().then(()=>{if(heroKit.ready)world.refreshAvatars();});
 // The cottage interior (house-ui.ts): the door, walking in and out, friends and their Dress panel.
-const house=initHouse({world,started:()=>started,visiting:()=>!!visiting,blocked:uiBlocked,perform:(type,payload)=>perform(type,payload),openDialog,closeDialog,modal:()=>modal,toast,tone:kind=>tone(kind as Parameters<typeof tone>[0]),ownGear:inventory,iconUrl:id=>`${ICON_BASE}items/${id}.webp`});
+const house=initHouse({world,titles:()=>titlesDialog(),started:()=>started,visiting:()=>!!visiting,blocked:uiBlocked,perform:(type,payload)=>perform(type,payload),openDialog,closeDialog,modal:()=>modal,toast,tone:kind=>tone(kind as Parameters<typeof tone>[0]),ownGear:inventory,iconUrl:id=>`${ICON_BASE}items/${id}.webp`});
 frameListeners.add(dt=>house.frame(dt));
 world.onInteract=async(e)=>{
   if(!started||uiBlocked())return;tone();if(house.interact(e))return;if(visiting&&e.kind!=='travel'&&e.kind!=='plot'){toast('Enjoy looking around. Your own garden is waiting at home.','🌷');return;}const env=world.interactEnvironment(e);if(env){if(env.message)toast(env.message);save();updateHud();if(env.openCrafting){craftStation='forge';crafting();}return;}
@@ -1010,6 +1018,16 @@ function resetCombat(){combat.reset();combatTimers.reset();combatView.clear();wo
 
 /** The fence moves out to the new rank's radius: rebuild home in place, with a burst at the crystal (village.ts). */
 function growVillage(){if(visiting||state.planet!=='home'||world.planet!=='home')return;const position=world.position.clone();world.build('home');world.refreshPlayer();world.position.copy(position);world.refreshPlayer();minimap.invalidate();const crystal=world.entities.find(e=>e.kind==='upgrade');if(crystal){world.fx?.ring({x:crystal.x,z:crystal.z},{color:'#8ef6ff',to:villageRadius(villageRankFor(state)),life:1.6});world.fx?.burst({x:crystal.x,z:crystal.z},{n:40,color:['#8ef6ff','#d68cff','#ffffff'],glow:true,speed:6,up:10,y:1.6});}tone('level');}
+/**
+ * The title board (titles.ts): the worn title on top, then every title by rarity, rainbow first. Held ones can be
+ * worn; locked ones say how they are earned. Opened from the HUD title tag and the attic's board.
+ */
+function titlesDialog(){
+  const held=new Set(state.progression.titles),worn=state.progression.title;
+  const rows=[...RARITY_ORDER].reverse().flatMap(r=>Object.keys(TITLES).filter(title=>TITLES[title]===r).sort((a,b)=>Number(held.has(b))-Number(held.has(a)))).map(title=>{const own=held.has(title),[hint,params]=titleHint(title);
+    return `<div class="title-row ${own?'':'locked'}" data-rarity="${rarityOf(title)}"><span class="title-medal ${own?'':'locked'}" aria-hidden="true">${own?'':'🔒'}</span><div><strong>${esc(own?t(title):'？？？')}</strong><small>${esc(t(hint,params))}</small></div>${own?`<button class="${worn===title?'soft-button':'primary'}" data-action="wear-title" data-id="${esc(title)}" ${worn===title?'disabled':''}>${worn===title?t('Worn'):t('Wear')}</button>`:''}</div>`;}).join('');
+  openDialog('titles','Titles',`<p class="intro">${esc(t('{count} of {total} titles earned.',{count:held.size,total:Object.keys(TITLES).length}))}</p>${worn?`<div class="button-row"><button class="soft-button" data-action="wear-title" data-id="">${t('Take off')}</button></div>`:''}<div class="title-list">${rows}</div>`,'THE TITLE BOARD','🏅');
+}
 function rebuildHomePresentation(planet:M.PlanetId){
   const shared=network.role&&world.planet===planet, enemies=shared?world.enemySnapshots():null,environment=shared?world.environmentSnapshot():null;
   world.build(planet);if(enemies)world.applyEnemySnapshots(enemies);if(environment)world.applyEnvironmentSnapshot(environment);
@@ -1166,10 +1184,11 @@ app.addEventListener('click',async event=>{
     case 'claim':{const before=storyChapter(),rank=villageRankFor(state),earned=state.progression.villageRank,titles=state.progression.titles.length;if(await perform('claimQuest')){tone('success');toast('A little milestone. A lovely reward!','🎁');const after=storyChapter();
       if(villageRankFor(state)>rank){setTimeout(()=>toast(t('The crystal shines brighter! Village rank {count}',{count:villageRankFor(state)}),'💠'),900);growVillage();}
       else if(state.progression.villageRank>earned)setTimeout(()=>toast(t('The crystal is ready to grow the village at level {level}.',{level:waitingLevel(state)??0}),'💠'),900);
-      if(state.progression.titles.length>titles)setTimeout(()=>toast(t('New title: {name}',{name:t(state.progression.titles.at(-1)!)}),'🏅'),1600);
       if(after!==before){sayLumi(chapterLines(before,after),after);void perform('lumiSeen',{index:after});}
       if(modal)quests();}break;}
     case 'lumi-next':lumiQueue.shift();showLumi();break;
+    case 'titles':titlesDialog();break;
+    case 'wear-title':if(await perform('wearTitle',{id:button.dataset.id??''})){tone('pop');updateHud();}titlesDialog();break;
     case 'lumi-replay':{const chapter=storyChapter();if(CHAPTERS[chapter]){closeDialog();lumiQueue=[];sayLumi(CHAPTERS[chapter].intro,chapter);}break;}
     case 'plant':{const i=activePlot,opened=modal,root=world.root;if(await perform('plant',{index:i,id})&&world.root===root&&!visiting){plantBurst(i);tone('pop');world.syncCrops();if(modal===opened&&activePlot===i)closeDialog();toast(`${t(M.CROPS[id as M.CropId].name)} planted. Let the sunshine do its thing.`,'🌱');}break;}
     case 'cook-one':case 'cook-all':if(await perform('cook',{id,count:action==='cook-all'?(state.bag[id]||0):1})){tone('success');cooking();}break;
@@ -1191,7 +1210,6 @@ app.addEventListener('click',async event=>{
     case 'start-challenge':if(await perform('startChallenge',{kind:button.dataset.kind})){quests();toast('Quick challenge started!','⏱️');}break;
     case 'reroll-daily':await perform('rerollDaily',{index});quests();break;
     case 'progress-claim':{const titles=state.progression.titles.length,claimKind=button.dataset.kind,claimId=button.dataset.id??'';if(await perform('claimProgress',{kind:claimKind,id:claimId})){tone('success');toast('Reward collected.','🎁');
-      if(state.progression.titles.length>titles)setTimeout(()=>toast(t('New title: {name}',{name:t(state.progression.titles.at(-1)!)}),'🏅'),900);
       // A side step opened: its friend (or Lumi) says a word about it.
       if(claimKind==='side'&&!claimId.startsWith('gift:')){const key=claimId.split(':').slice(0,2).join(':'),line=sideLine(state,key);if(line)sayLumi([line],storyChapter(),sideHeading(key));}}
       quests();break;}

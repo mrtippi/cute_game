@@ -8,7 +8,7 @@ import * as T from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { KitLibrary, heroKit, wearKit, weaponKit, petKit } from './assets.ts';
 import { toonMaterial } from './toon.ts';
-import { FURNITURE, FRIEND_SPOTS, HOUSE, ROOMS, WALL, WALLS, roomAt, type Placement } from './house.ts';
+import { FURNITURE, FRIEND_SPOTS, HOUSE, ROOMS, WALL, WALLS, ATTIC, ATTIC_WALLS, ATTIC_FURNITURE, TROPHY_SPOTS, roomAt, type Placement } from './house.ts';
 import { buildFriend } from './friend-view.ts';
 import { FRIENDS, type Friend, type FriendId } from './friends.ts';
 
@@ -63,6 +63,26 @@ export function shellPieces(): T.BufferGeometry[] {
   }
   return out;
 }
+/** The attic memory room (house.ts ATTIC): its floor, walls, trophy pedestals and the shelf above them. */
+export function atticPieces(): T.BufferGeometry[] {
+  const out: T.BufferGeometry[] = [], r = ATTIC.rect, w = r.x1 - r.x0, d = r.z1 - r.z0, half = WALL.thick / 2;
+  out.push(slab(w + .6, .5, d + .6, (r.x0 + r.x1) / 2, -.33, (r.z0 + r.z1) / 2, BASE));
+  const n = Math.round(d / .5); for (let i = 0; i < n; i++) out.push(slab(w, .08, d / n, (r.x0 + r.x1) / 2, -.04, r.z0 + (i + .5) * d / n, ATTIC.floor[i % 2]));
+  for (const wall of ATTIC_WALLS) {
+    const mid = (wall.from + wall.to) / 2, len = wall.to - wall.from, h = wall.height;
+    for (const side of [-1, 1]) {
+      const inward = wall.axis === 'x' ? (wall.at + side * .4 > r.z0 && wall.at + side * .4 < r.z1) : (wall.at + side * .4 > r.x0 && wall.at + side * .4 < r.x1), hex = inward ? ATTIC.wall : EXTERIOR;
+      out.push(wall.axis === 'x' ? slab(len, h, half, mid, h / 2, wall.at + side * half / 2, hex) : slab(half, h, len, wall.at + side * half / 2, h / 2, mid, hex));
+    }
+    out.push(wall.axis === 'x' ? slab(len + .04, .08, WALL.thick + .08, mid, h + .04, wall.at, TRIM) : slab(WALL.thick + .08, .08, len + .04, wall.at, h + .04, mid, TRIM));
+  }
+  // A pedestal (with a darker cap) under each cup, a wooden plaque on the wall for each medal.
+  for (const s of TROPHY_SPOTS) {
+    if (s.y < 1) { out.push(slab(.48, s.y - .04, .48, s.x, (s.y - .04) / 2, s.z, '#f3e2c4'), slab(.54, .05, .54, s.x, s.y - .025, s.z, TRIM)); continue; }
+    const across = s.face ? [.06, .66, .56] : [.56, .66, .06]; out.push(slab(across[0], across[1], across[2], s.x, s.y - .05, s.z, '#8a5530'));
+  }
+  return out;
+}
 /** Stand-in boxes for furniture before the kit arrives. */
 function fallbackPiece(p: Placement): { plain: T.BufferGeometry[]; glow: T.BufferGeometry[] } {
   const m = placementMatrix(p), hues: Record<string, string> = { sofa: '#24b3b0', armchair: '#ffc23a', bed: '#f2668e', fireplace: '#cf5b3e', bookshelf: '#c77a3a', wardrobe: '#a98bff', fridge: '#6ccbff', bathtub: '#f2f8ff' };
@@ -101,8 +121,8 @@ export class HouseView {
   build() {
     for (const mesh of this.statics) { this.root.remove(mesh); mesh.geometry.dispose(); }
     this.statics = [];
-    const kit = houseKit.ready ? houseKit : null, plain: T.BufferGeometry[] = shellPieces(), glow: T.BufferGeometry[] = [];
-    for (const p of FURNITURE) {
+    const kit = houseKit.ready ? houseKit : null, plain: T.BufferGeometry[] = [...shellPieces(), ...atticPieces()], glow: T.BufferGeometry[] = [];
+    for (const p of [...FURNITURE, ...ATTIC_FURNITURE]) {
       const parts = kit?.parts(p.kit);
       if (!parts) { const f = fallbackPiece(p); plain.push(...f.plain); glow.push(...f.glow); continue; }
       const m = placementMatrix(p);

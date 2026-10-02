@@ -3,6 +3,7 @@ import { mkdirSync, appendFileSync, writeFileSync } from 'node:fs';
 import { parseArgs } from 'node:util';
 import { createRng } from './lib/rng.mjs';
 import { openSession } from './lib/session.mjs';
+import { wearTitle } from './tasks/titles.mjs';
 import { createPlanner } from './planner.mjs';
 import { dress } from './tasks/wardrobe.mjs';
 
@@ -26,6 +27,7 @@ const minutesLeft = () => (deadline - Date.now()) / 60000;
 let s = await game.snap();
 note(`start · Lv.${s.level} · ϟ${s.energy} · ${s.planet}${opt.theme ? ' · theme ' + opt.theme : ''}`, 'session');
 if (opt.theme) log('dress → ' + await dress(bot, opt.theme).catch(e => e.message));
+log('title → ' + await wearTitle(bot, opt.theme ?? 'fancy').catch(e => e.message));
 
 const planner = createPlanner(bot, { minutesLeft });
 while (Date.now() < deadline) {
