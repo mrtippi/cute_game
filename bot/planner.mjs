@@ -9,11 +9,13 @@ import { cook, craftSomething, forgeOnce, tendAnimals, harpoonHunt, mine, fertil
 import { travelTo, goHome, nextPlanet } from './tasks/travel.mjs';
 import { flourish } from './tasks/flourish.mjs';
 import { huntBoss, huntable } from './tasks/boss.mjs';
+import { gearGoal, huntTypes, gatherForGoal, buyWeapon } from './tasks/gear.mjs';
+import { quickChallenge, tidyChest, sightsee } from './tasks/routine.mjs';
 import { collectCosmetic, craftCosmetic, dress, ACTIVITY_THEME } from './tasks/wardrobe.mjs';
 
 /** Which activities move a quest event forward. */
 const EVENT_TASKS = {
-  kill: ['fight'], bounty: ['fight'], skill: ['fight'], chal: ['fight'], hawk: ['fight'], boss: ['boss'], titan: ['boss'], tierUp: ['boss', 'fight', 'travel'],
+  kill: ['fight'], bounty: ['fight'], skill: ['fight'], chal: ['challenge', 'fight'], hawk: ['fight'], boss: ['boss'], titan: ['boss'], tierUp: ['boss', 'fight', 'travel'],
   harvest: ['garden'], fruit: ['garden'], expand: [], fertilize: ['fertilize'],
   sell: ['market'], cook: ['cook'], craft: ['craft', 'shop'], upgrade: ['crystal'],
   fish: ['fishing', 'harpoon'], fishrare: ['fishing'], legendFish: ['fishing'], mystery: ['fishing'], harpoon: ['harpoon'],
@@ -30,7 +32,8 @@ export function createPlanner(bot, { minutesLeft }) {
   const rest = (name, ms) => { until[name] = Date.now() + ms; };
   const ready = name => !(until[name] > Date.now());
   const ago = name => Date.now() - (lastRun[name] ?? 0);
-  let awaySince = 0;
+  let awaySince = 0, awayFor = 300000, gearAt = 0, idleAt = 0;
+  const mealsIn = s => count(s.bag, id => id.startsWith('cooked_'));
 
   /** Every activity: when it makes sense, how to do it, and how long to leave it after. */
   const TASKS = {
@@ -39,23 +42,31 @@ export function createPlanner(bot, { minutesLeft }) {
     cook: { can: s => s.planet === 'home' && count(s.bag, id => CROPS.test(id) || id.startsWith('fish_')) >= 4, run: () => cook(bot, { kinds: rng.int(1, 3) }), cool: 300000, base: 2 },
     market: { can: s => s.planet === 'home' && (s.orders.some(o => o.have >= o.count) || count(s.bag, id => CROPS.test(id) || id.startsWith('fish_')) >= 5), run: () => sellProduce(bot), cool: 120000, base: 3 },
     shop: { can: s => s.planet === 'home' && s.energy >= 60, run: () => upgradeWeapon(bot), cool: 420000, base: 1 },
-    crystal: { can: s => s.planet === 'home' && s.energy >= 150, run: () => crystalUpgrade(bot, { times: rng.int(1, 2) }), cool: 300000, base: 2 },
+    // Spare energy goes into the crystal: more upgrades per visit the richer the explorer is.
+    crystal: { can: s => s.planet === 'home' && s.energy >= 150, run: s => crystalUpgrade(bot, { times: s.energy > 2000 ? 4 : s.energy > 800 ? 3 : 2 }), cool: 240000, base: 2, boost: s => s.energy > 1000 ? 4 : s.energy > 500 ? 2 : 0 },
+    // A stronger weapon: buy it as soon as the materials are in the bag, otherwise hunt what drops them.
+    gearBuy: { can: s => s.planet === 'home' && !!bot.gear && !Object.keys(bot.gear.missing).length && s.energy >= bot.gear.price, run: async () => { const r = await buyWeapon(bot, bot.gear.id); bot.gear = null; gearAt = 0; return r; }, cool: 60000, base: 9 },
+    gather: { can: s => !!bot.gear && huntTypes(bot.gear, s).length > 0, run: () => gatherForGoal(bot, { goal: bot.gear }), cool: 120000, base: 4, limit: 300000 },
+    challenge: { can: s => s.level >= 2 && !s.space, run: () => quickChallenge(bot), cool: 600000, base: 2 },
+    tidy: { can: s => s.planet === 'home', run: () => tidyChest(bot), cool: 900000, base: 1 },
+    sightsee: { can: () => true, run: () => sightsee(bot), cool: 420000, base: 1.5 },
     animals: { can: s => s.planet === 'home' && (!s.farm.built ? s.energy >= 80 : s.farm.ready > 0 || (s.energy > 250 && s.farm.animals < 8)), run: () => tendAnimals(bot), cool: 240000, base: 2 },
     fishing: { can: s => s.planet === 'home' && (hasRod(s) || s.energy >= 30), run: async s => hasRod(s) ? goFishing(bot, { count: rng.int(2, 4), timeout: 240000 }) : buyRod(bot), cool: 180000, base: 2 },
     harpoon: { can: s => s.planet === 'home' && (s.bag.harpoon > 0 || s.gear.weapon === 'harpoon'), run: () => harpoonHunt(bot, { throws: rng.int(4, 7) }), cool: 300000, base: 0 },
-    forge: { can: s => s.planet === 'home' && s.level >= 6, run: () => forgeOnce(bot), cool: 600000, base: 0 },
+    forge: { can: s => s.planet === 'home' && s.level >= 6, run: () => forgeOnce(bot), cool: 300000, base: 0, boost: s => s.energy > 1500 ? 3 : 0 },
     // A new look comes first at the workshop; otherwise any recipe the bag allows.
     craft: { can: s => s.planet === 'home', run: async () => { const r = await craftCosmetic(bot); return r.startsWith('crafted') ? r : craftSomething(bot); }, cool: 600000, base: 0 },
     wardrobe: { can: s => s.planet === 'home' && s.energy >= 400, run: () => collectCosmetic(bot, { theme: bot.theme }), cool: 600000, base: 2 },
-    fight: { can: s => safeTargets(s, { range: s.planet === 'home' ? 30 : 70 }).length > 0, run: s => fight(bot, { count: rng.int(2, 4), type: s.bounty && s.bounty.progress < s.bounty.target ? s.bounty.type : undefined, range: s.planet === 'home' ? 30 : 70, timeout: 150000 }), cool: 20000, base: 4 },
-    travel: { can: s => s.planet === 'home' && s.level >= 4 && s.energy >= 30 && minutesLeft() > 12 && !!nextPlanet(s, rng), run: async s => { const r = await travelTo(bot, nextPlanet(s, rng)); if (r.startsWith('landed')) awaySince = Date.now(); return r; }, cool: 900000, base: 1, limit: 300000 },
+    fight: { can: s => (s.hp >= s.maxHp * .7 || mealsIn(s) > 0 || s.planet === 'home') && safeTargets(s, { range: s.planet === 'home' ? 30 : 70 }).length > 0, run: s => fight(bot, { count: rng.int(2, 4), type: s.bounty && s.bounty.progress < s.bounty.target ? s.bounty.type : undefined, range: s.planet === 'home' ? 30 : 70, timeout: 150000 }), cool: 20000, base: 4 },
+    travel: { can: s => s.planet === 'home' && s.level >= 4 && s.energy >= 30 && minutesLeft() > 12 && !!nextPlanet(s, rng), run: async s => { const r = await travelTo(bot, nextPlanet(s, rng)); if (r.startsWith('landed')) { awaySince = Date.now(); awayFor = rng.between(240000, 420000); } return r; }, cool: 900000, base: 1, limit: 300000 },
     mine: { can: s => s.planet !== 'home' && s.entities.some(e => e.kind === 'mine' && e.d < 80), run: () => mine(bot, { count: rng.int(2, 4) }), cool: 120000, base: 3 },
     // A bed pays for itself in minutes; keep a cushion of energy for food and repairs.
     expand: { can: s => s.planet === 'home' && s.plots.length < 33 && s.energy >= 300, run: () => expandGarden(bot), cool: 240000, base: 3 },
     // A boss the explorer can beat, with food in the bag: the highlight of a session.
     boss: { can: s => huntable(s).length > 0, run: () => huntBoss(bot), cool: 180000, base: 3, limit: 300000 },
     browse: { can: () => true, run: () => flourish(bot), cool: 150000, base: 1.5 },
-    home: { can: s => s.planet !== 'home' && (Date.now() - awaySince > rng.between(240000, 480000) || minutesLeft() < 6), run: () => goHome(bot), cool: 60000, base: 20 },
+    // Back home when the stay is up, the session ends soon, or the explorer is hurt with no food left.
+    home: { can: s => s.planet !== 'home' && (Date.now() - awaySince > awayFor || minutesLeft() < 6 || !mealsIn(s) && s.hp < s.maxHp * .8), run: () => goHome(bot), cool: 60000, base: 20 },
   };
 
   /** Points from what the journal asks for right now. */
@@ -99,12 +110,19 @@ export function createPlanner(bot, { minutesLeft }) {
     if (s.dropped && s.planet === 'home' && s.hp >= s.maxHp * .9 && ready('bag')) { if (await recoverBag(bot)) return 'picked up the bag'; rest('bag', 240000); }
     if (ago('claim') > 90000 && (await claimable(game)).length) { lastRun.claim = Date.now(); return 'rewards → ' + await claimRewards(bot); }
 
+    // The weapon goal is worked out again every few minutes (energy and materials change).
+    if (Date.now() - gearAt > 180000) { gearAt = Date.now(); bot.gear = await gearGoal(bot).catch(() => null); if (bot.gear) log(`gear goal: ${bot.gear.id} (ATK ${bot.gear.attack}), missing ${JSON.stringify(Object.fromEntries(Object.entries(bot.gear.missing).map(([k, v]) => [k, v.short])))}`); }
     const { score } = await needs();
     const options = Object.entries(TASKS).filter(([name, t]) => ready(name) && t.can(s)).map(([name, t]) => {
       const variety = Math.min(1, ago(name) / 600000);   // recently done → less appealing
-      return { name, t, value: t.base + (score[name] ?? 0) * 1.5 + variety * 2 + rng.between(0, 2) };
+      return { name, t, value: t.base + (t.boost?.(s) ?? 0) + (score[name] ?? 0) * 1.5 + variety * 2 + rng.between(0, 2) };
     }).sort((a, b) => b.value - a.value);
-    if (!options.length) return null;
+    if (!options.length) {
+      // Nothing to do on another world: fly home rather than stand around.
+      if (s.planet !== 'home') return 'home → ' + await goHome(bot);
+      if (Date.now() - idleAt > 30000) { idleAt = Date.now(); log('idle: nothing worth doing right now'); }
+      return null;
+    }
     const top = options.slice(0, 3), total = top.reduce((n, o) => n + o.value, 0);
     let draw = rng.between(0, total), pick = top[0];
     for (const o of top) { draw -= o.value; if (draw <= 0) { pick = o; break; } }

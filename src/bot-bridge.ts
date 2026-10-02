@@ -3,7 +3,7 @@ import type { World, Entity, Enemy } from './world.ts';
 import type { SpaceFlight } from './space.ts';
 import { STAR_MAP } from './space.ts';
 import { Vector3, type Camera } from 'three';
-import { cropProgress, maxHp, readyAnimals, attack, defense, looseQuantity, CROPS, ITEMS, RECIPES } from './model.ts';
+import { cropProgress, maxHp, readyAnimals, attack, defense, looseQuantity, CROPS, ITEMS, RECIPES, LOOT_TABLES, PLANETS } from './model.ts';
 import { progressEntries, refreshProgress, storyStep, TASK_SPECS, type ProgressKind } from './progression.ts';
 
 /**
@@ -99,7 +99,18 @@ export function installBotBridge(src: BotSources) {
     /** A healing food in the bag, which the quick-eat button (H) would use. */
     healingFood() { const s = src.state(); return Object.keys(s.bag).find(id => (s.bag[id] ?? 0) > 0 && (ITEMS[id]?.heal ?? 0) > 0 && ITEMS[id]?.type !== 'material') ?? null; },
     /** Shop facts for the given items: price, level, slot and the attack/defense they give. */
-    items(ids: string[]) { return Object.fromEntries(ids.filter(id => ITEMS[id]).map(id => { const i = ITEMS[id]; return [id, { price: i.price ?? 0, weapon: i.weapon?.kind ?? null, slot: i.slot ?? null, type: i.type, attack: i.attack ?? 0, defense: i.defense ?? 0, heal: i.heal ?? 0 }]; })); },
+    items(ids: string[]) { return Object.fromEntries(ids.filter(id => ITEMS[id]).map(id => { const i = ITEMS[id]; return [id, { price: i.price ?? 0, weapon: i.weapon?.kind ?? null, slot: i.slot ?? null, type: i.type, attack: i.attack ?? 0, defense: i.defense ?? 0, heal: i.heal ?? 0, materials: { ...(i.materials ?? {}) } }]; })); },
+    /** Every weapon the outfitters sell: price, attack and the materials it also needs. */
+    weapons() { return Object.entries(ITEMS).filter(([, i]) => i.slot === 'weapon' && i.price && i.weapon?.kind !== 'rod').map(([id, i]) => ({ id, price: i.price ?? 0, attack: i.attack ?? 0, kind: i.weapon?.kind ?? null, materials: { ...(i.materials ?? {}) } })); },
+    /** Where materials come from: the creatures that drop each one (with chance) and the worlds they live on. */
+    lootSources(ids: string[]) {
+      const out: Record<string, { type: string; chance: number; planets: string[] }[]> = {};
+      for (const [type, table] of Object.entries(LOOT_TABLES)) for (const [id, chance] of table) if (ids.includes(id))
+        (out[id] ??= []).push({ type, chance, planets: Object.entries(PLANETS).filter(([, p]) => p.spawns.some(([t]) => t === type) || p.bosses.includes(type)).map(([pid]) => pid) });
+      return out;
+    },
+    /** Whether the explorer could stand at this ground point (rocks, trees, water and buildings block it). */
+    blocked(x: number, z: number) { return src.world().blocked(x, z); },
     /** Workshop recipes by their button index, with what they make. */
     recipes() { return RECIPES.map((r, index) => ({ index, result: r.result, slot: ITEMS[r.result]?.slot ?? null })); },
     /** A copy of the save, for the bot's daily backup. */

@@ -1,6 +1,7 @@
 // Fighting the way a careful player does: only creatures it can beat, skills when ready, back off
 // early, and get up again after a fall.
-import { dodge, dangersOf, inDanger } from '../lib/dodge.mjs';
+import { dodge, dangersOf, inDanger, unstick } from '../lib/dodge.mjs';
+import { pickSkill, useSkill, densest, gatherPack, around, burst } from '../lib/skills.mjs';
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
 
 /**
@@ -12,7 +13,9 @@ export function fightCost(s, e) {
   const seconds = e.hp / dps;
   const hurt = Math.max(1, e.damage - s.defense * .5) / Math.max(.6, e.cooldown + .4);
   const crowd = s.enemies.filter(o => o.id !== e.id && Math.hypot(o.x - e.x, o.z - e.z) < 6).length;
-  return seconds * hurt * (1 + crowd * .8);
+  // Area skills (Q, E) ready: a crowd dies together, so it costs much less than fighting each one in turn.
+  const aoe = (s.cooldowns?.[0] ?? 1) <= 0 || (s.cooldowns?.[2] ?? 1) <= 0;
+  return seconds * hurt * (1 + crowd * (aoe ? .35 : .8));
 }
 /** Species that made the explorer back off recently are left alone for a while, as a player learns. */
 const wary = new Map();
@@ -106,13 +109,20 @@ export async function fight(bot, { count = 3, type, timeout = 180000, range = 30
   while (kills < count && Date.now() < end) {
     let s = await game.snap();
     if (await handleFall(bot)) return `knocked out after ${kills}`;
-    if (s.hp < s.maxHp * .7) { await recover(bot); continue; }
+    // Hurt: recover first. If that could not help (no food, no cottage on this world), stop rather than loop.
+    if (s.hp < s.maxHp * .7) { const before = s.hp; await recover(bot); if ((await game.snap()).hp <= before + 1) { log('fight: too hurt to fight, no way to heal here'); return `kills ${kills}, too hurt`; } continue; }
     if (inside(s)) { if (!await leaveHouse(bot)) return `stuck indoors after ${kills}`; continue; }
     const usable = list => list.filter(e => !(unreachable.get(e.id) > Date.now()));
     // Finish what was started: the creature fought before a rest comes first, then any wounded one.
     const wounded = list => [...list].sort((a, b) => Number(b.hp < b.maxHp) - Number(a.hp < a.maxHp));
     const remembered = focus && s.enemies.find(e => e.id === focus && e.d < range + 25);
-    const target = remembered ?? wounded(usable(safeTargets(s, { type, range })))[0] ?? (type ? wounded(usable(safeTargets(s, { range })))[0] : undefined);
+    let target = remembered ?? wounded(usable(safeTargets(s, { type, range })))[0] ?? (type ? wounded(usable(safeTargets(s, { range })))[0] : undefined);
+    // With Q or E ready and health to spare, go for where the creatures stand thickest and gather them first.
+    const aoeReady = s.cooldowns[0] <= 0 || s.cooldowns[2] <= 0;
+    if (!remembered && !type && aoeReady && s.hp > s.maxHp * .7) {
+      const pack = densest(s, usable(safeTargets(s, { range })));
+      if (pack && pack.crowd >= 3) { target = pack.e; if (await gatherPack(bot, { pack: pack.e })) { log(`fight: gathered a pack of ${around(await game.snap(), 4.4).length}`); await burst(bot); } }
+    }
     if (!target) { log('fight: nothing safe to fight'); break; }
     const id = target.id; let engaged = false, reroutes = 0; focus = id;
     // Progress watch: the creature losing health or the explorer closing in. A quiet spell means stuck.
@@ -130,6 +140,8 @@ export async function fight(bot, { count = 3, type, timeout = 180000, range = 30
       if (e.hp < best.hp - .5 || e.d < best.d - .8) best = { hp: Math.min(best.hp, e.hp), d: Math.min(best.d, e.d), at: Date.now() };
       else if (Date.now() - best.at > 6000) {
         // Not getting closer: take the game's route around (the gate, past the trees) before giving up.
+        // First step clear of whatever holds the explorer (a rock among creatures), then try the game's route.
+        if (reroutes === 0) await unstick(bot);
         if (reroutes++ < 3) { log(`fight: rerouting to ${target.name}`); await game.stepToward(e.x, e.z, s); best.at = Date.now(); engaged = false; await new Promise(r => setTimeout(r, rng.between(600, 1000))); continue; }
         log(`fight: cannot reach ${target.name}, trying another`); unreachable.set(id, Date.now() + 60000); focus = null; break;
       }
@@ -143,9 +155,9 @@ export async function fight(bot, { count = 3, type, timeout = 180000, range = 30
         else { await game.stepToward(e.x, e.z, s); await new Promise(r => setTimeout(r, rng.between(500, 900))); }
         continue;
       }
-      // In reach the explorer swings by itself; add a skill when one is ready, like a player would.
-      const ready = s.cooldowns.map((c, i) => c <= 0 ? i : -1).filter(i => i >= 0);
-      if (ready.length && rng.chance(.5)) { await hands.press(['q', 'w', 'e', 'r'][rng.pick(ready)]); await new Promise(r => setTimeout(r, rng.between(250, 600))); }
+      // In reach the explorer swings by itself; spend skills where they hit the most creatures.
+      const skill = pickSkill(s, { swordish: /sword|hammer|scythe/.test(s.gear.weapon ?? ''), target: e });
+      if (skill >= 0) await useSkill(bot, skill);
       else if (rng.chance(.3)) { await hands.press(' '); await new Promise(r => setTimeout(r, rng.between(200, 450))); }
       else await new Promise(r => setTimeout(r, rng.between(250, 500)));
     }

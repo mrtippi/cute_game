@@ -4,6 +4,7 @@
 import { fightCost, recover, collectLoot } from './combat.mjs';
 import { dress } from './wardrobe.mjs';
 import { dodge, dangersOf, inDanger } from '../lib/dodge.mjs';
+import { pickSkill, useSkill } from '../lib/skills.mjs';
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
 
 const foodCount = s => Object.entries(s.bag).filter(([id]) => id.startsWith('cooked_') || ['potion', 'honey', 'omelette', 'pancake', 'milkshake', 'cheese'].includes(id)).reduce((n, [, c]) => n + c, 0);
@@ -65,8 +66,9 @@ export async function huntBoss(bot, { id, timeout = 240000 } = {}) {
       else await game.stepToward(boss.x, boss.z, s);
       await sleep(rng.between(300, 600)); continue;
     }
-    const ready = s.cooldowns.map((c, i) => c <= 0 ? i : -1).filter(i => i >= 0);
-    if (ready.length && rng.chance(.6)) await hands.press(['q', 'w', 'e', 'r'][rng.pick(ready)]);
+    // Spin and slam on the boss (and anything with it); the special whenever ready.
+    const skill = pickSkill(s, { swordish: /sword|hammer|scythe/.test(s.gear.weapon ?? ''), target: boss });
+    if (skill >= 0) await useSkill(bot, skill);
     else if (rng.chance(.4)) await hands.press(' ');
     await sleep(rng.between(90, 160));
   }
