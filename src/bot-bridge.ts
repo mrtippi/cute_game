@@ -5,6 +5,7 @@ import { STAR_MAP } from './space.ts';
 import { Vector3, type Camera } from 'three';
 import { cropProgress, maxHp, readyAnimals, attack, defense, looseQuantity, CROPS, ITEMS, RECIPES, LOOT_TABLES, PLANETS } from './model.ts';
 import { progressEntries, refreshProgress, storyStep, TASK_SPECS, type ProgressKind } from './progression.ts';
+import { ORCHARD_TREES, orchardReady, villageRankFor } from './village.ts';
 
 /**
  * A read-only window for the auto-play bot (bot/), enabled only by `?bot` in the page URL.
@@ -76,6 +77,10 @@ export function installBotBridge(src: BotSources) {
         space: space(),
         orders: (s.progression.orders?.list ?? []).map((o, index) => ({ index, item: o.item, count: o.count, have: looseQuantity(s, o.item), type: ITEMS[o.item]?.type ?? null, energy: o.energy })),
         drops: src.drops().map(d => ({ x: round(d.x), z: round(d.z), item: d.item, count: d.count, age: round(d.age), d: round(Math.hypot(d.x - src.world().position.x, d.z - src.world().position.z)) })).sort((a, b) => a.d - b.d).slice(0, 12),
+        // The story: Lumi's line on screen (null when the box is closed), friends home, the village rank.
+        lumi: (() => { const box = document.getElementById('lumi'); return box && !box.hidden ? box.querySelector('.lumi-text p')?.textContent ?? '' : null; })(),
+        friends: (s.friends ?? []).map(f => f.id), villageRank: villageRankFor(s),
+        orchard: s.planet === 'home' ? ORCHARD_TREES.filter(t => orchardReady(s, t.index, now)).map(t => t.index) : [],
         bounty: s.progression.bounty ? { type: s.progression.bounty.type, progress: s.progression.bounty.progress, target: s.progression.bounty.target, claimed: s.progression.bounty.claimed } : null,
       };
     },

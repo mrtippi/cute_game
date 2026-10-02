@@ -32,7 +32,9 @@ export async function forgeOnce(bot) {
   const { game, note } = bot;
   const opened = await game.goTo(near('craft'), { label: 'workshop', done: n => n.modal === 'craft' && n }); if (!opened) return 'workshop not reached';
   await game.action('forge-menu');
-  const weapons = await enabled(bot, 'forge', 'item'); let result = 'cannot forge yet';
+  // The weapon in hand first (forging the hunting harpoon or a spare is wasted on the fights that matter).
+  const held = (await game.snap()).gear.weapon, ready = (await enabled(bot, 'forge', 'item')).filter(id => id !== 'harpoon');
+  const weapons = ready.includes(held) ? [held] : ready; let result = 'cannot forge yet';
   if (weapons.length) {
     const before = (await game.snap()).energy;
     if (await game.action('forge', { item: weapons[0] })) { await sleep(900); note(`forging attempt on ${weapons[0]} (ϟ${before - (await game.snap()).energy})`, 'forge'); result = 'forged'; }

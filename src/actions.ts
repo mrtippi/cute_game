@@ -3,7 +3,7 @@ import * as Helper from './helper.ts';
 import * as FarmHelper from './farm-helper.ts';
 import * as Friends from './friends.ts';
 import { huntFish } from './fish-hunting.ts';
-import { claimProgress, rerollDaily, startChallenge, deliverOrder, type ProgressKind } from './progression.ts';
+import { claimProgress, rerollDaily, startChallenge, deliverOrder, markLumiSeen, type ProgressKind } from './progression.ts';
 
 export const ACTION_RULES_VERSION = 1;
 export interface GameIntent { type: string; payload?: Record<string, unknown> }
@@ -102,6 +102,7 @@ function reduceAction(state: Game.SaveState, intent: GameIntent, context: Action
     case 'rerollDaily': result = rerollDaily(state, index(), now); break;
     case 'deliverOrder': result = deliverOrder(state, index(), now); break;
     case 'setTier': result = Game.setTier(state, id() as Game.PlanetId, index()); break;
+    case 'lumiSeen': result = markLumiSeen(state, index()); break;
     case 'startChallenge': result = startChallenge(state, p.kind === undefined ? 'kill' : kind(), now); break;
     case 'launch': result = Game.launch(state); break;
     case 'travel': result = Game.travel(state, id() as Game.PlanetId); break;
@@ -109,6 +110,7 @@ function reduceAction(state: Game.SaveState, intent: GameIntent, context: Action
     case 'discover': result = Game.discover(state, id() as Game.PlanetId); break;
     case 'collectStardust': result={shard:Game.collectStardust(state,random)}; break;
     case 'claimMine': result = Game.claimMine(state, index(), now); break;
+    case 'shakeTree': result = Game.shakeTree(state, index(), now); break;
     case 'claimGift': result = Game.claimGift(state, index(), now, random); break;
     case 'openCave': result = Game.openCave(state); break;
     case 'lightBrazier': result = Game.lightBrazier(state, index(), random); break;

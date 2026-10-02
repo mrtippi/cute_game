@@ -6,13 +6,21 @@ import { fileURLToPath } from 'node:url';
 import { Hands } from './hands.mjs';
 import { Game } from './game.mjs';
 
+/**
+ * The game window. This PC's screen works at 2048×1112 (125% Windows scaling), so a 1920×1080 page plus Chrome's
+ * bars ran off the bottom. 1536×864 CSS pixels at scale 1.25 still renders 1920×1080 real pixels for the recording,
+ * and the whole window (with the tab strip and the automation bar) fits on screen.
+ */
+export const WINDOW = { width: 1536, height: 864, scale: 1.25, chrome: 135 };
+export const windowArgs = ({ width, height } = WINDOW) => [`--window-size=${width},${height + WINDOW.chrome}`, '--window-position=0,0'];
+
 const CURSOR = readFileSync(fileURLToPath(new URL('./cursor.js', import.meta.url)), 'utf8');
 
-export async function openSession({ url = 'http://127.0.0.1:8787/', profile, rng, name = 'さくら', width = 1920, height = 1080, log = console.log, speed = 1 }) {
+export async function openSession({ url = 'http://127.0.0.1:8787/', profile, rng, name = 'さくら', width = WINDOW.width, height = WINDOW.height, scale = WINDOW.scale, log = console.log, speed = 1 }) {
   const context = await chromium.launchPersistentContext(profile, {
-    channel: 'chrome', headless: false, viewport: { width, height }, locale: 'ja-JP', timezoneId: 'Asia/Tokyo',
+    channel: 'chrome', headless: false, viewport: { width, height }, deviceScaleFactor: scale, locale: 'ja-JP', timezoneId: 'Asia/Tokyo',
     // The debugging port lets bot/dev.mjs inspect a running session.
-    args: ['--remote-debugging-port=9333', `--window-size=${width},${height + 140}`, '--window-position=0,0', '--disable-background-timer-throttling', '--disable-renderer-backgrounding', '--disable-backgrounding-occluded-windows', '--autoplay-policy=no-user-gesture-required'],
+    args: ['--remote-debugging-port=9333', ...windowArgs({ width, height }), '--disable-background-timer-throttling', '--disable-renderer-backgrounding', '--disable-backgrounding-occluded-windows', '--autoplay-policy=no-user-gesture-required'],
     ignoreDefaultArgs: ['--mute-audio'],
   });
   await context.addInitScript(CURSOR);

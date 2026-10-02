@@ -8,6 +8,7 @@ import {LAVA_ORE_RULES} from '../src/lava-weather.ts';
 import {STAR_MAP,DISCOVER_RANGE,SPACE_EDGE,spaceLayout,dustSpot} from '../src/space.ts';
 import {clearJourney} from './adventure-lifecycle.mjs';
 import {huntingPonds,huntFish} from '../src/fish-hunting.ts';
+import {villageRankFor} from '../src/village.ts';
 
 const fail=(status,message)=>{throw Object.assign(new Error(message),{status});};
 const random=()=>randomInt(0,0x100000000)/0x100000000;
@@ -18,8 +19,8 @@ const point=value=>value&&Number.isFinite(value.x)&&Number.isFinite(value.z);
 const distance=(a,b)=>Math.hypot(a.x-b.x,a.z-b.z);
 const farmActions=new Set(['plant','plantAll','harvest','harvestAll','fertilize','expandGarden','buyBedKit','storeBed','moveBed','placeDecoration','moveDecoration','removeDecoration','buildPen','buyAnimal','feedAnimal','feedAll','collectProducts','expandPen','buildSpeciesPen','buyHelper','setHelperPaused','setHelperSeed','helperHarvest','helperPlant','rest','cook','cookDish','friendsArrive','setFriendPaused','friendWork','friendsCatchUp']);
 const farmHelperActions=new Set(['buyFarmHelper','setFarmHelperPaused','setFarmHelperAutoFeed','farmHelperCollect','farmHelperFeed','farmHelperCatchUp']);
-export function waterNodes(planet){
-  return huntingPonds(planet).map(pond=>({x:pond.x,z:pond.z,r:pond.rx,water:pond.waterId}));
+export function waterNodes(planet,rank=1){
+  return huntingPonds(planet,rank).map(pond=>({x:pond.x,z:pond.z,r:pond.rx,water:pond.waterId}));
 }
 function requireNear(peer,at,range=4){if(!peer||peer.visit||!point(at)||distance(peer.pose,at)>range)fail(409,'Move closer to use that.');}
 function strike(account,key,required,now){account.resourceHits??={};const hit=account.resourceHits[key]||{hits:0,at:0};if(now-hit.at<250)fail(429,'Wait for your next strike.');hit.hits++;hit.at=now;if(hit.hits<required){account.resourceHits[key]=hit;return {hits:hit.hits,required};}delete account.resourceHits[key];return null;}
@@ -81,7 +82,7 @@ export function createActionService({store,getPeer,getWorld=()=>null,afterCommit
       }else if(data.type==='fishStart'){
         const rod=Game.ITEMS[p.rodId]?.weapon;
         if(!peer||peer.visit||!rod||rod.kind!=='rod'||!state.bag[p.rodId]||!point(p.cast))fail(409,'Bring a fishing rod to the water.');
-        const water=waterNodes(state.planet).find(node=>node.water===p.water&&distance(node,p.cast)<node.r&&distance(node,peer.pose)<=node.r+3.05&&distance(p.cast,peer.pose)<=8);
+        const water=waterNodes(state.planet,villageRankFor(state)).find(node=>node.water===p.water&&distance(node,p.cast)<node.r&&distance(node,peer.pose)<=node.r+3.05&&distance(p.cast,peer.pose)<=8);
         if(!water)fail(409,'Move to the pond before casting.');
         if(account.fishingTicket&&now-account.fishingTicket.startedAt<180000)fail(409,'Finish or cancel your current cast first.');
         const key=`${state.planet}:${water.x}:${water.z}`,readyAt=account.mysteryReadyAt?.[key]||0;

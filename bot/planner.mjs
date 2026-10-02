@@ -11,18 +11,21 @@ import { flourish } from './tasks/flourish.mjs';
 import { huntBoss, huntable } from './tasks/boss.mjs';
 import { gearGoal, huntTypes, gatherForGoal, buyWeapon } from './tasks/gear.mjs';
 import { quickChallenge, tidyChest, sightsee } from './tasks/routine.mjs';
+import { readLumi, rescueFriend, openCages, shakeOrchard } from './tasks/story.mjs';
 import { collectCosmetic, craftCosmetic, dress, ACTIVITY_THEME } from './tasks/wardrobe.mjs';
 
 /** Which activities move a quest event forward. */
 const EVENT_TASKS = {
   kill: ['fight'], bounty: ['fight'], skill: ['fight'], chal: ['challenge', 'fight'], hawk: ['fight'], boss: ['boss'], titan: ['boss'], tierUp: ['boss', 'fight', 'travel'],
-  harvest: ['garden'], fruit: ['garden'], expand: [], fertilize: ['fertilize'],
+  harvest: ['garden', 'orchard'], fruit: ['garden', 'orchard'], expand: [], fertilize: ['fertilize'],
   sell: ['market'], cook: ['cook'], craft: ['craft', 'shop'], upgrade: ['crystal'],
   fish: ['fishing', 'harpoon'], fishrare: ['fishing'], legendFish: ['fishing'], mystery: ['fishing'], harpoon: ['harpoon'],
   animal: ['animals'], planet: ['travel'], stardust: ['travel'], mine: ['travel', 'mine'],
   order: ['market'], forge: ['forge'], forgeOk: ['forge'], eat: [], decorate: [], dailyDone: [], login: [],
 };
-const CONDITION_TASKS = { titans: ['boss'], stars: ['boss', 'fight', 'travel'], beds: ['expand'], upgrades: ['crystal'], fishSpecies: ['fishing'], collections: ['travel', 'fight'], level: ['fight'], equipped: ['shop'], visited: ['travel'], pen: ['animals'], animals: ['animals'], dog: ['animals'], forgeMax: ['forge'], harpoon: [] };
+const CONDITION_TASKS = { titans: ['boss'], stars: ['boss', 'fight', 'travel'], beds: ['expand'], upgrades: ['crystal'], fishSpecies: ['fishing'], collections: ['travel', 'fight'], level: ['fight'], equipped: ['shop'], visited: ['travel'], pen: ['animals'], animals: ['animals'], dog: ['animals'], forgeMax: ['forge'], harpoon: [], titansAt5: ['boss', 'travel'], titansAt8: ['boss', 'travel'], weaponAttack: ['gearBuy', 'gather', 'shop'] };
+/** Story goals naming one boss ("boss:home:bear") or one friend ("friend:sprout") go to the hunt and the cages. */
+const conditionTasks = c => c.startsWith('boss:') ? ['boss'] : c.startsWith('friend:') ? ['rescue', 'boss'] : CONDITION_TASKS[c];
 const CROPS = /^(radish|carrot|pumpkin|mint|chili|candy|bean|star|berry|coffee|moonflower|magnetmelon|melon|apple|grape|mango|pineapple|coconut|durian|lychee|peach)$/;
 const count = (bag, test) => Object.entries(bag).filter(([id]) => test(id)).reduce((n, [, c]) => n + c, 0);
 
@@ -63,6 +66,8 @@ export function createPlanner(bot, { minutesLeft }) {
     // A bed pays for itself in minutes; keep a cushion of energy for food and repairs.
     expand: { can: s => s.planet === 'home' && s.plots.length < 33 && s.energy >= 300, run: () => expandGarden(bot), cool: 240000, base: 3 },
     // A boss the explorer can beat, with food in the bag: the highlight of a session.
+    orchard: { can: s => s.planet === 'home' && s.orchard?.length > 0, run: () => shakeOrchard(bot), cool: 600000, base: 5 },
+    rescue: { can: s => openCages(s).length > 0, run: () => rescueFriend(bot), cool: 60000, base: 12 },
     boss: { can: s => huntable(s).length > 0, run: () => huntBoss(bot), cool: 180000, base: 3, limit: 300000 },
     browse: { can: () => true, run: () => flourish(bot), cool: 150000, base: 1.5 },
     // Back home when the stay is up, the session ends soon, or the explorer is hurt with no food left.
@@ -79,7 +84,7 @@ export function createPlanner(bot, { minutesLeft }) {
     const s = await game.snap(), meals = count(s.bag, id => id.startsWith('cooked_'));
     if (meals < 6) add(['cook'], 4);
     // Bosses wanted but none beatable yet: get stronger and stock up on food first.
-    const bossWanted = g.tasks.some(t => ['boss', 'titan', 'tierUp'].includes(t.event)) || ['boss', 'titan'].includes(g.story.event) || ['titans', 'stars'].includes(g.story.condition);
+    const bossWanted = g.tasks.some(t => ['boss', 'titan', 'tierUp'].includes(t.event)) || ['boss', 'titan'].includes(g.story.event) || ['titans', 'stars', 'titansAt5', 'titansAt8'].includes(g.story.condition) || !!g.story.condition?.startsWith('boss:');
     if (bossWanted && !huntable(s).length) { add(['crystal'], 3); add(['shop'], 2); add(['garden', 'cook'], 2); }
     // Village orders: deliver what is ready, and work toward what is missing.
     for (const o of s.orders) {
@@ -91,7 +96,7 @@ export function createPlanner(bot, { minutesLeft }) {
       else if (['egg', 'milk', 'duck_egg', 'truffle'].includes(o.item)) add(['animals'], 2);
       else add(['fight'], 1);
     }
-    if (g.story.event) add(EVENT_TASKS[g.story.event], 4); else if (g.story.condition) add(CONDITION_TASKS[g.story.condition], 4);
+    if (g.story.event) add(EVENT_TASKS[g.story.event], 4); else if (g.story.condition) add(conditionTasks(g.story.condition), 4);
     if (g.bounty) add(['fight'], 2);
     return { score, goals: g };
   }
@@ -103,6 +108,7 @@ export function createPlanner(bot, { minutesLeft }) {
     // Where the explorer is before anything happens (a fall moves it home).
     if (s.started && s.modal !== 'death') bot.lastPlanet = s.planet;
     if (s.modal || s.dialog) { await game.closePanel(); return 'closed a panel'; }
+    if (s.lumi != null) { await readLumi(bot); return 'listened to Lumi'; }
     if (s.space) { await game.waitFor(n => !n.space && n, { timeout: 60000 }); return 'waited for landing'; }
     if (s.hp < s.maxHp * .6) { await recover(bot); return 'recovered'; }
     if (inside(s)) { await leaveHouse(bot); return 'left the cottage'; }

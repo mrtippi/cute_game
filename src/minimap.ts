@@ -3,6 +3,7 @@ import { PLANETS, YARD, type PlanetId } from './model.ts';
 import { zoneAt, type EnvironmentLayout } from './environments.ts';
 import { trailOffset } from './biomes.ts';
 import { aggro } from './hud-combat.ts';
+import { shownVillageRadius } from './village.ts';
 
 /**
  * The minimap, drawn like the reference's (F-079, drawMinimap @939724): a 150x150 2D canvas showing the whole world
@@ -51,16 +52,17 @@ export function drawTerrain(ctx: Ctx, view: Pick<MapView, 'planet' | 'layout' | 
       ctx.fillStyle = ZONE_COLORS[zone]; ctx.beginPath(); ctx.moveTo(MAP_C, MAP_C); ctx.arc(MAP_C, MAP_C, MAP_PX, from * Math.PI / 180, to * Math.PI / 180); ctx.fill();
     }
     // Sand trails from the four gates to the border.
+    const R = shownVillageRadius();
     ctx.strokeStyle = '#ecd59a'; ctx.lineWidth = 2; ctx.lineCap = 'round';
     for (const [ax, az] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
       ctx.beginPath();
-      for (let t = 18; t <= 148; t += 4) { const w = trailOffset(t), p = mapPoint(ax ? ax * t : w, az ? az * t : w); if (t === 18) ctx.moveTo(p.x, p.y); else ctx.lineTo(p.x, p.y); }
+      for (let t = R; t <= 148; t += 4) { const w = trailOffset(t), p = mapPoint(ax ? ax * t : w, az ? az * t : w); if (t === R) ctx.moveTo(p.x, p.y); else ctx.lineTo(p.x, p.y); }
       ctx.stroke();
     }
-    ctx.fillStyle = ZONE_COLORS.home; disc(ctx, 0, 0, 18 * s);
+    ctx.fillStyle = ZONE_COLORS.home; disc(ctx, 0, 0, R * s);
     // The fence ring with its four gate gaps (world.ts: fences where |sin 2a| ≥ .32).
-    ctx.strokeStyle = '#fff'; ctx.lineWidth = 1.6; const gap = Math.asin(.32) / 2;
-    for (let i = 0; i < 4; i++) { ctx.beginPath(); ctx.arc(MAP_C, MAP_C, 18 * s, i * Math.PI / 2 + gap, (i + 1) * Math.PI / 2 - gap); ctx.stroke(); }
+    ctx.strokeStyle = '#fff'; ctx.lineWidth = 1.6; const gap = Math.asin(.32 * 18 / R) / 2;
+    for (let i = 0; i < 4; i++) { ctx.beginPath(); ctx.arc(MAP_C, MAP_C, R * s, i * Math.PI / 2 + gap, (i + 1) * Math.PI / 2 - gap); ctx.stroke(); }
   } else {
     const [base, , pad] = PLANETS[planet].ground;
     ctx.fillStyle = planet === 'ocean' ? '#3a9ad9' : planet === 'cloud' ? '#d9e4ff' : base; ctx.fillRect(0, 0, MAP_PX, MAP_PX);

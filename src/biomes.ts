@@ -1,5 +1,6 @@
 import type { PlanetId } from './model.ts';
 import { terrainHeight, zoneAt, type EnvironmentLayout } from './environments.ts';
+import { shownVillageRadius } from './village.ts';
 
 /**
  * What grows where. Each home region and each planet has its own mix of scenery, with
@@ -125,11 +126,11 @@ const BLOCKING = new Set([...Object.values(HOME_DECOR).flat(), ...Object.values(
 function blocking(type: string) { return BLOCKING.has(type); }
 /** Where the home trails run: winding sand paths from the four gates out to the border. */
 export function trailDistance(x: number, z: number) {
-  if (Math.hypot(x, z) < 17) return Infinity;
+  if (Math.hypot(x, z) < shownVillageRadius() - 1) return Infinity;
   return Math.min(Math.abs(z - trailOffset(Math.abs(x))), Math.abs(x - trailOffset(Math.abs(z))));
 }
 /** How far a trail wanders sideways at distance t from the village centre (the minimap draws the same line). */
-export const trailOffset = (t: number) => (Math.sin(t * .09) * 3 + Math.sin(t * .23) * 1.2) * smoothstep(t, 18, 30);
+export const trailOffset = (t: number) => (Math.sin(t * .09) * 3 + Math.sin(t * .23) * 1.2) * smoothstep(t, shownVillageRadius(), shownVillageRadius() + 12);
 export const smoothstep = (x: number, a: number, b: number) => { const t = Math.max(0, Math.min(1, (x - a) / (b - a))); return t * t * (3 - 2 * t); };
 
 /** Sectors of the home wilds, as angles of atan2(z, x). */
@@ -203,12 +204,12 @@ export function planDecor({ planet, layout, random, free, ponds = [], clearings 
   if (planet === 'home') {
     // Inside the village fence: flowers, grass and bushes around the buildings and trails.
     for (let i = 0; i < 160; i++) {
-      const a = random() * Math.PI * 2, d = Math.sqrt(random()) * 16.5, x = Math.cos(a) * d, z = Math.sin(a) * d, kind = random();
+      const a = random() * Math.PI * 2, d = Math.sqrt(random()) * (shownVillageRadius() - 1.5), x = Math.cos(a) * d, z = Math.sin(a) * d, kind = random();
       if (Math.abs(x) < 1.3 || Math.abs(z) < 1.3 || taken.taken(x, z, .6) || !free(x, z, .6)) continue;
       place(kind < .35 ? 'flowers' : kind < .85 ? 'tuft' : 'bush', x, z, 0, kind < .85 ? between(.8, 1.25) : between(.6, .9));
     }
     for (const [zone, rules] of Object.entries(HOME_DECOR) as [keyof typeof HOME_DECOR, DecorRule[]][])
-      for (const rule of rules) scatterRule(rule, SECTORS[zone], zone, 21);
+      for (const rule of rules) scatterRule(rule, SECTORS[zone], zone, shownVillageRadius() + 3);
   } else for (const rule of PLANET_DECOR[planet]?.decor ?? []) scatterRule(rule);
   // The border: three loose rows of tall pieces just outside the walkable circle.
   const rim = PLANET_DECOR[planet]?.rim;

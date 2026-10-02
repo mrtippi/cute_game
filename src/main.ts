@@ -1,6 +1,9 @@
 import {cropBadgeAnchor} from './crop-cards.ts';
 import {HELP_TOPICS} from './help-topics.ts';
 import {bossTimesHtml,bossArrivals,questBoardHtml} from './hud-boards.ts';
+import {chapterLines,chapterHeading,lumiHtml} from './lumi.ts';
+import {CHAPTERS,type StoryLine} from './story.ts';
+import {decorationCap,villageRadius,villageRankFor,waitingLevel} from './village.ts';
 import './farm.css';
 import './joystick.css';
 import { FishingProof } from './fishing-proof.ts';
@@ -231,7 +234,7 @@ const DIALOG_LOOK:Record<string,[string,string]>={
   settings:['⚙️','calm'],help:['🧭','calm'],'fish-help':['🎣','water'],fishing:['🎣','water'],catch:['🐟','water'],death:['🌷','rose'],reset:['🌱','rose'],
 };
 function floating(text:string,x=world.position.x,z=world.position.z,style='item',rise=0) {world.fx?.text({x,y:rise,z},t(text),style);}
-function levelCheck(before:number) {if(state.level>before){toast(`Level ${state.level}! A little stronger, a little braver.`,'🌟');tone('level');world.burst(world.position.x,world.position.z,'#f5dc8f',35);}}
+function levelCheck(before:number) {if(state.level>before){if(villageRankFor({...state,level:before})<villageRankFor(state)){setTimeout(()=>toast(t('The crystal shines brighter! Village rank {count}',{count:villageRankFor(state)}),'💠'),1200);growVillage();}toast(`Level ${state.level}! A little stronger, a little braver.`,'🌟');tone('level');world.burst(world.position.x,world.position.z,'#f5dc8f',35);}}
 function change<T>(action:()=>T):T {const before=state.level;const result=action();levelCheck(before);save();updateHud();return result;}
 function uiBlocked(){return !!modal||!!document.querySelector('dialog[open]')||shipSequence?.busy||!!flight||arriving;}
 function openDialog(type:string,title:string,body:string,kicker='MAKE YOURSELF AT HOME',icon?:string) {
@@ -245,7 +248,14 @@ function openDialog(type:string,title:string,body:string,kicker='MAKE YOURSELF A
   $('.close-button').focus({preventScroll:true});
 }
 function closeDialog(){endTryOn();modal='';$('#dialog-layer').hidden=true;$('#hud').inert=false;$('#world-labels').inert=false;lastFocused?.focus();movement.clear();}
-async function start() {settle();void helperCatchUp();const name=$<HTMLInputElement>('#name-input').value.trim().slice(0,20)||state.name;if(name!==state.name)await perform('settings',{name});started=true;$('#title-screen').hidden=true;$('#hud').hidden=false;applyMovePad();save();updateHud();updateLabels();toast(saved?t('Welcome back, {name}. Your garden missed you!',{name:state.name}):'Start small: click a garden bed to plant your first carrot.','🌱');showZone('Clover Village');}
+/** Lumi's dialogue queue (lumi.ts): shown one line at a time at the bottom of the screen; the game keeps running. */
+let lumiQueue:StoryLine[]=[],lumiChapter=0;
+function showLumi(){let box=document.getElementById('lumi');if(!box){box=document.createElement('aside');box.id='lumi';box.className='lumi-box';box.setAttribute('aria-live','polite');$('#hud').append(box);}box.hidden=!lumiQueue.length;if(lumiQueue.length)box.innerHTML=localizeHtml(lumiHtml(lumiQueue[0],lumiQueue.length-1,(h=>`${h.arc} · ${t('Chapter {chapter}',{chapter:h.number})} ${h.title}`)(chapterHeading(lumiChapter,t)),t));}
+function sayLumi(lines:StoryLine[],chapter:number){if(!lines.length)return;lumiChapter=chapter;lumiQueue.push(...lines);showLumi();tone('pop');}
+const storyChapter=()=>storyStep(state.progression.story.index).chapter;
+/** A chapter not yet introduced (a new game, or a save that just moved on): Lumi opens it. */
+function storyCheck(){if(visiting)return;const chapter=storyChapter(),seen=state.progression.lumiSeen;if(seen>=chapter||!CHAPTERS[chapter])return;sayLumi(chapterLines(-1,chapter),chapter);void perform('lumiSeen',{index:chapter});}
+async function start() {settle();void helperCatchUp();const name=$<HTMLInputElement>('#name-input').value.trim().slice(0,20)||state.name;if(name!==state.name)await perform('settings',{name});started=true;$('#title-screen').hidden=true;$('#hud').hidden=false;applyMovePad();save();updateHud();updateLabels();toast(saved?t('Welcome back, {name}. Your garden missed you!',{name:state.name}):'Start small: click a garden bed to plant your first carrot.','🌱');showZone('Clover Village');setTimeout(storyCheck,1800);}
 
 /** Beds that ripened while the game was closed: the helper harvests and replants each once (helper.ts catchUp). */
 async function helperCatchUp(){const r=actionHandler?await perform<ReturnType<typeof Helper.catchUp>>('helperCatchUp'):change(()=>Helper.catchUp(state));if(r&&(r.harvested.length||r.planted.length))setTimeout(()=>toast(t('While you were away, Bolt harvested {count} crops and planted {beds} beds.',{count:r.harvested.length,beds:r.planted.length}),'🤖'),2600);}
@@ -465,7 +475,8 @@ function quests(){
     const list=$('#dialog-body .quest-list');if(!list||!steps.length)return;
     const done=steps.filter(step=>step.i<index).map(step=>`<div class="quest-row complete"><span>✓</span><div><strong>${esc(step.title)}</strong><small>Step ${step.i+1} · complete</small></div></div>`).join('');
     const next=steps.filter(step=>step.i>index).map(step=>`<div class="quest-row locked"><span>🔒</span><div><strong>${esc(step.title)}</strong><small>Finish the step before to unlock</small></div></div>`).join('');
-    list.insertAdjacentHTML('afterbegin',localizeHtml(`<div class="chapter-banner">${esc(storyStep(index).icon??'📖')} Chapter ${chapter+1} <b>${steps.filter(step=>step.i<index).length} / ${steps.length}</b></div>${done}`));
+    const heading=chapterHeading(chapter,t),p=state.progression;
+    list.insertAdjacentHTML('afterbegin',localizeHtml(`<div class="chapter-banner">${esc(storyStep(index).icon??'📖')} ${esc(t('Chapter {chapter}',{chapter:heading.number}))} ${esc(heading.title)} <b>${steps.filter(step=>step.i<index).length} / ${steps.length}</b><small>${esc(heading.arc)}</small></div><div class="village-rank">💠 ${esc(t('Village rank {count}',{count:villageRankFor(state)}))}${waitingLevel(state)?` · ${esc(t('Grows at level {level}',{level:waitingLevel(state)!}))}`:''}${p.titles.length?` · 🏅 ${esc(t(p.titles.at(-1)!))}`:''}</div>${done}`));
     list.insertAdjacentHTML('beforeend',localizeHtml(next));
   }
 }
@@ -496,7 +507,7 @@ function upgradeFeedback(kind:keyof typeof M.UPGRADES){const crystal=world.entit
 const mobileJoystickDefault=matchMedia('(pointer: coarse)').matches;
 function joystickEnabled(){return state.settings.movePad??mobileJoystickDefault;}
 function applyMovePad(){$('#hud').classList.remove('move-pad');joystick.setEnabled(joystickEnabled());$('#hud').classList.toggle('joystick-right',state.settings.joystickSide==='right');movement.clear();measureHud();}
-function upgrades(){openDialog('upgrade','A wish for something more',`<div class="en-head">Energy: <b>ϟ ${state.energy.toLocaleString()}</b></div><div class="upgrade-cards">${upgradeCards(state).map(c=>`<div class="upgrade-card"><span class="upgrade-icon">${c.icon}</span><div><strong>${t(c.name)} <small>Level ${c.level}</small></strong><p>Now: ${c.now} • ${c.gain}</p></div><button class="primary" data-action="upgrade" data-kind="${c.kind}" ${c.affordable?'':'disabled'}>${c.max?'MAX':`ϟ ${c.cost}`}</button></div>`).join('')}</div>`,'THE WISHING CRYSTAL');}
+function upgrades(){openDialog('upgrade','A wish for something more',`<div class="en-head">Energy: <b>ϟ ${state.energy.toLocaleString()}</b></div><div class="upgrade-cards">${upgradeCards(state).map(c=>`<div class="upgrade-card"><span class="upgrade-icon">${c.icon}</span><div><strong>${t(c.name)} <small>Level ${c.level}</small></strong><p>Now: ${c.now} • ${c.gain}</p></div><button class="primary" data-action="upgrade" data-kind="${c.kind}" ${c.affordable?'':'disabled'}>${c.max?'MAX':`ϟ ${c.cost}`}</button></div>`).join('')}</div>`,'THE WISHING CRYSTAL');$('#dialog-body').insertAdjacentHTML('beforeend',localizeHtml('<div class="button-row"><button class="soft-button" data-action="lumi-replay">💠 Talk to Lumi</button></div>'));}
 function cooking(){const ingredients=Object.entries(state.bag).filter(([id,n])=>n!>0&&M.ITEMS['cooked_'+id]);openDialog('cook','A warm meal for the trail',`<p class="intro">Cooked food heals more and lasts longer. Cooking here is free.</p><div class="shop-grid">${ingredients.map(([id,n])=>`<div class="shop-item"><span class="shop-icon">${art(id,M.ITEMS[id].icon)}</span><div><strong>${esc(t(M.ITEMS[id].name))} <small>×${n}</small></strong><p>${esc(M.ITEMS['cooked_'+id].desc)}</p></div><div class="button-row"><button class="soft-button" data-action="cook-one" data-item="${id}">Cook 1</button><button class="primary" data-action="cook-all" data-item="${id}" aria-label="Cook all">All</button></div></div>`).join('')||'<p class="empty-state">Bring crops, fish, or meat from your adventures.</p>'}</div>${dishesHtml(state,farmUi)}`,'VOLCANO KITCHEN');}
 /**
  * The animal pen collects all ready stock, nearest first and 140 ms apart; tapping an animal collects only its stock.
@@ -561,7 +572,7 @@ function decorations(){
 function beginPlacement(id:string){if(visiting)return;if(state.planet!=='home'){toast('Decorations belong at home. Return to your garden first.','🏡');return;}
   const item=M.ITEMS[id],bed=item?.type==='placeable';if(!item||!state.bag[id])return;
   if(bed&&state.plots.length>=M.STARTING_PLOTS+M.MAX_EXTRA_PLOTS){toast(`Your garden already has the maximum ${M.MAX_EXTRA_PLOTS} extra beds.`,'🌱');return;}
-  if(!bed&&state.decorations.length>=M.MAX_DECORATIONS){toast(`Your garden already holds ${M.MAX_DECORATIONS} decorations.`,'🏡');return;}
+  if(!bed&&state.decorations.length>=decorationCap(villageRankFor(state))){toast(t('Your garden already holds {count} decorations.',{count:decorationCap(villageRankFor(state))}),'🏡');return;}
   if(bed&&!state.settings.placeBeds){autoPlaceBed();return;}
   closeDialog();const step=Math.PI/4;
   placement={id,rotation:Math.round(world.facing/step)*step+Math.PI,x:0,z:0,ok:false};
@@ -703,7 +714,7 @@ function updateHunting(dt:number){
   const enabled=started&&!uiBlocked()&&!document.hidden&&!visiting&&!flight&&!fishGame&&state.hp>0&&!state.gear.disguise&&state.gear.weapon==='harpoon';
   const entity=enabled?world.entities.filter(e=>e.kind==='fish'&&e.pond&&Math.hypot(e.x-world.position.x,e.z-world.position.z)<=e.radius+3)
     .sort((a,b)=>Math.hypot(a.x-world.position.x,a.z-world.position.z)-a.radius-(Math.hypot(b.x-world.position.x,b.z-world.position.z)-b.radius))[0]:null;
-  const pond=entity?huntingPondAt(state.planet,entity.x,entity.z):null;
+  const pond=entity?huntingPondAt(state.planet,entity.x,entity.z,villageRankFor(state)):null;
   huntingView.update(dt,pond,state.hunting,fishKit.ready,world.root,state);
   const button=$('#reel-button');
   if(pond){
@@ -840,6 +851,9 @@ world.onInteract=async(e)=>{
   if(e.kind==='plot')plotDialog(e.index!);else if(e.kind==='sell')market();else if(e.kind==='shop')shop();else if(e.kind==='chest')storage();else if(e.kind==='upgrade')upgrades();else if(e.kind==='cook')cooking();else if(e.kind==='craft'){craftStation='craft';crafting();}else if(e.kind==='travel')planets();else if(e.kind==='fish')fish(e);
   else if(e.kind==='pen')penTap();
   else if(e.kind==='cage')crew.tapCage(e);
+  else if(e.kind==='orchard'&&e.index!==undefined){const fruit=await perform<{item:M.ItemId;count:number}>('shakeTree',{index:e.index});if(!fruit){toast('This tree has given its fruit today. Come back tomorrow!','🍎');return;}world.burst(e.x,e.z,'#ffb347');floating(`+${fruit.count} ${t(M.ITEMS[fruit.item].name)}`,e.x,e.z);toast(t('The tree drops {count} {name}!',{count:fruit.count,name:t(M.ITEMS[fruit.item].name)}),'🍎');e.mesh.traverse(o=>{if(o.userData.fruit)o.visible=false;});}
+  else if(e.kind==='stardeck')planets();
+  else if(e.kind==='friendhouse'&&e.index!==undefined)toast(t('{name} is happy to have a home of their own.',{name:t(FRIENDS[FRIEND_IDS[e.index]].name)}),'🏠');
   else if(e.kind==='friend'&&e.index!==undefined)friendDialog(FRIEND_IDS[e.index]);
   else if(e.kind==='animal'){if(M.readyAnimals(state).some(a=>a.uid===e.animalUid))collectFarm(e.animalUid);else penDialog();}
   else if(e.kind==='home'){if(!await perform('rest'))return;toast('Home, sweet home. Your health is restored.','🏡');}
@@ -989,6 +1003,8 @@ world.onHazardEnemy=(enemy,damage)=>hit(enemy,damage,0,undefined,true,true);
 world.onEnvironmentEvent=event=>{if(event.message)toast(event.message,'🌍');save();updateHud();};
 function resetCombat(){combat.reset();combatTimers.reset();combatView.clear();world.movementLocked=false;world.playerFlying=false;world.playerStealth=false;}
 
+/** The fence moves out to the new rank's radius: rebuild home in place, with a burst at the crystal (village.ts). */
+function growVillage(){if(visiting||state.planet!=='home'||world.planet!=='home')return;const position=world.position.clone();world.build('home');world.refreshPlayer();world.position.copy(position);world.refreshPlayer();minimap.invalidate();const crystal=world.entities.find(e=>e.kind==='upgrade');if(crystal){world.fx?.ring({x:crystal.x,z:crystal.z},{color:'#8ef6ff',to:villageRadius(villageRankFor(state)),life:1.6});world.fx?.burst({x:crystal.x,z:crystal.z},{n:40,color:['#8ef6ff','#d68cff','#ffffff'],glow:true,speed:6,up:10,y:1.6});}tone('level');}
 function rebuildHomePresentation(planet:M.PlanetId){
   const shared=network.role&&world.planet===planet, enemies=shared?world.enemySnapshots():null,environment=shared?world.environmentSnapshot():null;
   world.build(planet);if(enemies)world.applyEnemySnapshots(enemies);if(environment)world.applyEnvironmentSnapshot(environment);
@@ -1142,7 +1158,14 @@ app.addEventListener('click',async event=>{
     case 'forge':{button.disabled=true;const result=await perform<M.ForgeOutcome>('forge',{id});if(result){toast(result.success?t('Forged to +{level}!',{level:result.level}):'The forge attempt failed. Your weapon kept its level.',result.success?'✨':'🔨');tone(result.success?'level':'pop');}forgeMenu(id);break;}
     case 'drop-item':{if(actionHandler)await perform('dropItem',{id,count:1});else if(M.looseQuantity(state,id)>0){change(()=>M.removeItem(state.bag,id));drops.spawn(id,1,world.position.x,world.position.z,{thrown:true,dir:world.facing});}inventory();break;}
     case 'close':closeDialog();break;case 'bag':inventory();break;case 'inspect':if(id){selectedItem=id;inventory();}break;case 'quests':quests();break;case 'map':map();break;case 'settings':settings();break;case 'trackers':trackerMode=$('.tracker-stack').classList.contains('folded')?'open':'fold';updateHud();break;case 'help':help();break;case 'fullscreen':void toggleFullscreen(message=>toast(message));break;
-    case 'claim':if(await perform('claimQuest')){tone('success');toast('A little milestone. A lovely reward!','🎁');if(modal)quests();}break;
+    case 'claim':{const before=storyChapter(),rank=villageRankFor(state),earned=state.progression.villageRank,titles=state.progression.titles.length;if(await perform('claimQuest')){tone('success');toast('A little milestone. A lovely reward!','🎁');const after=storyChapter();
+      if(villageRankFor(state)>rank){setTimeout(()=>toast(t('The crystal shines brighter! Village rank {count}',{count:villageRankFor(state)}),'💠'),900);growVillage();}
+      else if(state.progression.villageRank>earned)setTimeout(()=>toast(t('The crystal is ready to grow the village at level {level}.',{level:waitingLevel(state)??0}),'💠'),900);
+      if(state.progression.titles.length>titles)setTimeout(()=>toast(t('New title: {name}',{name:t(state.progression.titles.at(-1)!)}),'🏅'),1600);
+      if(after!==before){sayLumi(chapterLines(before,after),after);void perform('lumiSeen',{index:after});}
+      if(modal)quests();}break;}
+    case 'lumi-next':lumiQueue.shift();showLumi();break;
+    case 'lumi-replay':{const chapter=storyChapter();if(CHAPTERS[chapter]){closeDialog();lumiQueue=[];sayLumi(CHAPTERS[chapter].intro,chapter);}break;}
     case 'plant':{const i=activePlot,opened=modal,root=world.root;if(await perform('plant',{index:i,id})&&world.root===root&&!visiting){plantBurst(i);tone('pop');world.syncCrops();if(modal===opened&&activePlot===i)closeDialog();toast(`${t(M.CROPS[id as M.CropId].name)} planted. Let the sunshine do its thing.`,'🌱');}break;}
     case 'cook-one':case 'cook-all':if(await perform('cook',{id,count:action==='cook-all'?(state.bag[id]||0):1})){tone('success');cooking();}break;
     // Reference: a fertilizer that ripens the crop closes the panel; one that only speeds it up refreshes it.

@@ -1,6 +1,7 @@
 import * as M from './model.ts';
 import { seedFor } from './helper.ts';
 import { CAGES, FRIENDS, FRIEND_IDS, FRIEND_SLOTS, friendSlot, type Friend, type FriendId, type FriendRole, type FriendSlot } from './friends-state.ts';
+import { shownVillageRadius } from './village.ts';
 
 /**
  * Rescued friends, pure and testable (friend-crew.ts walks and poses them; FRIENDS-CONTRACT.md is the shared seam).
@@ -61,9 +62,9 @@ export function rescue(s: M.SaveState, id: FriendId, now = Date.now()): boolean 
   if (!FRIEND_IDS.includes(id) || cageState(s, id) !== 'open' || s.planet !== CAGES[id].planet) return false;
   (s.friends ??= []).push({ id, role: FRIENDS[id].role, rescuedAt: now, gear: {}, home: false }); return true;
 }
-/** The safe village (environments.ts zoneAt 'home'). */
+/** The safe village (environments.ts zoneAt 'home'): 18 m at village rank 1, wider as the village grows (village.ts). */
 export const VILLAGE_RADIUS = 18;
-export const inVillage = (p: { x: number; z: number }) => Math.hypot(p.x, p.z) < VILLAGE_RADIUS;
+export const inVillage = (p: { x: number; z: number }) => Math.hypot(p.x, p.z) < shownVillageRadius();
 /** Friends still following the explorer reach home: they go to their posts. Only at home, inside the village. */
 export function arriveHome(s: M.SaveState, at: { x: number; z: number }): FriendId[] {
   if (s.planet !== 'home' || !inVillage(at)) return [];

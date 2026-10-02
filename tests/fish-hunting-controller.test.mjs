@@ -5,6 +5,7 @@ import vm from 'node:vm';
 import ts from 'typescript';
 import * as M from '../src/model.ts';
 import { FISH_HUNT_COOLDOWN_MS, huntingPondAt, huntingPonds, fishHuntTargets } from '../src/fish-hunting.ts';
+import { villageRankFor } from '../src/village.ts';
 
 const source = await readFile(new URL('../src/main.ts', import.meta.url), 'utf8'), ast = ts.createSourceFile('main.ts', source, ts.ScriptTarget.Latest, true);
 const statements = ast.statements.filter(n => ts.isFunctionDeclaration(n) && ['updateHunting', 'throwHarpoon'].includes(n.name?.text) || ts.isVariableStatement(n) && n.declarationList.declarations.some(d => /^hunting(?!View)/.test(d.name.getText(ast))));
@@ -14,7 +15,7 @@ function fixture() {
   const pond = huntingPonds('home')[0], calls = [], effects = [], resolvers = [], now = 1_000_000;
   const button = { hidden: true, classList: { values: new Set(), contains(s) { return this.values.has(s); }, toggle(s, on) { if (on) this.values.add(s); else this.values.delete(s); } } };
   const huntingView = { pond: null, targets: [], now: () => now, syncClock: () => effects.push('clock'), throw: () => effects.push('throw'), update(_dt, p) { this.pond = p; this.targets = p ? fishHuntTargets(p, now) : []; }, nearest() { return this.targets[0] ?? null; } };
-  const context = { M, huntingPondAt, FISH_HUNT_COOLDOWN_MS, huntingView, state, started: true, visiting: null, flight: null, fishGame: null,
+  const context = { M, huntingPondAt, villageRankFor, FISH_HUNT_COOLDOWN_MS, huntingView, state, started: true, visiting: null, flight: null, fishGame: null,
     blocked: false, uiBlocked: () => ctx.blocked, document: { hidden: false }, fishKit: { ready: false }, combatTimers: { attackCooldown: 0 },
     world: { root: {}, entities: [{ ...pond, kind: 'fish', radius: pond.rx, pond }], position: { x: pond.x, z: pond.z + pond.rz + .6 }, route: [], ring: { visible: true }, playerAttack: () => effects.push('attack'), fx: { ring: () => effects.push('ring') } },
     $: selector => selector === '#reel-button' ? button : { textContent: '' }, showReel: (on, mode) => { button.hidden = !on; button.classList.toggle('hunt', mode === 'hunt'); },

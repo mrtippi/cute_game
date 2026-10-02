@@ -58,33 +58,3 @@ test('malformed progression tasks regenerate and prototype-named events are reje
   const s=M.newGame();P.refreshProgress(s,start);s.progression.daily.tasks=[];const r=reload(s);assert.equal(P.progressEntries(r,'daily',start).filter(e=>!e.id.endsWith('login')&&!e.id.endsWith('chest')).length,3);
   const before=JSON.stringify(r);P.recordEvent(r,'constructor',2);P.recordEvent(r,'__proto__',2);assert.equal(JSON.stringify(r),before);assert.equal(P.startChallenge(r,'constructor',start),false);
 });
-test('all29 story milestones are reachable using real farming, reward, purchase and travel operations',()=>{
-  const s=M.newGame('Journey tester');let clock=Date.now(),harvests=0,kills=0;
-  const farm=()=>{const crop=s.level>=13?'goldcorn':s.level>=9?'melon':s.level>=6?'star':s.level>=4?'candy':s.level>=2?'pumpkin':'radish';M.plantAll(s,crop,clock);clock+=M.CROPS[crop].duration;const items=M.harvestAll(s,clock);assert.ok(items.length);harvests+=items.length;for(const id of new Set(items))M.sell(s,id,M.looseQuantity(s,id));assert.ok(harvests<30000,'farming must progress without a softlock');};
-  const fund=(amount:number)=>{while(s.energy<amount)farm();};const level=(target:number)=>{while(s.level<target)farm();};
-  const defeat=(type='mushroom',boss=false,count=1)=>{for(let i=0;i<count;i++){M.grantDefeat(s,type,boss?100:8,boss,()=>0);kills++;}};
-  for(let index=0;index<29;index++){
-    assert.equal(s.quest,index);const q=P.storyStep(index);
-    if(q.event==='harvest')farm();else if(q.event==='sell'){while(P.progressEntries(s,'story')[0].progress<q.target)farm();}
-    else if(q.event==='craft'){fund(q.target*25);for(let i=0;i<q.target;i++)assert.equal(M.buy(s,index===2?'sword_wood':'potion'),true);}
-    else if(q.condition==='equipped')assert.equal(M.equip(s,'sword_wood'),true);
-    else if(q.event==='kill')defeat('mushroom',false,q.target);
-    else if(q.event==='upgrade'){fund(M.upgradeCost(s,'attack'));assert.equal(M.upgrade(s,'attack'),true);}
-    else if(q.event==='fish'){fund(20);assert.equal(M.buy(s,'rod'),true);M.equip(s,'rod');for(let i=0;i<q.target;i++)assert.equal(M.grantCatch(s,'fish_perch'),true);}
-    else if(q.event==='skill')for(let i=0;i<q.target;i++)P.recordEvent(s,'skill');
-    else if(q.condition==='level')level(q.target);
-    else if(q.condition==='plots')assert.equal(M.expandGarden(s),true);
-    else if(q.event==='cook'){if(!s.bag.meat)defeat('mushroom',false,3);assert.equal(M.cook(s,'meat',3),true);}
-    else if(q.event==='boss')defeat('bear',true,q.target);
-    else if(q.event==='fishrare')assert.equal(M.grantCatch(s,'fish_koi'),true);
-    else if(q.event==='planet'){level(6);fund(40);assert.equal(M.travel(s,'candy'),true);}
-    else if(q.event==='mine'){for(let i=0;i<q.target;i++){clock+=M.MINE_REGROW_MS;assert.equal(M.claimMine(s,0,clock),true);}}
-    else if(q.condition==='visited'){for(const[id,p]of Object.entries(M.PLANETS)){if(s.visited.length>=q.target)break;level(p.level);fund(p.fare);assert.equal(M.travel(s,id as M.PlanetId),true);}M.travel(s,'home');}
-    else if(q.condition==='decor'){level(4);fund(30);M.travel(s,'toy');defeat('robot',true,2);M.travel(s,'home');assert.equal(M.placeDecoration(s,'deco_traincar',5,5),true);assert.equal(M.placeDecoration(s,'deco_traincar',8,5),true);}
-    else if(q.condition==='disguise'){level(20);fund(160);M.travel(s,'shadow');defeat('wisp',false,4);M.travel(s,'home');defeat('boar',false,8);defeat('bear',true,2);fund(360);assert.equal(M.buy(s,'dz_ninja'),true);assert.equal(M.equip(s,'dz_ninja'),true);}
-    const e=P.progressEntries(s,'story')[0];assert.equal(e.complete,true,`Step${index+1}: ${e.title}`);assert.equal(P.claimProgress(s,'story',e.id),true);assert.equal(P.claimProgress(s,'story',e.id),false);
-    assert.ok(s.energy>=0);assert.ok(s.hp>0);
-  }
-  assert.equal(s.quest,29);assert.ok(s.level>=25);assert.equal(s.visited.length,9);assert.equal(s.decorations.length,2);assert.ok(s.bag.seed_star);assert.ok(harvests>0);assert.ok(kills>150);assert.equal(P.progressEntries(s,'story')[0].description,'Chapter 5 · Step 30');
-  const r=reload(s);assert.equal(r.quest,29);assert.equal(r.level,s.level);assert.equal(r.gear.disguise,'dz_ninja');
-});

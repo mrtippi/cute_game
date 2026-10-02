@@ -2,6 +2,7 @@ import { t } from './i18n.ts';
 import type {PlanetId} from './model.ts';
 import type {Point,Obstacle} from './navigation.ts';
 import {LavaWeather,lavaEvent,LAVA_EVENT_INFO} from './lava-weather.ts';
+import { shownVillageRadius } from './village.ts';
 
 export interface Circle extends Point {r:number;id:number;height?:number}
 export interface Link {a:Point;b:Point}
@@ -80,7 +81,7 @@ export function createEnvironmentLayout(planet:PlanetId):EnvironmentLayout{
 }
 
 export function zoneAt(point:Point):'home'|'forest'|'meadow'|'swamp'|'canyon'{
-  if(Math.hypot(point.x,point.z)<18)return 'home';
+  if(Math.hypot(point.x,point.z)<shownVillageRadius())return 'home';
   return Math.abs(point.x)>Math.abs(point.z)?point.x>0?'canyon':'forest':point.z>0?'meadow':'swamp';
 }
 export function tideHeight(time:number){return -.82+.42*(.5+.5*Math.sin(time*Math.PI/50));}

@@ -3,6 +3,7 @@ import { PLANETS, type PlanetId } from './model.ts';
 import { zoneAt, type EnvironmentLayout } from './environments.ts';
 import { trailDistance, smoothstep, RIM_START } from './biomes.ts';
 import { toonMaterial } from './toon.ts';
+import { shownVillageRadius } from './village.ts';
 
 /**
  * The ground is a grid of 80 m tiles (40 m drew twice the tiles in view for no gain: the ground casts no shadow and
@@ -42,7 +43,7 @@ export function groundColor(planet: PlanetId, x: number, z: number, ponds: reado
     out.offsetHSL(0, 0, (noise2(x * .15, z * .15) * .7 + noise2(x * .6, z * .6) * .3 - .5) * .09);
     const trail = trailDistance(x, z);
     if (trail < 2.2 && r < RIM_START - 3) out.lerp(scratch.set(zoneAt({ x, z }) === 'canyon' ? '#e8a868' : '#e8cf92'), 1 - smoothstep(trail, 1.2, 2.2));
-    if (Math.abs(r - 18) < .9) out.offsetHSL(0, 0, -.04);
+    if (Math.abs(r - shownVillageRadius()) < .9) out.offsetHSL(0, 0, -.04);
     if (r > 146) out.lerp(scratch.set('#3f8f4a'), smoothstep(r, 146, 156));
   } else {
     const def = PLANETS[planet], [low, high, pad] = def.ground, n = noise2(x * .08, z * .08) * .65 + noise2(x * .4, z * .4) * .35;

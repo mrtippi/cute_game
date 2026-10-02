@@ -2,7 +2,10 @@ import { t } from './i18n.ts';
 import { ITEMS, PLANETS, COLLECTIONS, STORY_STEPS, type Inventory } from './content.ts';
 import { addItem, gainXp, xpReward as xpNeeded, removeItem, looseQuantity, type SaveState } from './model.ts';
 import { fillOrders, parseOrders, type OrdersState, type Order } from './orders.ts';
-import { starsEarned } from './planet-tiers.ts';
+import { starsEarned, titansAtTier } from './planet-tiers.ts';
+import { CHAPTERS, chapterAt } from './story.ts';
+/** 2: 星灯りの村 (story.ts). */
+export const STORY_VERSION = 2;
 import { ENEMY_TYPES } from './enemy-types.ts';
 export { STORY_STEPS } from './content.ts';
 export type ProgressKind = 'story' | 'hourly' | 'daily' | 'weekly' | 'achievements' | 'pass' | 'bounties' | 'collection' | 'challenges';
@@ -35,8 +38,14 @@ export interface ProgressionState {
         index: number;
         progress: number;
     };
-    /** How many fixed story steps existed when this save was written; endless rounds follow them. */
-    storySteps: number;
+    /** Which story the index counts in: 2 is 星灯りの村 (story.ts); older saves are placed by level. */
+    storyVersion: number;
+    /** Village rank 1–5: grows as the crystal's light returns (arc ends). */
+    villageRank: number;
+    /** Titles earned from chapters, in order. */
+    titles: string[];
+    /** The last chapter whose Lumi opening was shown (-1: none yet). */
+    lumiSeen: number;
     totals: Record<string, number>;
     daily: {
         key: string;
@@ -141,7 +150,7 @@ const CHALLENGES: Record<string, {
     target: number;
     seconds: number;
 }> = { kill: { target: 4, seconds: 75 }, skill: { target: 8, seconds: 45 }, harvest: { target: 4, seconds: 100 }, fish: { target: 2, seconds: 120 }, boss: { target: 1, seconds: 150 } };
-export function createProgression(): ProgressionState { return { story: { index: 0, progress: 0 }, storySteps: STORY_STEPS.length, totals: {}, daily: { key: '', tasks: [], chest: false, rerolled: false }, weekly: { key: '', tasks: [], chest: false }, hourly: { key: '', tasks: [], chest: false }, orders: { next: 0, list: [] }, pass: { season: '', stars: 0, claimed: [] }, achievements: {}, login: { day: '', streak: 0 }, bounty: null, challenge: null, streak: 0, bestStreak: 0 }; }
+export function createProgression(): ProgressionState { return { story: { index: 0, progress: 0 }, storyVersion: STORY_VERSION, villageRank: 1, titles: [], lumiSeen: -1, totals: {}, daily: { key: '', tasks: [], chest: false, rerolled: false }, weekly: { key: '', tasks: [], chest: false }, hourly: { key: '', tasks: [], chest: false }, orders: { next: 0, list: [] }, pass: { season: '', stars: 0, claimed: [] }, achievements: {}, login: { day: '', streak: 0 }, bounty: null, challenge: null, streak: 0, bestStreak: 0 }; }
 function day(now: number) { return new Date(now).toISOString().slice(0, 10); }
 function week(now: number) { const d = new Date(now); d.setUTCDate(d.getUTCDate() - (d.getUTCDay() + 6) % 7); return d.toISOString().slice(0, 10); }
 function hash(text: string) { let value = 2166136261; for (const c of text)
@@ -177,7 +186,13 @@ export function refreshProgress(s: SaveState, now = Date.now()) {
 }
 export function storyStep(index: number) { if (index < STORY_STEPS.length)
     return STORY_STEPS[index]; const round = index - STORY_STEPS.length, [event, base, title, icon] = ENDLESS[round % ENDLESS.length]; return { event, target: Math.round(base * (1 + Math.floor(round / ENDLESS.length) * .5)), title, icon, chapter: STORY_STEPS[STORY_STEPS.length - 1].chapter + 1, condition: undefined, end: undefined }; }
-function condition(s: SaveState, key: string) { switch (key) {
+function condition(s: SaveState, key: string) {
+    // Story goals naming one boss ("boss:home:treant") or one friend ("friend:sprout").
+    if (key.startsWith('boss:'))
+        return Number((s.bosses ?? []).includes(key.slice(5)));
+    if (key.startsWith('friend:'))
+        return Number((s.friends ?? []).some(f => f.id === key.slice(7)));
+    switch (key) {
     case 'level': return s.level;
     case 'visited': return s.visited.length;
     case 'equipped': return Number(!!(s.gear.weapon || s.gear.disguise));
@@ -197,6 +212,9 @@ function condition(s: SaveState, key: string) { switch (key) {
     case 'fishSpecies': return Object.keys(s.fishRecords).length;
     case 'collections': return Object.values(COLLECTIONS).filter(group => group.items.every(item => s.collection[item])).length;
     case 'stars': return starsEarned(s);
+    case 'titansAt5': return titansAtTier(s, 5);
+    case 'titansAt8': return titansAtTier(s, 8);
+    case 'weaponAttack': return Math.max(0, ...[s.gear.weapon, ...Object.keys(s.bag).filter(id => (s.bag[id] ?? 0) > 0)].map(id => id && ITEMS[id]?.slot === 'weapon' && id !== 'harpoon' ? ITEMS[id].attack ?? 0 : 0));
     case 'titans': return new Set((s.bosses ?? []).map(key => key.split(':')[1]).filter(type => type?.startsWith('titan_'))).size;
     default: return s.progression.totals[key] || 0;
 } }
@@ -277,6 +295,31 @@ export function progressEntries(s: SaveState, kind: ProgressKind, now = Date.now
     const mult = 1 + Math.min(p.streak, 8) * .25;
     return [entry(`challenge:${c.ends}`, t('Quick challenge: {name}', { name: challengeTitle(c.type) }), c.progress, c.target, c.claimed, { energy: Math.round((15 + s.level * 4) * mult), xp: Math.round(xpNeeded(s.level) * .07 * mult), stars: 6 }, '⏱️', t('{count} seconds remaining', { count: Math.ceil((c.ends - now) / 1000) }))];
 }
+/** A chapter's last step: the village rank and title it unlocks (items come with the step reward). */
+function closeChapter(p: ProgressionState, index: number) {
+    const at = chapterAt(index);
+    if (!at || at.last !== index)
+        return;
+    const reward = CHAPTERS[at.chapter].reward;
+    if (reward.villageRank)
+        p.villageRank = Math.max(p.villageRank, reward.villageRank);
+    if (reward.title && !p.titles.includes(reward.title))
+        p.titles.push(reward.title);
+}
+/** Index of the first step of a chapter. */
+export function chapterStart(chapter: number) { return CHAPTERS.slice(0, chapter).reduce((n, c) => n + c.goals.length, 0); }
+/** Lumi's opening for this chapter has been seen (kept so it is not shown twice). */
+export function markLumiSeen(s: SaveState, chapter: number) { const current = storyStep(s.progression.story.index).chapter; if (!Number.isInteger(chapter) || chapter < 0 || chapter > current) return false; s.progression.lumiSeen = Math.max(s.progression.lumiSeen, chapter); return true; }
+/** Chapter a save from an older story starts at: the first chapter whose level gate it has not passed. */
+function chapterForLevel(level: number) { let c = 0, gate = 2; while (c < CHAPTERS.length - 1) { gate = CHAPTERS[c].goals.find(g => g.condition === 'level')?.target ?? gate; if (level < gate) break; c++; } return c; }
+/** Place a save from an older story: chapter by level, with the ranks and titles of the chapters skipped. */
+function migrateStory(p: ProgressionState, s: SaveState) {
+    const chapter = p.story.index > 0 || s.level > 1 ? chapterForLevel(s.level) : 0;
+    p.story = { index: chapterStart(chapter), progress: 0 };
+    for (let c = 0; c < chapter; c++) closeChapter(p, chapterStart(c + 1) - 1);
+    p.lumiSeen = chapter - 1;
+    p.storyVersion = STORY_VERSION;
+}
 export function claimProgress(s: SaveState, kind: ProgressKind, id: string, now = Date.now()): boolean {
     const available = progressEntries(s, kind, now).find(e => e.id === id);
     if (!available?.complete || available.claimed || kind === 'collection')
@@ -285,6 +328,7 @@ export function claimProgress(s: SaveState, kind: ProgressKind, id: string, now 
     let reward: Reward = {};
     if (kind === 'story') {
         reward = storyReward(s);
+        closeChapter(p, p.story.index);
         p.story = { index: p.story.index + 1, progress: 0 };
         s.quest = p.story.index;
         p.totals.questsDone = (p.totals.questsDone || 0) + 1;
@@ -352,19 +396,19 @@ export function normalizeProgression(raw: unknown, s: SaveState): ProgressionSta
     const p = createProgression();
     if (!record(raw)) {
         p.story.index = Math.min(s.quest, 29);
+        migrateStory(p, s);
         const old: Record<string, number> = { kill: s.counters.kills, harvest: s.counters.harvests, sell: s.counters.sold, craft: s.counters.bought, fish: s.counters.fish, skill: s.counters.skills, upgrade: s.counters.upgrades };
         p.totals = old;
-        const step = storyStep(s.quest);
-        p.story.progress = Math.min(step.target, old[step.event || ''] || 0);
         return p;
     }
     if (record(raw.story))
         p.story = { index: number(raw.story.index, 1e6), progress: number(raw.story.progress) };
-    // Saves from before the 29-step story grew may already be in its endless rounds. Those rounds
-    // carried nothing forward, so such players start the first new chapter instead of landing mid-way.
-    const savedSteps = number(raw.storySteps, STORY_STEPS.length) || 29;
-    if (savedSteps < STORY_STEPS.length && p.story.index >= savedSteps)
-        p.story = { index: savedSteps, progress: 0 };
+    p.villageRank = Math.min(5, Math.max(1, number(raw.villageRank, 5)));
+    if (Array.isArray(raw.titles))
+        p.titles = [...new Set(raw.titles.filter((v: unknown) => typeof v === 'string' && CHAPTERS.some(c => c.reward.title === v)) as string[])];
+    p.lumiSeen = typeof raw.lumiSeen === 'number' && Number.isInteger(raw.lumiSeen) ? Math.max(-1, Math.min(raw.lumiSeen, CHAPTERS.length)) : -1;
+    if (raw.storyVersion !== STORY_VERSION)
+        migrateStory(p, s);
     if (record(raw.totals))
         for (const [k, v] of Object.entries(raw.totals))
             if (/^[a-zA-Z]{1,30}$/.test(k) && !['constructor', 'prototype', '__proto__'].includes(k))

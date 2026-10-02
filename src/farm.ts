@@ -1,6 +1,7 @@
 import { ITEMS, CROPS, canonicalItem, type ItemId, type Inventory } from './content.ts';
 import { addItem, removeItem, gainXp, looseQuantity, type SaveState } from './model.ts';
 import { gameHours } from './farm-clock.ts';
+import { pastureBonus, villageRankFor } from './village.ts';
 import { recordEvent } from './progression.ts';
 import { newFarmHelper, parseFarmHelper, type FarmHelperState } from './farm-helper-state.ts';
 
@@ -202,11 +203,12 @@ export function buildSpeciesPen(s: SaveState, kind: AnimalKind, now = Date.now()
 }
 export function hasGuardDog(s: SaveState, now = Date.now()) { return farmOf(s).animals.some(a => a.kind === 'dog' && validAnimalTime(a, now)); }
 export function guardBiteDamage(s: SaveState, now = Date.now()) { const dog = farmOf(s).animals.find(a => a.kind === 'dog' && validAnimalTime(a, now)); return dog ? nearbyPen(farmOf(s), dog) ? 30 : 18 : 0; }
-function capacity(kind: AnimalKind, level: number) {
+/** Animals of a kind the pen holds: its level, plus the big pasture's room from village rank 3 (village.ts). */
+function capacity(kind: AnimalKind, level: number, bonus = 0) {
   const d = ANIMALS[kind], safeLevel = Number.isFinite(level) ? Math.max(0, Math.min(MAX_PEN_LEVEL, Math.floor(level))) : 0;
-  return Math.min(MAX_ANIMALS_PER_KIND, d.cap + safeLevel * d.capStep);
+  return Math.min(MAX_ANIMALS_PER_KIND, d.cap + safeLevel * d.capStep + bonus);
 }
-export function penCapacity(s: SaveState, kind: AnimalKind) { return capacity(kind, farmOf(s).penLevel); }
+export function penCapacity(s: SaveState, kind: AnimalKind) { return capacity(kind, farmOf(s).penLevel, pastureBonus(villageRankFor(s))); }
 export function animalCount(s: SaveState, kind: AnimalKind) { return farmOf(s).animals.filter(a => a.kind === kind).length; }
 export type BuyCheck = 'ok' | 'away' | 'unbuilt' | 'level' | 'full' | 'energy';
 export function canBuyAnimal(s: SaveState, kind: AnimalKind): BuyCheck {
@@ -289,7 +291,7 @@ export function cookDish(s: SaveState, id: ItemId) {
 }
 function count(value: unknown, fallback = 0) { return typeof value === 'number' && Number.isSafeInteger(Math.floor(value)) && value >= 0 ? Math.floor(value) : fallback; }
 /** The farm from a save: unknown kinds and bad times are dropped, the pen keeps its caps; missing = an empty pen. */
-export function parseFarm(raw: unknown): FarmState {
+export function parseFarm(raw: unknown, rank: unknown = 1): FarmState {
   const farm = emptyFarm();
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return farm;
   const v = raw as Record<string, unknown>;
@@ -305,7 +307,7 @@ export function parseFarm(raw: unknown): FarmState {
     const a = item as Record<string, unknown>, kind = a.kind as AnimalKind, uid = count(a.uid, -1);
     if (!Object.hasOwn(ANIMALS, kind) || uid < 1 || uid >= Number.MAX_SAFE_INTEGER || seen.has(uid) ||
       typeof a.bornAt !== 'number' || !Number.isFinite(a.bornAt) || Math.abs(a.bornAt) > MAX_FARM_TIME) continue;
-    if (room[kind] >= capacity(kind, farm.penLevel)) continue;
+    if (room[kind] >= capacity(kind, farm.penLevel, pastureBonus(rank))) continue;
     const bornAt = a.bornAt, acquiredAt = a.acquiredAt === undefined ? bornAt : a.acquiredAt;
     if (!validTime(acquiredAt) || bornAt < acquiredAt - ANIMALS[kind].growMs || bornAt > acquiredAt) continue;
     const cycleAt = a.cycleAt === undefined ? bornAt + ANIMALS[kind].growMs : a.cycleAt;

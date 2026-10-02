@@ -37,6 +37,8 @@ import {SUN_OFFSET,applyPlanetLight,isLit,toonMaterial,type LitMaterial} from '.
 import {TargetMarker,TARGET_HOLD,TAP_RED} from './target-marker.ts';
 import {TelegraphDecals} from './telegraph.ts';
 import {LAVA_ORE_RULES,type LavaWeatherSnapshot} from './lava-weather.ts';
+import {setVillageRank,shownVillageRadius,MOON_POND,villageRankFor} from './village.ts';
+import {buildVillageZones} from './village-view.ts';
 import {createHarpoonProjectile} from './harpoon-art.ts';
 import {ENEMY_TYPES,HOME_SPAWNS,PLANET_SPAWNS,PLANET_BOSSES,FOREST_RAPTOR_COUNT,enemyScale,type EnemyDefinition} from './enemy-types.ts';
 
@@ -490,6 +492,8 @@ export class World {
     this.entities=[];this.enemies=[];this.obstacles=[];this.dynamicObstacles=[];this.plotMeshes=[];this.cropSignatures=[];this.planet=planet;
     this.destination=null;this.route=[];this.selected=null;this.ring.visible=false;this.marker.visible=false;this.gateHits=0;
     for(const shot of this.enemyShots??[]){this.scene.remove(shot.mesh);shot.mesh.geometry.dispose();}this.enemyShots=[];
+    // The home being shown sets the village size that zoneAt, the scenery and the creatures read (village.ts).
+    setVillageRank(planet==='home'?villageRankFor(this.state):1);const R=shownVillageRadius();
     this.environment=new EnvironmentSimulation(createEnvironmentLayout(planet));this.environmentView=new EnvironmentView(this.environment.layout);
     const theme=PLANETS[planet],rng=seeded(9281+Object.keys(PLANETS).indexOf(planet)*399);
     this.scene.background=new T.Color(planet==='home'?'#aee4ff':theme.sky);this.scene.fog=new T.Fog(theme.sky,planet==='shadow'?14:FOG.near,planet==='shadow'?55:FOG.far);
@@ -508,17 +512,19 @@ export class World {
       for(let i=0;i<this.state.plots.length;i++)this.makePlot(i);
       this.buildPen();
       const well=group(cyl('#a0a8a2',1,1,.8,0,.4,0,10),cyl('#63c5ed',.72,.72,.05,0,.83),box('#957651',.12,2.2,.12,-.85,1.5),box('#957651',.12,2.2,.12,.85,1.5),box('#cc9f78',2.4,.15,1.8,0,2.6));well.position.set(-7,0,-11);well.userData.prop='well';this.root.add(well);this.obstacle(-7,-11,1.2);
-      for(let i=0;i<54;i++){
-        const a=i/54*Math.PI*2;if(Math.abs(Math.sin(a*2))<.32)continue;
-        const g=this.kit('fence')??group(box('#b18459',.16,1,.16,-1,.5),box('#b18459',.16,1,.16,1,.5),box('#edbe77',2.1,.12,.1,0,.4),box('#edbe77',2.1,.12,.1,0,.8));g.position.set(Math.cos(a)*18,0,Math.sin(a)*18);g.rotation.y=-a-Math.PI/2;this.root.add(g);
-        for(const d of [-.6,0,.6])this.obstacle(Math.cos(a)*18-Math.sin(a)*d,Math.sin(a)*18+Math.cos(a)*d,.42);
+      // The fence: as many pieces as the ring needs (54 at 18 m), with gate gaps of the same width in metres.
+      const pieces=Math.round(54*R/18),gapSin=.32*18/R;
+      for(let i=0;i<pieces;i++){
+        const a=i/pieces*Math.PI*2;if(Math.abs(Math.sin(a*2))<gapSin)continue;
+        const g=this.kit('fence')??group(box('#b18459',.16,1,.16,-1,.5),box('#b18459',.16,1,.16,1,.5),box('#edbe77',2.1,.12,.1,0,.4),box('#edbe77',2.1,.12,.1,0,.8));g.position.set(Math.cos(a)*R,0,Math.sin(a)*R);g.rotation.y=-a-Math.PI/2;this.root.add(g);
+        for(const d of [-.6,0,.6])this.obstacle(Math.cos(a)*R-Math.sin(a)*d,Math.sin(a)*R+Math.cos(a)*d,.42);
       }
-      for(let i=0;i<4;i++){const a=i*Math.PI/2,g=this.kit('gate')??group(cyl('#b18c59',.14,.14,3.1,-1.7,1.55),cyl('#b18c59',.14,.14,3.1,1.7,1.55),box('#edc57a',3.75,.2,.2,0,3));g.position.set(Math.cos(a)*18,0,Math.sin(a)*18);g.rotation.y=-a-Math.PI/2;this.root.add(g);}
+      for(let i=0;i<4;i++){const a=i*Math.PI/2,g=this.kit('gate')??group(cyl('#b18c59',.14,.14,3.1,-1.7,1.55),cyl('#b18c59',.14,.14,3.1,1.7,1.55),box('#edc57a',3.75,.2,.2,0,3));g.position.set(Math.cos(a)*R,0,Math.sin(a)*R);g.rotation.y=-a-Math.PI/2;this.root.add(g);}
       for(const [x,z] of [[-13,-8],[-14,7],[3,-13],[10,-11],[14,5],[-2,15]])this.tree(x,z,.75,true,rng);
       // The home pond first, so the stones and fence-side bushes below keep off its water.
       this.makePond(-7.5,11.2,3.3);
       // Stepping-stone trails lead from the cottage to the four gates.
-      if(sceneryKit.ready)for(const [axis,from,to] of [['z',-3.6,17.4],['z',-12.6,-17.4],['x',2.2,17.4],['x',-2.2,-17.4]] as const){
+      if(sceneryKit.ready)for(const [axis,from,to] of [['z',-3.6,R-.6],['z',-12.6,.6-R],['x',2.2,R-.6],['x',-2.2,.6-R]] as const){
         const step=from<to?1.2:-1.2;for(let t=from,i=0;step>0?t<=to:t>=to;t+=step,i++){const side=(i%2?.22:-.22),x=axis==='z'?side:t,z=axis==='z'?t:side;
           if(this.entities.some(e=>Math.hypot(x-e.x,z-e.z)<e.radius+.35))continue;
           const stone=this.kit('stone_step');if(stone){stone.position.set(x,0,z);stone.rotation.y=i*1.3+t;stone.scale.setScalar(.95+(i%3)*.1);this.root.add(stone);}}}
@@ -527,6 +533,8 @@ export class World {
         if(this.entities.some(e=>Math.hypot(x-e.x,z-e.z)<e.radius+1.4)||this.obstacles.some(o=>Math.hypot(x-o.x,z-o.z)<o.r+.9))continue;
         const bush=this.kit(i%5===2?'mushroom':'bush');if(bush){bush.position.set(x,0,z);bush.rotation.y=a;bush.scale.setScalar(i%5===2?1.3:.85+(i%3)*.12);this.root.add(bush);}}
       for(const [x,z,r] of [[10,52,9],[40,105,11],[-70,35,8],[-105,-30,7]])this.makePond(x,z,r);
+      // A bigger village's zones; the Moon Pond comes after the wild ponds so their ids stay the same (fish-hunting.ts).
+      buildVillageZones(this);if(villageRankFor(this.state)>=3)this.makePond(...MOON_POND);
       this.position.set(0,0,-4.8);
     }else{
       this.position.set(0,0,3.6);this.addEntity('travel','Starship','🚀',this.rocket(),0,0,2);this.obstacle(0,0,1.4);
@@ -554,6 +562,8 @@ export class World {
       const def=ENEMY_TYPES[type];if(!def)return;const spawnIndex=enemyIndex++;
       for(let attempt=0;attempt<500;attempt++){
         let a=zone?angles[zone]+(rng()-.5)*1.3:rng()*Math.PI*2,d=boss?100+rng()*24:27+rng()*97,x=Math.cos(a)*d,z=Math.sin(a)*d;
+        // Wild creatures keep 9 m outside the fence (27 m at rank 1, so the original village never draws again).
+        if(planet==='home'&&!boss&&d<R+9)continue;
         if(planet==='cloud'){const islands=this.environment.layout.islands,isl=islands[1+(enemyIndex%(islands.length-1))];a=rng()*Math.PI*2;d=rng()*(isl.r-3);x=isl.x+Math.cos(a)*d;z=isl.z+Math.sin(a)*d;}
         if(this.obstacles.some(o=>Math.hypot(x-o.x,z-o.z)<o.r+def.radius+1)||this.enemies.some(e=>Math.hypot(x-e.x,z-e.z)<(def.titan&&e.boss?25:2.4)))continue;
         if(planet==='lava'&&terrainHeight(this.environment.layout,{x,z})<-.4)continue;
@@ -583,7 +593,7 @@ export class World {
   makePond(x:number,z:number,radius=5.6,waterId?:string) {
     // A round pond like the reference's waters (radius = water line): one smooth bank mesh (deep bed, shallows,
     // sandy lip, sand fading into the grass) and a translucent water disc whose edge the lip hides (pond-view.ts).
-    const id=waterId??(this.planet==='home'?Math.hypot(x,z)<18?'home':zoneAt({x,z})==='swamp'?'swamp':'lake':this.planet),surface=.3,r=radius;
+    const id=waterId??(this.planet==='home'?Math.hypot(x,z)<shownVillageRadius()?'home':zoneAt({x,z})==='swamp'?'swamp':'lake':this.planet),surface=.3,r=radius;
     const {group:pond}=buildPond(r,surface,id);
     for(let i=0;i<5;i++){const a=i*2.4+.7,d=r*(.38+(i%3)*.17),pad=cyl('#4fbf3a',.3,.3,.03,Math.cos(a)*d,surface+.02,Math.sin(a)*d,12);pad.scale.z=.85;pond.add(pad);if(i%2===0)pond.add(ball('#ff8fc4',.1,Math.cos(a)*d,surface+.08,Math.sin(a)*d));}
     // Keep the water unobstructed so fish remain visible; fishing takes place on the bank.
@@ -1141,7 +1151,7 @@ export class World {
       // Rising lava may surround a creature: allow escape, but never walk into it from dry ground.
       if(!this.environment.lavaAt(e)&&this.environment.lavaAt(point))return false;
     }
-    const safe=(this.planet==='home'?18:11)+1.5;
+    const safe=(this.planet==='home'?shownVillageRadius():11)+1.5;
     return Math.hypot(point.x,point.z)>=Math.min(safe,Math.hypot(e.x,e.z))-.001;
   }
   private moveCreature(e:Enemy,dx:number,dz:number,allowVoid=false){
@@ -1182,7 +1192,7 @@ export class World {
   }
   private enemyTarget(e:Enemy){
     const candidates:Array<Point&{id?:string;enemy?:Enemy}>=[];
-    const safe=this.planet==='home'?18:11;
+    const safe=this.planet==='home'?shownVillageRadius():11;
     if(!this.playerStealth&&Math.hypot(this.position.x,this.position.z)>=safe)candidates.push({x:this.position.x,z:this.position.z});
     for(const [id,remote] of this.remotePlayers??[])if(remote.mesh.visible&&!remote.pose.visual?.stealth&&(remote.pose.hp??1)>0&&Math.hypot(remote.pose.x,remote.pose.z)>=safe)candidates.push({x:remote.pose.x,z:remote.pose.z,id});
     if((e.statuses?.charm??0)>0)return this.enemies.filter(other=>other!==e&&other.hp>0).map(enemy=>({x:enemy.x,z:enemy.z,enemy})).sort((a,b)=>Math.hypot(a.x-e.x,a.z-e.z)-Math.hypot(b.x-e.x,b.z-e.z))[0];
@@ -1202,7 +1212,7 @@ export class World {
   }
   localPlayerId='local';
   private titanTargets():TitanTarget[]{
-    const safe=this.planet==='home'?18:11,targets:TitanTarget[]=[];
+    const safe=this.planet==='home'?shownVillageRadius():11,targets:TitanTarget[]=[];
     if(this.state.hp>0&&Math.hypot(this.position.x,this.position.z)>=safe)targets.push({id:this.localPlayerId??'local',x:this.position.x,z:this.position.z,airborne:this.playerFlying||this.environment.airborne});
     for(const[id,r]of this.remotePlayers??[])if(r.mesh.visible&&(r.pose.hp??1)>0&&Math.hypot(r.pose.x,r.pose.z)>=safe)targets.push({id,x:r.pose.x,z:r.pose.z,airborne:!!r.pose.visual?.flight});return targets;
   }

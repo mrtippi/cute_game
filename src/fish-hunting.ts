@@ -1,6 +1,7 @@
 import { FISH, FISH_WEIGHTS, ITEMS } from './content.ts';
 import { FISH_PER_WATER } from './fishing.ts';
 import { zoneAt } from './environments.ts';
+import { MOON_POND, MAX_VILLAGE_RANK, clampRank, villageRadius, villageRankFor } from './village.ts';
 import { grantCatch, type SaveState } from './model.ts';
 import { recordEvent } from './progression.ts';
 
@@ -18,12 +19,12 @@ export interface FishHuntResult { hit: boolean; count: 0 | 1; id: string; size: 
 const validTime = (n: unknown): n is number => typeof n === 'number' && Number.isFinite(n) && n >= 0 && n <= MAX_TIME;
 const point = (p: unknown): p is Point => !!p && typeof p === 'object' && Number.isFinite((p as Point).x) && Number.isFinite((p as Point).z);
 
-/** Same geometry and stable entity IDs as World.makePond and rod-fishing validation. */
-export function huntingPonds(planet: string): HuntPond[] {
-  const raw = planet === 'home' ? [[-7.5, 11.2, 3.3], [10, 52, 9], [40, 105, 11], [-70, 35, 8], [-105, -30, 7]] : HUNT_PLANETS.includes(planet) ? Array.from({ length: 4 }, (_, i) => [Math.cos(i * Math.PI / 2 + .4) * (38 + i * 17), Math.sin(i * Math.PI / 2 + .4) * (38 + i * 17), 6 + i * .6]) : [];
-  return raw.map(([x, z, r], i) => ({ id: `${planet}:fish:${i}`, x, z, rx: r, rz: r, surface: .3, waterId: planet === 'home' ? Math.hypot(x, z) < 18 ? 'home' : zoneAt({ x, z }) === 'swamp' ? 'swamp' : 'lake' : planet }));
+/** Same geometry and stable entity IDs as World.makePond and rod-fishing validation; the Moon Pond joins at village rank 3. */
+export function huntingPonds(planet: string, rank: unknown = 1): HuntPond[] {
+  const raw = planet === 'home' ? [[-7.5, 11.2, 3.3], [10, 52, 9], [40, 105, 11], [-70, 35, 8], [-105, -30, 7], ...(clampRank(rank) >= 3 ? [MOON_POND] : [])] : HUNT_PLANETS.includes(planet) ? Array.from({ length: 4 }, (_, i) => [Math.cos(i * Math.PI / 2 + .4) * (38 + i * 17), Math.sin(i * Math.PI / 2 + .4) * (38 + i * 17), 6 + i * .6]) : [];
+  return raw.map(([x, z, r], i) => ({ id: `${planet}:fish:${i}`, x, z, rx: r, rz: r, surface: .3, waterId: planet === 'home' ? Math.hypot(x, z) < villageRadius(rank) ? 'home' : zoneAt({ x, z }) === 'swamp' ? 'swamp' : 'lake' : planet }));
 }
-export function huntingPondAt(planet: string, x: number, z: number): HuntPond | null { return huntingPonds(planet).find(p => Math.hypot(p.x - x, p.z - z) < .01) ?? null; }
+export function huntingPondAt(planet: string, x: number, z: number, rank: unknown = 1): HuntPond | null { return huntingPonds(planet, rank).find(p => Math.hypot(p.x - x, p.z - z) < .01) ?? null; }
 export const fishHuntKey = (pondId: string, slot: number) => `${pondId}:${slot}`;
 function hash(key: string) { let n = 2166136261; for (const c of key) n = Math.imul(n ^ c.charCodeAt(0), 16777619); n = Math.imul(n ^ (n >>> 16), 0x7feb352d); n = Math.imul(n ^ (n >>> 15), 0x846ca68b); return (n ^ (n >>> 16)) >>> 0; }
 const fraction = (key: string) => hash(key) / 0x100000000;
@@ -48,7 +49,7 @@ export function parseHunting(raw: unknown, now = Date.now()): HuntingState | und
   if (!raw || typeof raw !== 'object' || Array.isArray(raw) || !validTime(now)) return undefined;
   const value = raw as Record<string, unknown>, readyAt: Record<string, number> = {};
   const input = value.readyAt && typeof value.readyAt === 'object' && !Array.isArray(value.readyAt) ? value.readyAt as Record<string, unknown> : {};
-  for (const planet of HUNT_PLANETS) for (const pond of huntingPonds(planet)) for (let slot = 0; slot < (FISH_PER_WATER[pond.waterId] ?? 0); slot++) {
+  for (const planet of HUNT_PLANETS) for (const pond of huntingPonds(planet, MAX_VILLAGE_RANK)) for (let slot = 0; slot < (FISH_PER_WATER[pond.waterId] ?? 0); slot++) {
     const key = fishHuntKey(pond.id, slot), at = input[key]; if (validTime(at) && at <= now + FISH_HUNT_RESTOCK_MS) readyAt[key] = at;
   }
   // Reset implausible future timestamps instead of repeatedly clamping them on every rejected request.
@@ -59,7 +60,7 @@ export function parseHunting(raw: unknown, now = Date.now()): HuntingState | und
 /** Offline uses the player's position; the server must supply its own authenticated peer position. */
 export function huntFish(s: SaveState, intent: FishHuntIntent, from: Point, now = Date.now()): FishHuntResult | null {
   if (!intent || intent.weaponId !== 'harpoon' || s.gear.weapon !== 'harpoon' || s.gear.disguise || !(s.bag.harpoon! >= 1) || s.hp <= 0 || !validTime(now) || !point(from) || !point(intent.aim)) return null;
-  const weapon = ITEMS.harpoon?.weapon, pond = huntingPonds(s.planet).find(p => p.id === intent.pondId);
+  const weapon = ITEMS.harpoon?.weapon, pond = huntingPonds(s.planet, villageRankFor(s)).find(p => p.id === intent.pondId);
   if (!weapon || !pond || s.hunting && (s.hunting.hasShot || s.hunting.lastShotAt > 0) && now - s.hunting.lastShotAt < FISH_HUNT_COOLDOWN_MS) return null;
   const target = fishHuntTarget(pond, intent.slot, now); if (!target) return null;
   const key = fishHuntKey(pond.id, target.slot), readyAt = s.hunting?.readyAt[key] ?? 0;

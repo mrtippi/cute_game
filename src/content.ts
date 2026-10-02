@@ -1,5 +1,5 @@
 import { TITAN_ITEMS, TITAN_LOOT } from './titan-content.ts';
-import { lateStory } from './story-late.ts';
+import { storySteps } from './story.ts';
 // Gameplay facts measured from the public reference client, 2026-09-30.
 // Rendering assets, descriptions and implementation code are independently authored.
 export type GearSlot = 'weapon' | 'hat' | 'outfit' | 'boots' | 'pet' | 'disguise';
@@ -3759,6 +3759,7 @@ for (const [id, item] of Object.entries(ITEMS))
     }
 export const STARTING_PLOTS = 9, MAX_EXTRA_PLOTS = 24, MAX_DECORATIONS = 40;
 export const UPGRADES = { health: { name: 'Health', icon: '❤️', base: 12, step: 25 }, attack: { name: 'Attack', icon: '👊', base: 15, step: 3 }, defense: { name: 'Defense', icon: '🛡️', base: 14, step: 4 }, crit: { name: 'Critical chance', icon: '💥', base: 18, step: .025, max: 28 } } as const;
+/** The story (星灯りの村): twenty chapters in five arcs, from story.ts. */
 export const STORY_STEPS: {
     title: string;
     event?: string;
@@ -3767,66 +3768,7 @@ export const STORY_STEPS: {
     chapter: number;
     icon: string;
     end?: Inventory;
-}[] = [
-    { title: 'Harvest three crops', event: 'harvest', target: 3, chapter: 0, icon: '🌾' },
-    { title: 'Earn 20 energy at the market', event: 'sell', target: 20, chapter: 0, icon: '🧺' },
-    { title: 'Buy or craft one item', event: 'craft', target: 1, chapter: 0, icon: '🗡️' },
-    { title: 'Equip a weapon', condition: 'equipped', target: 1, chapter: 0, icon: '✋' },
-    { title: 'Defeat five creatures', event: 'kill', target: 5, chapter: 0, icon: '⚔️' },
-    { title: 'Buy a crystal upgrade', event: 'upgrade', target: 1, chapter: 0, icon: '💎' },
-    { title: 'Catch two fish', event: 'fish', target: 2, chapter: 0, icon: '🎣' },
-    { title: 'Use ten skills', event: 'skill', target: 10, chapter: 0, icon: '🌀' },
-    { title: 'Reach level 5', condition: 'level', target: 5, chapter: 0, icon: '⭐', end: { seed_star: 1, spore: 2, plot_kit: 1 } },
-    { title: 'Defeat 25 creatures', event: 'kill', target: 25, chapter: 1, icon: '⚔️' },
-    { title: 'Place another garden bed', condition: 'plots', target: 1, chapter: 1, icon: '🌱' },
-    { title: 'Cook three meals', event: 'cook', target: 3, chapter: 1, icon: '🔥' },
-    { title: 'Defeat a boss', event: 'boss', target: 1, chapter: 1, icon: '👑' },
-    { title: 'Catch a rare fish', event: 'fishrare', target: 1, chapter: 1, icon: '🐠' },
-    { title: 'Reach level 8', condition: 'level', target: 8, chapter: 1, icon: '⭐', end: { seed_fire: 2, seed_ice: 2, claw: 2 } },
-    { title: 'Visit another planet', event: 'planet', target: 1, chapter: 2, icon: '🚀' },
-    { title: 'Mine five deposits', event: 'mine', target: 5, chapter: 2, icon: '⛏️' },
-    { title: 'Discover three planets', condition: 'visited', target: 3, chapter: 2, icon: '🔭' },
-    { title: 'Craft or buy three items', event: 'craft', target: 3, chapter: 2, icon: '🔨' },
-    { title: 'Place two decorations', condition: 'decor', target: 2, chapter: 2, icon: '🏡' },
-    { title: 'Reach level 12', condition: 'level', target: 12, chapter: 2, icon: '⭐', end: { starshard: 2, seed_star: 2, spore: 3 } },
-    { title: 'Defeat three bosses', event: 'boss', target: 3, chapter: 3, icon: '👑' },
-    { title: 'Discover five planets', condition: 'visited', target: 5, chapter: 3, icon: '🔭' },
-    { title: 'Equip a disguise', condition: 'disguise', target: 1, chapter: 3, icon: '🎭' },
-    { title: 'Defeat 150 creatures', event: 'kill', target: 150, chapter: 3, icon: '⚔️' },
-    { title: 'Reach level 18', condition: 'level', target: 18, chapter: 3, icon: '⭐' },
-    { title: 'Discover every planet', condition: 'visited', target: 9, chapter: 3, icon: '🔭' },
-    { title: 'Defeat ten bosses', event: 'boss', target: 10, chapter: 3, icon: '👑' },
-    { title: 'Reach level 25', condition: 'level', target: 25, chapter: 3, icon: '⭐', end: { starshard: 3, moonstone: 1, thunderstone: 2, seed_star: 3 } },
-    // Chapter 5: the farm grows up (animals, fruit, fertilizer, the guard dog).
-    { title: 'Build the animal pen', condition: 'pen', target: 1, chapter: 4, icon: '🐔' },
-    { title: 'Raise three animals', condition: 'animals', target: 3, chapter: 4, icon: '🐄' },
-    { title: 'Collect ten animal products', event: 'animal', target: 10, chapter: 4, icon: '🥚' },
-    { title: 'Harvest a fruit crop', event: 'fruit', target: 1, chapter: 4, icon: '🍎' },
-    { title: 'Fertilize five crops', event: 'fertilize', target: 5, chapter: 4, icon: '🧪' },
-    { title: 'Adopt a guard dog', condition: 'dog', target: 1, chapter: 4, icon: '🐶' },
-    { title: 'Eat three foods with bonus effects', event: 'eat', target: 3, chapter: 4, icon: '🍽️' },
-    { title: 'Reach level 28', condition: 'level', target: 28, chapter: 4, icon: '⭐', end: { seed_star: 3, spore: 4, plot_kit: 1 } },
-    // Chapter 6: the forge and the hunt (forging, harpoon, hawks, mysterious shadows).
-    { title: 'Try weapon forging three times', event: 'forge', target: 3, chapter: 5, icon: '🔨' },
-    { title: 'Forge a weapon to +3', condition: 'forgeMax', target: 3, chapter: 5, icon: '⚒️' },
-    { title: 'Get a hunting harpoon', condition: 'harpoon', target: 1, chapter: 5, icon: '🔱' },
-    { title: 'Hunt ten fish with the harpoon', event: 'harpoon', target: 10, chapter: 5, icon: '🐟' },
-    { title: 'Defeat three Great Forest Hawks', event: 'hawk', target: 3, chapter: 5, icon: '🦅' },
-    { title: 'Reel in three mysterious shadows', event: 'mystery', target: 3, chapter: 5, icon: '❓' },
-    { title: 'Forge a weapon to +5', condition: 'forgeMax', target: 5, chapter: 5, icon: '⚒️' },
-    { title: 'Reach level 32', condition: 'level', target: 32, chapter: 5, icon: '⭐', end: { starshard: 3, moonstone: 1, thunderstone: 2 } },
-    // Chapter 7: the nine Titans, one world boss on each planet.
-    { title: 'Collect 100 stardust', event: 'stardust', target: 100, chapter: 6, icon: '✨' },
-    { title: 'Defeat your first Titan', condition: 'titans', target: 1, chapter: 6, icon: '🗿' },
-    { title: 'Forge a weapon to +8', condition: 'forgeMax', target: 8, chapter: 6, icon: '⚒️' },
-    { title: 'Defeat three different Titans', condition: 'titans', target: 3, chapter: 6, icon: '🗿' },
-    { title: 'Collect 50 animal products', event: 'animal', target: 50, chapter: 6, icon: '🥚' },
-    { title: 'Defeat six different Titans', condition: 'titans', target: 6, chapter: 6, icon: '🗿' },
-    { title: 'Reach level 40', condition: 'level', target: 40, chapter: 6, icon: '⭐' },
-    { title: 'Defeat all nine Titans', condition: 'titans', target: 9, chapter: 6, icon: '👑', end: { starshard: 5, moonstone: 2, thunderstone: 3, seed_star: 5 } },
-    // Chapters 8–20: the climb to level 100 (story-late.ts).
-    ...lateStory(),
-];
+}[] = storySteps();
 // Keep optional metadata absent when it has no value.
 for (const item of Object.values(ITEMS))
     for (const key of Object.keys(item) as (keyof ItemDef)[])
