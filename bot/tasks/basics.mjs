@@ -1,7 +1,7 @@
 // The everyday routines: rewards, garden, market, and fighting. Each takes the bot context
 // ({ game, hands, rng, log, note }) and returns a short result for the session log.
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
-const JOURNAL_TABS = ['story', 'daily', 'weekly', 'achievements', 'bounties', 'pass'];
+const JOURNAL_TABS = ['story', 'hourly', 'daily', 'weekly', 'achievements', 'bounties', 'pass'];
 
 /** Anything waiting to be collected in the journal, as the quests() view reports it. */
 export async function claimable(game) {
@@ -57,7 +57,9 @@ export async function tendGarden(bot, { minutesLeft = 60 } = {}) {
     if (opened) {
       const seeds = await bot.page.$$eval('#dialog [data-action="plant-all"]:not([disabled])', bs => bs.map(b => b.dataset.item));
       const info = await bot.page.evaluate(() => window.__zg.seeds());
-      const pick = bestSeed({ cropInfo: info.filter(c => seeds.includes(c.id)) }, minutesLeft) ?? seeds[0];
+      // A crop a village order asks for (raw or cooked) comes first, then the best for the time left.
+      const ordered = s.orders.map(o => o.item.replace(/^cooked_/, '')).filter(id => seeds.includes(id) && s.orders.some(o => o.item.replace(/^cooked_/, '') === id && o.have < o.count));
+      const pick = ordered[0] ?? bestSeed({ cropInfo: info.filter(c => seeds.includes(c.id)) }, minutesLeft) ?? seeds[0];
       if (pick && await game.action('plant-all', { item: pick })) { planted = true; note(`planted ${pick} in ${empty.length} beds`, 'garden'); }
       await game.closePanel();
     }
@@ -65,15 +67,28 @@ export async function tendGarden(bot, { minutesLeft = 60 } = {}) {
   return `harvested ${harvested}, planted ${planted}`;
 }
 
+/** Raw produce sells; cooked meals stay as the explorer's healing food. */
+const PRODUCE = id => /^fish_/.test(id) || CROP_IDS.test(id);
+const CROP_IDS = /^(radish|carrot|pumpkin|mint|chili|candy|bean|star|berry|coffee|moonflower|magnetmelon|melon|clover|glowshroom|iceberry|goldcorn|dragonfruit|rainbowrose|apple|grape|mango|pineapple|coconut|durian|lychee|peach)$/;
+
+/** At the market: deliver every village order the bag can fill, then sell produce no open order still needs. */
 export async function sellProduce(bot) {
-  const { game, note } = bot;
-  const before = (await game.snap()).energy;
+  const { game, rng, note } = bot;
+  const start = await game.snap();
   const opened = await game.goTo(n => n.entities.find(e => e.kind === 'sell'), { label: 'market', done: n => n.modal === 'sell' && n });
   if (!opened) return 'market not reached';
-  const sold = await game.action('sell-produce');
-  await sleep(600); const after = (await game.snap()).energy;
-  if (sold) note(`sold produce for ${after - before} energy`, 'market');
+  let delivered = 0;
+  for (let i = 0; i < 3; i++) {
+    if (!await game.action('deliver-order')) break;
+    delivered++; note('delivered a village order', 'market'); await sleep(rng.between(500, 900));
+  }
+  const s = await game.snap(), wanted = new Set(s.orders.filter(o => o.have < o.count * 2).map(o => o.item));
+  const sellable = await bot.page.$$eval('#dialog [data-action="sell-all"]:not([disabled])', bs => bs.map(b => b.dataset.item));
+  let kinds = 0;
+  for (const item of sellable.filter(id => PRODUCE(id) && !wanted.has(id))) if (await game.action('sell-all', { item })) { kinds++; await sleep(rng.between(250, 500)); }
+  const after = (await game.snap()).energy;
+  if (kinds) note(`sold ${kinds} kinds of produce for ${after - start.energy} energy`, 'market');
   await bot.hands.think(500); await game.closePanel();
-  return sold ? `+${after - before} energy` : 'nothing to sell';
+  return delivered || kinds ? `delivered ${delivered}, sold ${kinds} kinds, +${after - start.energy} energy` : 'nothing to sell';
 }
 

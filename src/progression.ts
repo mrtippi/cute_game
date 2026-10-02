@@ -1,9 +1,10 @@
 import { t } from './i18n.ts';
 import { ITEMS, PLANETS, COLLECTIONS, STORY_STEPS, type Inventory } from './content.ts';
-import { addItem, gainXp, xpNeeded, type SaveState } from './model.ts';
+import { addItem, gainXp, xpNeeded, removeItem, looseQuantity, type SaveState } from './model.ts';
+import { fillOrders, parseOrders, type OrdersState, type Order } from './orders.ts';
 import { ENEMY_TYPES } from './enemy-types.ts';
 export { STORY_STEPS } from './content.ts';
-export type ProgressKind = 'story' | 'daily' | 'weekly' | 'achievements' | 'pass' | 'bounties' | 'collection' | 'challenges';
+export type ProgressKind = 'story' | 'hourly' | 'daily' | 'weekly' | 'achievements' | 'pass' | 'bounties' | 'collection' | 'challenges';
 export interface ProgressEntry {
     id: string;
     title: string;
@@ -47,6 +48,14 @@ export interface ProgressionState {
         tasks: Task[];
         chest: boolean;
     };
+    /** The hourly board: four tasks and a chest, new every hour on the hour (UTC). */
+    hourly: {
+        key: string;
+        tasks: Task[];
+        chest: boolean;
+    };
+    /** Open village orders at the harvest market. */
+    orders: OrdersState;
     pass: {
         season: string;
         stars: number;
@@ -87,14 +96,27 @@ const DAILY: Record<string, TaskSpec> = {
     animal: { event: 'animal', targets: [4, 8, 12], title: 'Collect animal products', icon: '🥚', level: 2 }, fertilize: { event: 'fertilize', targets: [2, 3, 5], title: 'Fertilize crops', icon: '🧪', level: 2 }, upgrade: { event: 'upgrade', targets: [1, 2], title: 'Buy a crystal upgrade', icon: '💎', level: 2 }, eat: { event: 'eat', targets: [1, 2, 3], title: 'Eat food with a bonus effect', icon: '🍽️', level: 2 },
     mystery: { event: 'mystery', targets: [1], title: 'Reel in a mysterious shadow', icon: '❓', level: 3 }, fruit: { event: 'fruit', targets: [1, 2], title: 'Harvest fruit crops', icon: '🍎', level: 3 }, decorate: { event: 'decorate', targets: [1], title: 'Place a decoration', icon: '🏡', level: 4 }, hawk: { event: 'hawk', targets: [1, 2, 3], title: 'Defeat Great Forest Hawks', icon: '🦅', level: 5 },
     stardust: { event: 'stardust', targets: [10, 20, 30], title: 'Collect stardust in space', icon: '✨', level: 6 }, forge: { event: 'forge', targets: [1, 2, 3], title: 'Try weapon forging', icon: '⚒️', level: 6 }, harpoon: { event: 'harpoon', targets: [3, 5, 8], title: 'Hunt fish with the harpoon', icon: '🔱', level: 8 }, legendFish: { event: 'legendFish', targets: [1], title: 'Catch a legendary fish', icon: '🐋', level: 10 },
+    order: { event: 'order', targets: [2, 3, 5], title: 'Deliver village orders', icon: '📦', level: 2 },
 };
 const WEEKLY: Record<string, TaskSpec> = {
     kill: { ...DAILY.kill, targets: [150, 300, 500] }, boss: { ...DAILY.boss, targets: [4, 8, 12] }, harvest: { ...DAILY.harvest, targets: [60, 120, 200] }, fish: { ...DAILY.fish, targets: [20, 40, 60] }, cook: { ...DAILY.cook, targets: [15, 30] }, mine: { ...DAILY.mine, targets: [30, 60] }, planet: { ...DAILY.planet, targets: [4, 8] }, sell: { ...DAILY.sell, targets: [1500, 4000, 8000] }, bounty: { event: 'bounty', targets: [3, 5], title: 'Complete bounties', icon: '🎯' }, chal: { event: 'chal', targets: [10, 20], title: 'Win quick challenges', icon: '⏱️' },
     dailyDone: { event: 'dailyDone', targets: [10, 15], title: 'Complete daily quests', icon: '📅' }, animal: { ...DAILY.animal, targets: [30, 60, 90] }, mystery: { event: 'mystery', targets: [3, 5], title: 'Reel in mysterious shadows', icon: '❓', level: 3 },
     stardust: { ...DAILY.stardust, targets: [100, 200, 300] }, forgeOk: { event: 'forgeOk', targets: [2, 3, 5], title: 'Forge successfully', icon: '⚒️', level: 6 }, titan: { event: 'titan', targets: [1, 2, 3], title: 'Defeat Titans', icon: '🗿', level: 12 },
+    order: { ...DAILY.order, targets: [15, 30, 50] },
+};
+/** One hour of play: targets a player can finish within the hour, rising every ten levels. */
+const HOURLY: Record<string, TaskSpec> = {
+    kill: { ...DAILY.kill, targets: [8, 15, 25, 35, 45] }, harvest: { ...DAILY.harvest, targets: [9, 18, 30, 45, 60] }, fish: { ...DAILY.fish, targets: [3, 4, 6, 8, 10] },
+    sell: { ...DAILY.sell, targets: [150, 400, 900, 1800, 3000] }, cook: { event: 'cook', targets: [3, 6, 10, 14, 18], title: 'Cook meals', icon: '🔥', level: 2 }, skill: { ...DAILY.skill, targets: [15, 25, 40, 55, 70] },
+    bounty: { event: 'bounty', targets: [1, 1, 2, 2, 3], title: 'Complete bounties', icon: '🎯' }, order: { ...DAILY.order, targets: [1, 2, 3, 4, 5] },
+    animal: { ...DAILY.animal, targets: [4, 8, 12, 18, 24] }, fertilize: { ...DAILY.fertilize, targets: [2, 3, 4, 5, 6] }, upgrade: { ...DAILY.upgrade, targets: [1, 1, 2, 2, 3] },
+    mystery: { ...DAILY.mystery, targets: [1, 1, 1, 2, 2] }, hawk: { ...DAILY.hawk, targets: [1, 2, 3, 4, 5] }, chal: { event: 'chal', targets: [1, 2, 2, 3, 3], title: 'Win quick challenges', icon: '⏱️', level: 2 },
+    craft: { ...DAILY.craft, targets: [1, 1, 2, 2, 3] }, stardust: { ...DAILY.stardust, targets: [10, 15, 25, 35, 45] }, mine: { ...DAILY.mine, level: 6, targets: [3, 5, 8, 10, 12] },
+    planet: { ...DAILY.planet, targets: [1, 1, 1, 2, 2] }, forge: { ...DAILY.forge, targets: [1, 1, 2, 2, 3] }, harpoon: { ...DAILY.harpoon, targets: [3, 5, 7, 9, 12] },
+    boss: { ...DAILY.boss, level: 12, targets: [1, 1, 1, 2, 2] },
 };
 /** Every daily and weekly task type and achievement line, read-only (for listings and tests). */
-export const TASK_SPECS: Readonly<{ daily: Readonly<Record<string, TaskSpec>>; weekly: Readonly<Record<string, TaskSpec>> }> = { daily: DAILY, weekly: WEEKLY };
+export const TASK_SPECS: Readonly<{ daily: Readonly<Record<string, TaskSpec>>; weekly: Readonly<Record<string, TaskSpec>>; hourly: Readonly<Record<string, TaskSpec>> }> = { daily: DAILY, weekly: WEEKLY, hourly: HOURLY };
 const BONUS = ['potion', 'spore', 'honey', 'worm', 'seed_ice', 'seed_fire', 'claw', 'nectar', 'plot_kit'];
 const ENDLESS: [
     string,
@@ -111,13 +133,13 @@ const ACHIEVEMENTS: [
     string
 ][] = [['kills', 'kill', [50, 200, 1000, 5000], 'Creature hunter', '⚔️'], ['boss', 'boss', [1, 10, 50, 200], 'Boss hunter', '👑'], ['farm', 'harvest', [20, 100, 500, 2000], 'Gardener', '🌾'], ['fish', 'fish', [10, 50, 200, 1000], 'Angler', '🎣'], ['legend', 'legendFish', [1, 3, 10], 'Legendary angler', '🐋'], ['cook', 'cook', [10, 50, 200], 'Volcano chef', '🔥'], ['mine', 'mine', [20, 100, 500], 'Space miner', '⛏️'], ['planets', 'visited', [2, 3, 5, 9], 'Explorer', '🔭'], ['decor', 'decor', [3, 10, 25], 'Decorator', '🏡'], ['quests', 'questsDone', [5, 30, 100, 300], 'Helpful neighbor', '📜'], ['bounty', 'bounty', [1, 10, 50, 150], 'Bounty hunter', '🎯'], ['chal', 'chal', [5, 30, 100, 300], 'Challenge champion', '⏱️'], ['streak', 'bestStreak', [3, 5, 8, 12], 'Winning streak', '🔥'], ['story', 'story', [9, 15, 21, 29], 'Storyteller', '🧭'], ['level', 'level', [5, 10, 20, 30], 'Growing stronger', '⭐'],
     ['rancher', 'animal', [25, 100, 500, 2000], 'Rancher', '🥚'], ['orchard', 'fruit', [1, 10, 50, 200], 'Orchard keeper', '🍎'], ['smith', 'forgeOk', [1, 10, 30, 60], 'Blacksmith', '⚒️'], ['harpoon', 'harpoon', [10, 50, 200, 1000], 'Harpoon hunter', '🔱'],
-    ['shadow', 'mystery', [1, 10, 30, 100], 'Shadow seeker', '❓'], ['pilot', 'stardust', [50, 300, 1000, 5000], 'Stardust pilot', '✨'], ['titan', 'titans', [1, 3, 6, 9], 'Titan slayer', '🗿'], ['visitor', 'login', [7, 30, 100, 365], 'Regular visitor', '🗓️']];
+    ['shadow', 'mystery', [1, 10, 30, 100], 'Shadow seeker', '❓'], ['pilot', 'stardust', [50, 300, 1000, 5000], 'Stardust pilot', '✨'], ['titan', 'titans', [1, 3, 6, 9], 'Titan slayer', '🗿'], ['visitor', 'login', [7, 30, 100, 365], 'Regular visitor', '🗓️'], ['neighbor', 'order', [5, 25, 100, 500], 'Good neighbor', '📦']];
 export const ACHIEVEMENT_TITLES: readonly string[] = ACHIEVEMENTS.map(a => a[3]);
 const CHALLENGES: Record<string, {
     target: number;
     seconds: number;
 }> = { kill: { target: 4, seconds: 75 }, skill: { target: 8, seconds: 45 }, harvest: { target: 4, seconds: 100 }, fish: { target: 2, seconds: 120 }, boss: { target: 1, seconds: 150 } };
-export function createProgression(): ProgressionState { return { story: { index: 0, progress: 0 }, storySteps: STORY_STEPS.length, totals: {}, daily: { key: '', tasks: [], chest: false, rerolled: false }, weekly: { key: '', tasks: [], chest: false }, pass: { season: '', stars: 0, claimed: [] }, achievements: {}, login: { day: '', streak: 0 }, bounty: null, challenge: null, streak: 0, bestStreak: 0 }; }
+export function createProgression(): ProgressionState { return { story: { index: 0, progress: 0 }, storySteps: STORY_STEPS.length, totals: {}, daily: { key: '', tasks: [], chest: false, rerolled: false }, weekly: { key: '', tasks: [], chest: false }, hourly: { key: '', tasks: [], chest: false }, orders: { next: 0, list: [] }, pass: { season: '', stars: 0, claimed: [] }, achievements: {}, login: { day: '', streak: 0 }, bounty: null, challenge: null, streak: 0, bestStreak: 0 }; }
 function day(now: number) { return new Date(now).toISOString().slice(0, 10); }
 function week(now: number) { const d = new Date(now); d.setUTCDate(d.getUTCDate() - (d.getUTCDay() + 6) % 7); return d.toISOString().slice(0, 10); }
 function hash(text: string) { let value = 2166136261; for (const c of text)
@@ -135,6 +157,10 @@ export function refreshProgress(s: SaveState, now = Date.now()) {
         p.daily = { key: today, tasks: tasks(DAILY, 3, hash(today + s.name), Math.floor(s.level / 7), s.level), chest: false, rerolled: false };
     if (p.weekly.key !== monday)
         p.weekly = { key: monday, tasks: tasks(WEEKLY, 4, hash(monday + 'w' + s.name), Math.floor(s.level / 10), s.level), chest: false };
+    const hour = new Date(now).toISOString().slice(0, 13);
+    if (p.hourly.key !== hour)
+        p.hourly = { key: hour, tasks: tasks(HOURLY, 4, hash(hour + 'h' + s.name), Math.floor(s.level / 10), s.level), chest: false };
+    fillOrders(s, p.orders, xpNeeded);
     if (p.pass.season !== season)
         p.pass = { season, stars: 0, claimed: [] };
     const key = `${s.planet}:${Math.floor(now / 1800000)}`;
@@ -168,7 +194,7 @@ function condition(s: SaveState, key: string) { switch (key) {
     default: return s.progression.totals[key] || 0;
 } }
 export function recordEvent(s: SaveState, event: string, amount = 1, detail?: string, now = Date.now()) {
-    if (!Number.isFinite(amount) || amount <= 0 || !Number.isFinite(now) || !Object.hasOwn({ kill: 1, harvest: 1, sell: 1, craft: 1, fish: 1, skill: 1, upgrade: 1, boss: 1, fishrare: 1, legendFish: 1, cook: 1, mine: 1, planet: 1, expand: 1, decorate: 1, bounty: 1, chal: 1, animal: 1, fertilize: 1, eat: 1, mystery: 1, fruit: 1, hawk: 1, stardust: 1, forge: 1, forgeOk: 1, harpoon: 1, titan: 1, dailyDone: 1, login: 1 }, event))
+    if (!Number.isFinite(amount) || amount <= 0 || !Number.isFinite(now) || !Object.hasOwn({ kill: 1, harvest: 1, sell: 1, craft: 1, fish: 1, skill: 1, upgrade: 1, boss: 1, fishrare: 1, legendFish: 1, cook: 1, mine: 1, planet: 1, expand: 1, decorate: 1, bounty: 1, chal: 1, order: 1, animal: 1, fertilize: 1, eat: 1, mystery: 1, fruit: 1, hawk: 1, stardust: 1, forge: 1, forgeOk: 1, harpoon: 1, titan: 1, dailyDone: 1, login: 1 }, event))
         return;
     refreshProgress(s, now);
     const p = s.progression;
@@ -176,7 +202,7 @@ export function recordEvent(s: SaveState, event: string, amount = 1, detail?: st
     const counters: Record<string, keyof SaveState['counters']> = { kill: 'kills', harvest: 'harvests', sell: 'sold', craft: 'bought', fish: 'fish', skill: 'skills', upgrade: 'upgrades' };
     if (counters[event])
         s.counters[counters[event]] += amount;
-    for (const [list, specs] of [[p.daily.tasks, DAILY], [p.weekly.tasks, WEEKLY]] as const)
+    for (const [list, specs] of [[p.daily.tasks, DAILY], [p.weekly.tasks, WEEKLY], [p.hourly.tasks, HOURLY]] as const)
         for (const task of list)
             if (specs[task.type]?.event === event)
                 task.progress = Math.min(task.target, task.progress + amount);
@@ -198,6 +224,8 @@ function taskReward(s: SaveState, t: Task, weekly = false): Reward { if (weekly)
     return { energy: 150 + s.level * 20, xp: Math.round(xpNeeded(s.level) * .35), items: { starshard: 1, [bonus]: 2 }, stars: 30 };
 } return { energy: Math.round(20 + s.level * 6 + t.target * (t.type === 'sell' ? .2 : 1.5)), xp: 15 + s.level * 8, items: { [t.bonus]: 1 }, stars: 10 }; }
 function dailyChest(s: SaveState, now: number): Reward { const ids = ['seed_star', 'starshard', 'honey', 'fish_golden', 'seed_fire', 'seed_ice']; return { energy: 60 + s.level * 10, xp: 40 + s.level * 12, items: { [ids[hash(day(now) + 'x') % ids.length]]: 1, spore: 2 }, stars: 20 }; }
+function hourlyReward(s: SaveState): Reward { return { energy: 30 + s.level * 6, xp: Math.round(xpNeeded(s.level) * .08), stars: 8 }; }
+function hourlyChest(s: SaveState, key: string): Reward { const ids = ['potion', 'spore', 'manure', 'honey', 'seed_fire', 'seed_ice']; return { energy: 120 + s.level * 15, xp: Math.round(xpNeeded(s.level) * .3), items: { [ids[hash(key + s.name) % ids.length]]: 1, potion: 1 }, stars: 20 }; }
 function weeklyChest(s: SaveState): Reward { return { energy: 400 + s.level * 30, xp: Math.round(xpNeeded(s.level) * .8), items: { seed_star: 2, spore: 4, starshard: 2, moonstone: 1 }, stars: 60 }; }
 function loginReward(s: SaveState, now: number): Reward { const streak = s.progression.login.day === day(now - 86400000) ? s.progression.login.streak + 1 : 1; return { energy: 25 + Math.min(streak, 30) * 5 + (streak % 7 === 0 ? 150 : 0), xp: 10 + s.level * 3, items: streak % 7 === 0 ? { seed_star: 1, spore: 2 } : { potion: 1 }, stars: 5 }; }
 function bountyReward(s: SaveState): Reward { return { energy: 40 + s.level * 8, xp: Math.round(xpNeeded(s.level) * .15), items: { [BONUS[hash(s.progression.bounty?.key || '') % BONUS.length]]: 1 }, stars: 15 }; }
@@ -211,6 +239,12 @@ export function progressEntries(s: SaveState, kind: ProgressKind, now = Date.now
     if (kind === 'story') {
         const step = storyStep(p.story.index);
         return [entry(`story:${p.story.index}`, step.title, step.condition ? condition(s, step.condition) : p.story.progress, step.target, false, storyReward(s), step.icon, t('Chapter {chapter} · Step {step}', { chapter: step.chapter + 1, step: p.story.index + 1 }))];
+    }
+    if (kind === 'hourly') {
+        const state = p.hourly;
+        const result = state.tasks.map((task, i) => entry(`${state.key}:${i}`, HOURLY[task.type].title, task.progress, task.target, task.claimed, hourlyReward(s), HOURLY[task.type].icon));
+        result.push(entry(`${state.key}:chest`, 'Hourly chest', state.tasks.filter(t => t.claimed).length, state.tasks.length, state.chest, hourlyChest(s, state.key), '🎁'));
+        return result;
     }
     if (kind === 'daily' || kind === 'weekly') {
         const weekly = kind === 'weekly', state = weekly ? p.weekly : p.daily, specs = weekly ? WEEKLY : DAILY;
@@ -247,6 +281,11 @@ export function claimProgress(s: SaveState, kind: ProgressKind, id: string, now 
         p.story = { index: p.story.index + 1, progress: 0 };
         s.quest = p.story.index;
         p.totals.questsDone = (p.totals.questsDone || 0) + 1;
+    }
+    else if (kind === 'hourly') {
+        const tail = id.split(':').at(-1)!;
+        if (tail === 'chest') { p.hourly.chest = true; reward = hourlyChest(s, p.hourly.key); }
+        else { p.hourly.tasks[Number(tail)].claimed = true; reward = hourlyReward(s); p.totals.questsDone = (p.totals.questsDone || 0) + 1; }
     }
     else if (kind === 'daily' || kind === 'weekly') {
         const weekly = kind === 'weekly', state = weekly ? p.weekly : p.daily, tail = id.split(':').at(-1)!;
@@ -323,7 +362,7 @@ export function normalizeProgression(raw: unknown, s: SaveState): ProgressionSta
         for (const [k, v] of Object.entries(raw.totals))
             if (/^[a-zA-Z]{1,30}$/.test(k) && !['constructor', 'prototype', '__proto__'].includes(k))
                 p.totals[k] = number(v);
-    for (const [key, specs] of [['daily', DAILY], ['weekly', WEEKLY]] as const) {
+    for (const [key, specs] of [['daily', DAILY], ['weekly', WEEKLY], ['hourly', HOURLY]] as const) {
         const r = raw[key];
         if (!record(r))
             continue;
@@ -338,6 +377,7 @@ export function normalizeProgression(raw: unknown, s: SaveState): ProgressionSta
         if (key === 'daily')
             p.daily.rerolled = r.rerolled === true;
     }
+    p.orders = parseOrders(raw.orders);
     if (record(raw.pass))
         p.pass = { season: text(raw.pass.season), stars: number(raw.pass.stars), claimed: Array.isArray(raw.pass.claimed) ? [...new Set<number>(raw.pass.claimed.filter((x: any) => Number.isInteger(x) && x >= 0 && x < PASS_REWARDS.length))] : [] };
     if (record(raw.achievements))
@@ -355,4 +395,16 @@ export function normalizeProgression(raw: unknown, s: SaveState): ProgressionSta
     p.streak = number(raw.streak);
     p.bestStreak = Math.max(p.streak, number(raw.bestStreak));
     return p;
+}
+
+/** Hand over a village order from the bag (equipped items stay); pays its reward and opens a new order. */
+export function deliverOrder(s: SaveState, index: number, now = Date.now()): Order | null {
+    refreshProgress(s, now);
+    const p = s.progression, order = p.orders.list[index];
+    if (!order || looseQuantity(s, order.item) < order.count || !removeItem(s.bag, order.item, order.count)) return null;
+    p.orders.list.splice(index, 1);
+    give(s, { energy: order.energy, xp: order.xp, stars: order.stars }, now);
+    recordEvent(s, 'order', 1, order.item, now);
+    fillOrders(s, p.orders, xpNeeded);
+    return order;
 }

@@ -8,7 +8,9 @@ const enabled = (bot, action, attr) => bot.page.$$eval(`#dialog [data-action="${
 export async function cook(bot, { kinds = 2 } = {}) {
   const { game, rng, note } = bot;
   const opened = await game.goTo(near('cook'), { label: 'kitchen', done: n => n.modal && n }); if (!opened) return 'kitchen not reached';
-  const items = rng.shuffle(await enabled(bot, 'cook-all', 'item')).slice(0, kinds); let cooked = 0;
+  // Leave raw what a village order asks for raw.
+  const keepRaw = new Set((await game.snap()).orders.filter(o => !o.item.startsWith('cooked_')).map(o => o.item));
+  const items = rng.shuffle((await enabled(bot, 'cook-all', 'item')).filter(id => !keepRaw.has(id))).slice(0, kinds); let cooked = 0;
   for (const item of items) if (await game.action('cook-all', { item })) { cooked++; note(`cooked ${item}`, 'kitchen'); await sleep(rng.between(500, 900)); }
   await bot.hands.think(500); await game.closePanel();
   return `cooked ${cooked} kinds`;

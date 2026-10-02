@@ -16,7 +16,7 @@ const EVENT_TASKS = {
   sell: ['market'], cook: ['cook'], craft: ['craft', 'shop'], upgrade: ['crystal'],
   fish: ['fishing', 'harpoon'], fishrare: ['fishing'], legendFish: ['fishing'], mystery: ['fishing'], harpoon: ['harpoon'],
   animal: ['animals'], planet: ['travel'], stardust: ['travel'], mine: ['travel', 'mine'],
-  forge: ['forge'], forgeOk: ['forge'], eat: [], decorate: [], dailyDone: [], login: [],
+  order: ['market'], forge: ['forge'], forgeOk: ['forge'], eat: [], decorate: [], dailyDone: [], login: [],
 };
 const CONDITION_TASKS = { level: ['fight'], equipped: ['shop'], visited: ['travel'], pen: ['animals'], animals: ['animals'], dog: ['animals'], forgeMax: ['forge'], harpoon: [] };
 const CROPS = /^(radish|carrot|pumpkin|mint|chili|candy|bean|star|berry|coffee|moonflower|magnetmelon|melon|apple|grape|mango|pineapple|coconut|durian|lychee|peach)$/;
@@ -35,7 +35,7 @@ export function createPlanner(bot, { minutesLeft }) {
     garden: { can: s => s.planet === 'home' && s.plots.some(p => !p.crop || p.progress >= 1), run: () => tendGarden(bot, { minutesLeft: minutesLeft() }), cool: 30000, base: 6 },
     fertilize: { can: s => s.planet === 'home' && (s.bag.manure > 0 || s.bag.spore > 0) && s.plots.some(p => p.crop && p.progress < .9), run: () => fertilizeCrops(bot, { doses: rng.int(1, 3) }), cool: 240000, base: 1 },
     cook: { can: s => s.planet === 'home' && count(s.bag, id => CROPS.test(id) || id.startsWith('fish_')) >= 4, run: () => cook(bot, { kinds: rng.int(1, 3) }), cool: 300000, base: 2 },
-    market: { can: s => s.planet === 'home' && count(s.bag, id => CROPS.test(id) || id.startsWith('fish_') || id.startsWith('cooked_')) >= 5, run: () => sellProduce(bot), cool: 120000, base: 3 },
+    market: { can: s => s.planet === 'home' && (s.orders.some(o => o.have >= o.count) || count(s.bag, id => CROPS.test(id) || id.startsWith('fish_')) >= 5), run: () => sellProduce(bot), cool: 120000, base: 3 },
     shop: { can: s => s.planet === 'home' && s.energy >= 60, run: () => upgradeWeapon(bot), cool: 420000, base: 1 },
     crystal: { can: s => s.planet === 'home' && s.energy >= 150, run: () => crystalUpgrade(bot, { times: rng.int(1, 2) }), cool: 300000, base: 2 },
     animals: { can: s => s.planet === 'home' && (!s.farm.built ? s.energy >= 80 : s.farm.ready > 0 || (s.energy > 250 && s.farm.animals < 8)), run: () => tendAnimals(bot), cool: 240000, base: 2 },
@@ -54,10 +54,21 @@ export function createPlanner(bot, { minutesLeft }) {
   async function needs() {
     const g = await bot.page.evaluate(() => window.__zg.goals()), score = {};
     const add = (names, n) => { for (const name of names ?? []) score[name] = (score[name] ?? 0) + n; };
-    for (const t of g.tasks) add(EVENT_TASKS[t.event], t.kind === 'daily' ? 3 : 2);
+    // The hourly board frames each clip, so its tasks weigh most.
+    for (const t of g.tasks) add(EVENT_TASKS[t.event], t.kind === 'hourly' ? 4 : t.kind === 'daily' ? 3 : 2);
     // Keep a stock of cooked food: it is what heals the explorer in the field.
     const s = await game.snap(), meals = count(s.bag, id => id.startsWith('cooked_'));
     if (meals < 6) add(['cook'], 4);
+    // Village orders: deliver what is ready, and work toward what is missing.
+    for (const o of s.orders) {
+      if (o.have >= o.count) { add(['market'], 5); continue; }
+      const raw = o.item.replace(/^cooked_/, '');
+      if (o.item.startsWith('cooked_')) add(s.bag[raw] > 0 ? ['cook'] : raw.startsWith('fish_') ? ['fishing'] : ['garden'], 2);
+      else if (o.item.startsWith('fish_')) add(['fishing'], 2);
+      else if (CROPS.test(o.item)) add(['garden'], 2);
+      else if (['egg', 'milk', 'duck_egg', 'truffle'].includes(o.item)) add(['animals'], 2);
+      else add(['fight'], 1);
+    }
     if (g.story.event) add(EVENT_TASKS[g.story.event], 4); else if (g.story.condition) add(CONDITION_TASKS[g.story.condition], 4);
     if (g.bounty) add(['fight'], 2);
     return { score, goals: g };

@@ -3,7 +3,7 @@ import type { World, Entity, Enemy } from './world.ts';
 import type { SpaceFlight } from './space.ts';
 import { STAR_MAP } from './space.ts';
 import { Vector3, type Camera } from 'three';
-import { cropProgress, maxHp, readyAnimals, attack, defense, CROPS, ITEMS } from './model.ts';
+import { cropProgress, maxHp, readyAnimals, attack, defense, looseQuantity, CROPS, ITEMS } from './model.ts';
 import { progressEntries, refreshProgress, storyStep, TASK_SPECS, type ProgressKind } from './progression.ts';
 
 /**
@@ -25,7 +25,7 @@ export interface BotSources {
 }
 
 const round = (n: number) => Math.round(n * 100) / 100;
-const KINDS: readonly ProgressKind[] = ['story', 'daily', 'weekly', 'achievements', 'pass', 'bounties', 'challenges'];
+const KINDS: readonly ProgressKind[] = ['story', 'hourly', 'daily', 'weekly', 'achievements', 'pass', 'bounties', 'challenges'];
 
 export function installBotBridge(src: BotSources) {
   if (!BOT_MODE) return;
@@ -60,6 +60,7 @@ export function installBotBridge(src: BotSources) {
         reel: reel && !reel.hidden ? (reel.classList.contains('hunt') ? 'hunt' : reel.classList.contains('cast') ? 'cast' : 'reel') : null,
         cooldowns: src.cooldowns().map(round),
         space: space(),
+        orders: (s.progression.orders?.list ?? []).map((o, index) => ({ index, item: o.item, count: o.count, have: looseQuantity(s, o.item), type: ITEMS[o.item]?.type ?? null, energy: o.energy })),
         drops: src.drops().map(d => ({ x: round(d.x), z: round(d.z), item: d.item, count: d.count, age: round(d.age), d: round(Math.hypot(d.x - src.world().position.x, d.z - src.world().position.z)) })).sort((a, b) => a.d - b.d).slice(0, 12),
         bounty: s.progression.bounty ? { type: s.progression.bounty.type, progress: s.progression.bounty.progress, target: s.progression.bounty.target, claimed: s.progression.bounty.claimed } : null,
       };
@@ -69,8 +70,8 @@ export function installBotBridge(src: BotSources) {
     /** What the journal asks for, as quest events: unfinished daily/weekly tasks and the current story step. */
     goals() {
       const s = structuredClone(src.state()); refreshProgress(s); const p = s.progression, step = storyStep(p.story.index);
-      const task = (kind: 'daily' | 'weekly') => p[kind].tasks.filter(t => !t.claimed && t.progress < t.target).map(t => ({ kind, type: t.type, event: TASK_SPECS[kind][t.type]?.event ?? t.type, progress: t.progress, target: t.target }));
-      return { tasks: [...task('daily'), ...task('weekly')], story: { index: p.story.index, event: step.event ?? null, condition: step.condition ?? null, target: step.target, progress: p.story.progress, title: step.title },
+      const task = (kind: 'hourly' | 'daily' | 'weekly') => p[kind].tasks.filter(t => !t.claimed && t.progress < t.target).map(t => ({ kind, type: t.type, event: TASK_SPECS[kind][t.type]?.event ?? t.type, progress: t.progress, target: t.target }));
+      return { tasks: [...task('hourly'), ...task('daily'), ...task('weekly')], story: { index: p.story.index, event: step.event ?? null, condition: step.condition ?? null, target: step.target, progress: p.story.progress, title: step.title },
         bounty: p.bounty && !p.bounty.claimed ? { type: p.bounty.type, left: p.bounty.target - p.bounty.progress } : null, totals: p.totals };
     },
     /** The game's own walking route to a point (around fences, through the gate), as waypoints. */

@@ -18,8 +18,8 @@ test('story grows to seven chapters of fixed steps, then endless rounds in chapt
 });
 
 test('daily and weekly lists gain twelve and six task types whose events are all counted', () => {
-  assert.equal(Object.keys(P.TASK_SPECS.daily).length, 23);
-  assert.equal(Object.keys(P.TASK_SPECS.weekly).length, 16);
+  assert.equal(Object.keys(P.TASK_SPECS.daily).length, 24);   // + village orders (hourly-orders.test.ts)
+  assert.equal(Object.keys(P.TASK_SPECS.weekly).length, 17);
   const s = M.newGame();
   for (const spec of [...Object.values(P.TASK_SPECS.daily), ...Object.values(P.TASK_SPECS.weekly)]) {
     const before = total(s, spec.event); P.recordEvent(s, spec.event, 1, undefined, start);

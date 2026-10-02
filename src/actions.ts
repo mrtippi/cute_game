@@ -3,7 +3,7 @@ import * as Helper from './helper.ts';
 import * as FarmHelper from './farm-helper.ts';
 import * as Friends from './friends.ts';
 import { huntFish } from './fish-hunting.ts';
-import { claimProgress, rerollDaily, startChallenge, type ProgressKind } from './progression.ts';
+import { claimProgress, rerollDaily, startChallenge, deliverOrder, type ProgressKind } from './progression.ts';
 
 export const ACTION_RULES_VERSION = 1;
 export interface GameIntent { type: string; payload?: Record<string, unknown> }
@@ -100,6 +100,7 @@ function reduceAction(state: Game.SaveState, intent: GameIntent, context: Action
     case 'claimProgress': result = claimProgress(state, kind() as ProgressKind, id(), now); break;
     case 'claimQuest': result = claimProgress(state, 'story', `story:${state.progression.story.index}`, now); break;
     case 'rerollDaily': result = rerollDaily(state, index(), now); break;
+    case 'deliverOrder': result = deliverOrder(state, index(), now); break;
     case 'startChallenge': result = startChallenge(state, p.kind === undefined ? 'kill' : kind(), now); break;
     case 'launch': result = Game.launch(state); break;
     case 'travel': result = Game.travel(state, id() as Game.PlanetId); break;

@@ -52,4 +52,13 @@ export const VI_QUESTS: Record<string, string> = {
   'Defeat six different Titans': 'Hạ 6 Titan khác nhau',
   'Reach level 40': 'Đạt cấp 40',
   'Defeat all nine Titans': 'Hạ cả 9 Titan',
+  // Hourly board and village orders
+  'Hourly': "Mỗi giờ",
+  'New tasks every hour, on the hour.': "Nhiệm vụ mới mỗi giờ, đúng đầu giờ.",
+  'Hourly chest': "Rương mỗi giờ",
+  'Deliver village orders': "Giao đơn hàng của làng",
+  'Good neighbor': "Hàng xóm tốt",
+  'VILLAGE ORDERS': "ĐƠN HÀNG CỦA LÀNG",
+  'Deliver': "Giao",
+  'Order delivered. The neighbours are delighted!': "Đã giao hàng. Hàng xóm vui lắm!",
 };

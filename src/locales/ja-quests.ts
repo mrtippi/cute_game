@@ -52,4 +52,13 @@ export const JA_QUESTS: Record<string, string> = {
   'Defeat six different Titans': 'ちがうタイタンを6体倒す',
   'Reach level 40': 'レベル40に到達する',
   'Defeat all nine Titans': '9体のタイタンをすべて倒す',
+  // Hourly board and village orders
+  'Hourly': "1時間",
+  'New tasks every hour, on the hour.': "毎時ちょうどに新しいクエスト。",
+  'Hourly chest': "1時間宝箱",
+  'Deliver village orders': "村の注文を届ける",
+  'Good neighbor': "よきおとなりさん",
+  'VILLAGE ORDERS': "村の注文",
+  'Deliver': "届ける",
+  'Order delivered. The neighbours are delighted!': "注文を届けたよ。ご近所さん大よろこび！",
 };
