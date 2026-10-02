@@ -98,4 +98,12 @@ export const JA_QUESTS: Record<string, string> = {
   "Earn {count} planet stars": "星の階級を{count}個獲得する",
   // An uncaught fish in the fish log: the usual full-width mystery name.
   "???": "？？？",
+  // HUD boards: bosses and today's quests
+  "BOSSES": "ボス",
+  "Out now": "出現中",
+  "Appears when you move away": "離れると出現",
+  "TODAY'S QUESTS": "今日のクエスト",
+  "All done for now!": "いまは全部クリア！",
+  "{count} rewards ready": "ごほうび{count}個受け取れる",
+  "{name} has appeared!": "{name}が現れた！",
 };

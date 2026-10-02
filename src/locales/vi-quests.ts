@@ -96,4 +96,12 @@ export const VI_QUESTS: Record<string, string> = {
   "Conquer planet stars": "Chinh phục sao hành tinh",
   "Star conqueror": "Kẻ chinh phục sao",
   "Earn {count} planet stars": "Đạt {count} sao hành tinh",
+  // HUD boards: bosses and today's quests
+  "BOSSES": "TRÙM",
+  "Out now": "Đang xuất hiện",
+  "Appears when you move away": "Xuất hiện khi bạn rời đi",
+  "TODAY'S QUESTS": "NHIỆM VỤ HÔM NAY",
+  "All done for now!": "Đã xong hết rồi!",
+  "{count} rewards ready": "{count} phần thưởng đang chờ",
+  "{name} has appeared!": "{name} đã xuất hiện!",
 };

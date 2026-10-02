@@ -42,6 +42,14 @@ export function installBotBridge(src: BotSources) {
     id: e.id, kind: e.kind, name: e.name, x: round(e.x), z: round(e.z), r: round(e.radius), index: e.index, animalUid: e.animalUid, waterId: e.waterId,
     d: round(Math.hypot(e.x - w.position.x, e.z - w.position.z)), screen: near ? view(w, e.x, e.mesh.position.y + .6, e.z) : null,
   });
+  // Warning circles on the ground that an attack is about to hit (bosses and Titans); safe Titan marks are excluded.
+  const dangerOf = (e: Enemy) => {
+    const out: { x: number; z: number; r: number; t: number }[] = [];
+    const x = e as Enemy & { telegraphs?: { x: number; z: number; r: number; delay: number }[]; titanAttacks?: { age: number; marks: { x: number; z: number; r: number; delay: number; safe?: boolean }[] }[] };
+    for (const m of x.telegraphs ?? []) out.push({ x: round(m.x), z: round(m.z), r: round(m.r), t: round(m.delay) });
+    for (const a of x.titanAttacks ?? []) for (const m of a.marks) if (!m.safe && m.delay > a.age) out.push({ x: round(m.x), z: round(m.z), r: round(m.r), t: round(m.delay - a.age) });
+    return out.length ? out : undefined;
+  };
   const api = {
     snapshot() {
       const s = src.state(), w = src.world(), now = Date.now();
@@ -57,12 +65,14 @@ export function installBotBridge(src: BotSources) {
         plots: s.plots.map((p, i) => ({ i, crop: p.crop, progress: round(cropProgress(p, now)) })),
         farm: { built: !!s.farm?.built, animals: s.farm?.animals.length ?? 0, ready: readyAnimals(s, now).length },
         entities: w.entities.filter(e => e.kind !== 'enemy').map(e => entity(w, e, Math.hypot(e.x - w.position.x, e.z - w.position.z) < 60)),
-        enemies: w.enemies.filter((e: Enemy) => e.hp > 0).map((e: Enemy) => ({ ...entity(w, e, true), type: e.type, hp: Math.round(e.hp), maxHp: Math.round(e.maxHp), boss: e.boss, level: (e as Enemy & { level?: number }).level ?? 1, damage: round(e.damage), cooldown: e.definition?.cooldown ?? 1.5 })),
+        enemies: w.enemies.filter((e: Enemy) => e.hp > 0).map((e: Enemy) => ({ ...entity(w, e, true), danger: dangerOf(e), type: e.type, hp: Math.round(e.hp), maxHp: Math.round(e.maxHp), boss: e.boss, level: (e as Enemy & { level?: number }).level ?? 1, damage: round(e.damage), cooldown: e.definition?.cooldown ?? 1.5 })),
         fishing: src.fishing(),
         reel: reel && !reel.hidden ? (reel.classList.contains('hunt') ? 'hunt' : reel.classList.contains('cast') ? 'cast' : 'reel') : null,
         cooldowns: src.cooldowns().map(round),
         placement: (() => { const p = src.placement(); return p ? { x: round(p.x), z: round(p.z), ok: p.ok } : null; })(),
         tiers: Object.fromEntries(s.discovered.map(id => [id, { ...(s.tiers?.[id] ?? { open: 1, chosen: 1, kills: 0, bosses: 0, titan: 0 }) }])),
+        // Every boss on this world, defeated or not, with its return countdown (the HUD boss board).
+        bosses: w.enemies.filter((e: Enemy) => e.boss && e.type !== 'dragon' && e.respawn < 999999).map((e: Enemy) => ({ id: e.id, type: e.type, name: e.name, alive: e.hp > 0, respawn: round(e.respawn), x: round(e.x), z: round(e.z), homeX: round(e.homeX), homeZ: round(e.homeZ), titan: !!e.definition?.titan, d: round(Math.hypot(e.x - w.position.x, e.z - w.position.z)) })),
         space: space(),
         orders: (s.progression.orders?.list ?? []).map((o, index) => ({ index, item: o.item, count: o.count, have: looseQuantity(s, o.item), type: ITEMS[o.item]?.type ?? null, energy: o.energy })),
         drops: src.drops().map(d => ({ x: round(d.x), z: round(d.z), item: d.item, count: d.count, age: round(d.age), d: round(Math.hypot(d.x - src.world().position.x, d.z - src.world().position.z)) })).sort((a, b) => a.d - b.d).slice(0, 12),

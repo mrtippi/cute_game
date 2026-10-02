@@ -8,18 +8,19 @@ import { goFishing, hasRod } from './tasks/fishing.mjs';
 import { cook, craftSomething, forgeOnce, tendAnimals, harpoonHunt, mine, fertilizeCrops, expandGarden } from './tasks/home.mjs';
 import { travelTo, goHome, nextPlanet } from './tasks/travel.mjs';
 import { flourish } from './tasks/flourish.mjs';
+import { huntBoss, huntable } from './tasks/boss.mjs';
 import { collectCosmetic, craftCosmetic, dress, ACTIVITY_THEME } from './tasks/wardrobe.mjs';
 
 /** Which activities move a quest event forward. */
 const EVENT_TASKS = {
-  kill: ['fight'], bounty: ['fight'], skill: ['fight'], chal: ['fight'], hawk: ['fight'], boss: [], titan: [],
+  kill: ['fight'], bounty: ['fight'], skill: ['fight'], chal: ['fight'], hawk: ['fight'], boss: ['boss'], titan: ['boss'], tierUp: ['boss', 'fight', 'travel'],
   harvest: ['garden'], fruit: ['garden'], expand: [], fertilize: ['fertilize'],
   sell: ['market'], cook: ['cook'], craft: ['craft', 'shop'], upgrade: ['crystal'],
   fish: ['fishing', 'harpoon'], fishrare: ['fishing'], legendFish: ['fishing'], mystery: ['fishing'], harpoon: ['harpoon'],
   animal: ['animals'], planet: ['travel'], stardust: ['travel'], mine: ['travel', 'mine'],
   order: ['market'], forge: ['forge'], forgeOk: ['forge'], eat: [], decorate: [], dailyDone: [], login: [],
 };
-const CONDITION_TASKS = { stars: ['fight', 'travel'], beds: ['expand'], upgrades: ['crystal'], fishSpecies: ['fishing'], collections: ['travel', 'fight'], level: ['fight'], equipped: ['shop'], visited: ['travel'], pen: ['animals'], animals: ['animals'], dog: ['animals'], forgeMax: ['forge'], harpoon: [] };
+const CONDITION_TASKS = { titans: ['boss'], stars: ['boss', 'fight', 'travel'], beds: ['expand'], upgrades: ['crystal'], fishSpecies: ['fishing'], collections: ['travel', 'fight'], level: ['fight'], equipped: ['shop'], visited: ['travel'], pen: ['animals'], animals: ['animals'], dog: ['animals'], forgeMax: ['forge'], harpoon: [] };
 const CROPS = /^(radish|carrot|pumpkin|mint|chili|candy|bean|star|berry|coffee|moonflower|magnetmelon|melon|apple|grape|mango|pineapple|coconut|durian|lychee|peach)$/;
 const count = (bag, test) => Object.entries(bag).filter(([id]) => test(id)).reduce((n, [, c]) => n + c, 0);
 
@@ -51,6 +52,8 @@ export function createPlanner(bot, { minutesLeft }) {
     mine: { can: s => s.planet !== 'home' && s.entities.some(e => e.kind === 'mine' && e.d < 80), run: () => mine(bot, { count: rng.int(2, 4) }), cool: 120000, base: 3 },
     // A bed pays for itself in minutes; keep a cushion of energy for food and repairs.
     expand: { can: s => s.planet === 'home' && s.plots.length < 33 && s.energy >= 300, run: () => expandGarden(bot), cool: 240000, base: 3 },
+    // A boss the explorer can beat, with food in the bag: the highlight of a session.
+    boss: { can: s => huntable(s).length > 0, run: () => huntBoss(bot), cool: 180000, base: 3, limit: 300000 },
     browse: { can: () => true, run: () => flourish(bot), cool: 150000, base: 1.5 },
     home: { can: s => s.planet !== 'home' && (Date.now() - awaySince > rng.between(240000, 480000) || minutesLeft() < 6), run: () => goHome(bot), cool: 60000, base: 20 },
   };
