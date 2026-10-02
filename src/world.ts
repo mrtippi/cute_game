@@ -13,7 +13,7 @@ import { buildPond } from './pond-view.ts';
 import { circlesAt, holdsHero, ignoreRetarget, nearRay, pickCircle, pickScale, RAYCAST_ONLY, type PickCircle } from './picking.ts';
 import * as T from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
-import { bakeModel, gatherPart, refinedAssets, sceneryKit, cropKit, heroKit, wearKit, weaponKit, weaponModelName, disguiseKit, petKit, spaceKit, wildsKit, brightKit, harshKit, dressingKit, isShared, type RefinedAsset, type RefinedAssetLibrary } from './assets.ts';
+import { bakeModel, gatherPart, refinedAssets, sceneryKit, cropKit, heroKit, wearKit, weaponKit, weaponModelName, WEAPON_TINTS, disguiseKit, petKit, spaceKit, wildsKit, brightKit, harshKit, dressingKit, isShared, type RefinedAsset, type RefinedAssetLibrary } from './assets.ts';
 import { Effects } from './fx.ts';
 import { CAMERA, FOG, SHADOW, cameraOffset, followBlend, lightAxes, shadowBox, viewFootprint } from './camera-rig.ts';
 import { QUALITY, type QualityProfile } from './graphics.ts';
@@ -45,7 +45,7 @@ import {ENEMY_TYPES,HOME_SPAWNS,PLANET_SPAWNS,PLANET_BOSSES,FOREST_RAPTOR_COUNT,
 export interface Entity { id: string; kind: string; name: string; icon: string; mesh: T.Group; x: number; z: number; radius: number; index?: number;waterId?:string;animalUid?:number;
   /** Swimmable water of a pond: half-extents of its ellipse and the height of the surface. */
   pond?:{rx:number;rz:number;surface:number} }
-export interface Enemy extends Entity { hp: number; maxHp: number; damage: number; xp: number; homeX: number; homeZ: number; cooldown: number; respawn: number; boss: boolean; stun: number;type?:string;definition?:EnemyDefinition;phase?:string;phaseTime?:number;route?:Point[];routeTime?:number;lift?:number;liftVelocity?:number;statuses?:Record<string,number>;targetX?:number;targetZ?:number;bossStage?:number;attackCount?:number;skillCount?:number;skill?:BossSkill;telegraphs?:Array<{x:number;z:number;r:number;delay:number}>;skillEffects?:Array<{x:number;z:number;r:number;inner:number;remaining:number;multiplier:number}>;spinTick?:number;scaled?:boolean;baseMaxHp?:number;baseDamage?:number;level?:number;flash?:number;flashLit?:boolean;knockVX?:number;knockVZ?:number;dying?:number }
+export interface Enemy extends Entity { /** Level, XP before keeping pace with the explorer (World.syncLevel). */ baseLevel?: number; baseXp?: number; hp: number; maxHp: number; damage: number; xp: number; homeX: number; homeZ: number; cooldown: number; respawn: number; boss: boolean; stun: number;type?:string;definition?:EnemyDefinition;phase?:string;phaseTime?:number;route?:Point[];routeTime?:number;lift?:number;liftVelocity?:number;statuses?:Record<string,number>;targetX?:number;targetZ?:number;bossStage?:number;attackCount?:number;skillCount?:number;skill?:BossSkill;telegraphs?:Array<{x:number;z:number;r:number;delay:number}>;skillEffects?:Array<{x:number;z:number;r:number;inner:number;remaining:number;multiplier:number}>;spinTick?:number;scaled?:boolean;baseMaxHp?:number;baseDamage?:number;level?:number;flash?:number;flashLit?:boolean;knockVX?:number;knockVZ?:number;dying?:number }
 interface Obstacle { x: number; z: number; r: number;tag?:string }
 /**
  * AI level of detail: a resting creature does not think at all; a calm wanderer thinks on every 4th step (its slot)
@@ -632,6 +632,8 @@ export class World {
   /** Puts a kit gear piece on the explorer; each piece rides the body part named by its tag. */
   private wearKit(hero:T.Object3D,id:string|undefined,fallback:string){
     const kit=id?this.kitFor(id):null,item=kit&&heroKit.ready?kit.instance(weaponModelName(id!)):null;if(!item)return false;
+    // A shared model in its own colour (the bows: WEAPON_TINTS).
+    const tint=WEAPON_TINTS[id!];if(tint)item.traverse(o=>{const m=o as T.Mesh;if(m.isMesh&&m.material&&!Array.isArray(m.material)){const c=(m.material as T.MeshStandardMaterial).clone();if(c.color)c.color.lerp(new T.Color(tint),.55);m.material=c;}});
     hero.updateMatrixWorld(true);const toHero=hero.matrixWorld.clone().invert();
     for(const piece of [...item.children]){
       const part=hero.getObjectByName(piece.userData.tag??fallback)??hero;
@@ -795,7 +797,21 @@ export class World {
     const health=Math.round(def.hp*scale*(def.titan?7:def.boss&&type!=='dragon'?2.6:1)*star.hp),damage=def.damage*scale*(def.titan?1.6:def.boss?1.35:1)*star.damage,xp=Math.round(def.xp*(.6+scale*.4)*star.xp);
     const model=this.enemyModel(type,def);
     const e=this.addEntity('enemy',def.name,def.boss?'👑':'⚔️',model,x,z,def.radius,index) as Enemy;
-    Object.assign(e,{type,definition:def,hp:health,maxHp:health,baseMaxHp:health,baseDamage:damage,damage,xp,level:difficulty*3-2+(def.boss?6:0)+(tier-1)*6,homeX:x,homeZ:z,cooldown:0,respawn:0,boss:def.boss,stun:0,phase:'idle',phaseTime:0,route:[],routeTime:0,lift:0,liftVelocity:0,statuses:{}});this.enemies.push(e);return e;
+    const level=difficulty*3-2+(def.boss?6:0)+(tier-1)*6;
+    Object.assign(e,{type,definition:def,hp:health,maxHp:health,baseMaxHp:health,baseDamage:damage,damage,xp,baseXp:xp,baseLevel:level,level,homeX:x,homeZ:z,cooldown:0,respawn:0,boss:def.boss,stun:0,phase:'idle',phaseTime:0,route:[],routeTime:0,lift:0,liftVelocity:0,statuses:{}});this.enemies.push(e);return e;
+  }
+  /**
+   * Creatures keep pace with the explorer: below the explorer's level, an unhurt creature rises to the explorer's level
+   * -1 to +2 (fixed per creature), with +12% health, +7% damage and +10% XP per level gained (the same steps a boss
+   * takes when it engages). Planet stars still add on top. Hosts and offline only; online peers follow snapshots.
+   */
+  syncedLevel=0;
+  syncLevels(){this.syncedLevel=this.state.level;for(const e of this.enemies)if(e.hp>0&&e.hp===e.maxHp&&!e.scaled)this.syncLevel(e);}
+  syncLevel(e:Enemy){
+    if(this.authoritativeAction||e.type==='dragon'||e.baseLevel===undefined)return;
+    let h=0;for(const c of e.id)h=(h*31+c.charCodeAt(0))>>>0;
+    const level=Math.max(e.baseLevel,this.state.level+(h%4)-1),gain=level-e.baseLevel;
+    e.level=level;e.maxHp=Math.round((e.baseMaxHp??e.maxHp)*(1+gain*.12));e.hp=e.maxHp;e.damage=(e.baseDamage??e.damage)*(1+gain*.07);e.xp=Math.round((e.baseXp??e.xp)*(1+gain*.1));
   }
   environmentStatus():EnvironmentStatus[]{return this.environment?.status(this.position)??[];}
   lightSources(){
@@ -1326,12 +1342,12 @@ export class World {
   private updateEnemyAi(e:Enemy,dt:number){
     e.cooldown=Math.max(0,e.cooldown-dt);this.updateTitanAttacks(e,dt);if(e.phase==='titan-leap'&&e.titanAttacks?.some(a=>a.skill==='leap'))return;e.stun=Math.max(0,e.stun-dt);e.routeTime=Math.max(0,(e.routeTime??0)-dt);
     for(const key of Object.keys(e.statuses??{}))e.statuses![key]=Math.max(0,e.statuses![key]-dt);
-    if(e.hp<=0){e.respawn=Math.max(0,e.respawn-dt);if(this.authoritativeAction)return;if(e.respawn<=0&&Math.hypot(this.position.x-e.homeX,this.position.z-e.homeZ)>22&&![...this.remotePlayers?.values()??[]].some(r=>r.mesh.visible&&Math.hypot(r.pose.x-e.homeX,r.pose.z-e.homeZ)<22)){e.maxHp=e.baseMaxHp??e.maxHp;e.damage=e.baseDamage??e.damage;e.hp=e.maxHp;e.x=e.homeX;e.z=e.homeZ;e.mesh.visible=true;e.dying=0;e.phase='idle';this.fx?.burst({x:e.x,z:e.z},{n:14,color:[e.definition?.color??'#ffffff','#ffffff'],speed:3,up:5});e.route=[];e.stun=0;e.scaled=false;e.skill=undefined;e.telegraphs=[];e.skillEffects=[];}return;}
+    if(e.hp<=0){e.respawn=Math.max(0,e.respawn-dt);if(this.authoritativeAction)return;if(e.respawn<=0&&Math.hypot(this.position.x-e.homeX,this.position.z-e.homeZ)>22&&![...this.remotePlayers?.values()??[]].some(r=>r.mesh.visible&&Math.hypot(r.pose.x-e.homeX,r.pose.z-e.homeZ)<22)){e.maxHp=e.baseMaxHp??e.maxHp;e.damage=e.baseDamage??e.damage;e.hp=e.maxHp;e.x=e.homeX;e.z=e.homeZ;e.mesh.visible=true;e.dying=0;e.phase='idle';this.fx?.burst({x:e.x,z:e.z},{n:14,color:[e.definition?.color??'#ffffff','#ffffff'],speed:3,up:5});e.route=[];e.stun=0;e.scaled=false;e.skill=undefined;e.telegraphs=[];e.skillEffects=[];this.syncLevel(e);}return;}
     const def=e.definition??{speed:2.4,reach:1.8,sight:e.boss?11:6,behavior:'melee',cooldown:1.3,windup:.35,flying:false,titan:false};
     const target=this.enemyTarget(e),distance=target?Math.hypot(target.x-e.x,target.z-e.z):Infinity;
     if(!this.authoritativeAction&&e.boss&&!e.scaled&&distance<def.sight&&e.hp===e.maxHp){
       const nearby=[...this.remotePlayers?.values()??[]].filter(r=>r.mesh.visible&&(r.pose.hp??1)>0&&Math.hypot(r.pose.x-e.x,r.pose.z-e.z)<32),players=nearby.length+(Math.hypot(this.position.x-e.x,this.position.z-e.z)<32?1:0),level=Math.max(this.state.level,...nearby.map(r=>r.pose.level??1)),difference=Math.max(0,level-(e.level??1));
-      e.maxHp=Math.round((e.baseMaxHp??e.maxHp)*(1+.6*Math.max(0,players-1))*(e.type==='dragon'?1:1+difference*.12));e.hp=e.maxHp;e.damage=(e.baseDamage??e.damage)*(e.type==='dragon'?1:(1+difference*.07)*(1+.1*Math.max(0,players-1)));e.scaled=true;
+      e.maxHp=Math.round(e.maxHp*(1+.6*Math.max(0,players-1))*(e.type==='dragon'?1:1+difference*.12));e.hp=e.maxHp;e.damage=e.damage*(e.type==='dragon'?1:(1+difference*.07)*(1+.1*Math.max(0,players-1)));e.scaled=true;
     }
     // Level of detail, like the reference: a calm creature (idle, unhurt, no status) farther than 48 m from every explorer
     // does not think. Between its sight and 48 m it only wanders, so it thinks on every 4th step with the skipped time added.
@@ -1483,6 +1499,7 @@ export class World {
   update(dt:number,active:boolean,draw=true,simulateWorld=active||this.networkRole==='host') {
     this.environment??=new EnvironmentSimulation(createEnvironmentLayout(this.planet));this.enemyShots??=[];this.dynamicObstacles??=[];this.resourceTimers??=new Map();
     const environmentForFrame=this.environment;
+    if(this.state.level!==this.syncedLevel)this.syncLevels();
     if(active||simulateWorld)this.time+=dt;
     let dx=0,dz=0,routeTarget:T.Vector3|undefined;
     if(active&&!this.movementLocked&&!this.environment.airborne){

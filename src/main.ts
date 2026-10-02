@@ -287,7 +287,8 @@ function updateHud() {
   $('#discovery-text').innerHTML=`<strong>🔭 ${esc(world.state.name)}</strong><span>${esc(discoveryCount)}</span><small aria-hidden="true">${Object.entries(M.PLANETS).map(([id,planet])=>known.has(id as M.PlanetId)?planet.icon:'🌑').join(' ')}</small>`;
   $('#discovery-progress').setAttribute('aria-label',`${world.state.name} · ${discoveryCount} · ${t('Discovery log')}`);
   $('#world').dataset.status=JSON.stringify({position:[+world.position.x.toFixed(2),+world.position.z.toFixed(2)],route:world.route.length,next:world.route[0]?[world.route[0].x,world.route[0].z]:null,visibility:document.visibilityState,modal,started,frameMs:Math.round(frameTime),drawCalls:world.renderer.info.render.calls});
-  {const worn=state.progression.title,tag=$('#player-title');tag.hidden=!worn||!!visiting;if(worn){tag.textContent=t(worn);tag.dataset.rarity=rarityOf(worn);}}
+  // The worn title under the name; with titles but none worn, an invitation to choose one.
+  {const worn=state.progression.title,tag=$('#player-title');tag.hidden=!state.progression.titles.length||!!visiting;tag.textContent=worn?t(worn):'🏅 '+t('Choose a title');if(worn)tag.dataset.rarity=rarityOf(worn);else delete tag.dataset.rarity;}
   $('#player-name').textContent=state.name;$('#level-badge').textContent=t(String(state.level));$('#level-text').textContent=t(`Lv. ${state.level}`);$('#energy').textContent=t(state.energy.toLocaleString());
   $('#hp-fill').style.width=`${state.hp/M.maxHp(state)*100}%`;$('#hp-text').textContent=t(`${Math.ceil(state.hp)} / ${M.maxHp(state)}`);$('#xp-fill').style.width=`${state.xp/M.xpNeeded(state.level)*100}%`;
   updateQuickEat();

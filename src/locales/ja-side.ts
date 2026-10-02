@@ -123,4 +123,5 @@ export const JA_SIDE: Record<string, string> = {
   "Win 12 quick challenges in a row": "クイックチャレンジに12連勝する",
   "Memory room": "思い出の部屋",
   "The memory room opens at level {level}.": "思い出の部屋はLv{level}で開きます。",
+  "Choose a title": "称号をえらぶ",
 };

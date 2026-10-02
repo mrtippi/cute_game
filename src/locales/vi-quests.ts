@@ -104,4 +104,11 @@ export const VI_QUESTS: Record<string, string> = {
   "All done for now!": "Đã xong hết rồi!",
   "{count} rewards ready": "{count} phần thưởng đang chờ",
   "{name} has appeared!": "{name} đã xuất hiện!",
+  // Bows (content.ts)
+  "Wooden bow": "Cung gỗ",
+  "Moon bow": "Cung trăng",
+  "Galaxy bow": "Cung thiên hà",
+  "A light hunting bow: quick arrows from a safe distance. +12 attack.": "Cung săn nhẹ: bắn tên nhanh từ khoảng cách an toàn. +12 công.",
+  "Silver arrows that glow like the moon. +48 attack, longer reach.": "Mũi tên bạc sáng như trăng. +48 công, tầm xa hơn.",
+  "A bow strung with starlight, the strongest ranged weapon. +60 attack.": "Cây cung dây bằng ánh sao, vũ khí tầm xa mạnh nhất. +60 công.",
 };

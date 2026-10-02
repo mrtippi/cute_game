@@ -4,7 +4,8 @@
 import { fight } from './combat.mjs';
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
 
-const bestOwnedAttack = (s, weapons) => Math.max(0, ...weapons.filter(w => w.id !== 'harpoon' && (s.bag[w.id] > 0 || s.gear.weapon === w.id)).map(w => w.attack));
+import { weaponPower } from '../lib/weapons.mjs';
+const bestOwnedAttack = (s, weapons) => Math.max(0, ...weapons.filter(w => w.id !== 'harpoon' && (s.bag[w.id] > 0 || s.gear.weapon === w.id)).map(weaponPower));
 
 /**
  * The next weapon worth working toward: clearly stronger than any owned, affordable now, with every
@@ -18,7 +19,7 @@ export async function gearGoal(bot) {
   const sources = await bot.page.evaluate(ids => window.__zg.lootSources(ids), mats);
   const plans = [];
   for (const w of weapons) {
-    if (w.id === 'harpoon' || w.attack < Math.max(have * 1.15, have + 3) || w.price > s.energy * .85) continue;
+    if (w.id === 'harpoon' || weaponPower(w) < Math.max(have * 1.15, have + 3) || w.price > s.energy * .85) continue;
     const missing = {}; let reachable = true, effort = 0;
     for (const [id, need] of Object.entries(w.materials)) {
       const short = need - (s.bag[id] ?? 0); if (short <= 0) continue;
@@ -27,7 +28,7 @@ export async function gearGoal(bot) {
       missing[id] = { short, from };
       effort += short / Math.max(...from.map(f => f.chance));
     }
-    if (reachable) plans.push({ ...w, missing, effort, gain: w.attack - have });
+    if (reachable) plans.push({ ...w, missing, effort, gain: weaponPower(w) - have });
   }
   plans.sort((a, b) => (a.effort - a.gain * 2) - (b.effort - b.gain * 2));
   return plans[0] ?? null;

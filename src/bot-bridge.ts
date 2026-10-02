@@ -80,6 +80,8 @@ export function installBotBridge(src: BotSources) {
         drops: src.drops().map(d => ({ x: round(d.x), z: round(d.z), item: d.item, count: d.count, age: round(d.age), d: round(Math.hypot(d.x - src.world().position.x, d.z - src.world().position.z)) })).sort((a, b) => a.d - b.d).slice(0, 12),
         // The story: Lumi's line on screen (null when the box is closed), friends home, the village rank.
         lumi: (() => { const box = document.getElementById('lumi'); return box && !box.hidden ? box.querySelector('.lumi-text p')?.textContent ?? '' : null; })(),
+        // The weapon in hand: ranged ('gun' kind: bows, blasters, staves) and its reach, for kiting.
+        weapon: (() => { const w = s.gear.weapon ? ITEMS[s.gear.weapon]?.weapon : undefined; return w ? { kind: w.kind, range: w.range } : null; })(),
         friends: (s.friends ?? []).map(f => f.id), villageRank: villageRankFor(s),
         titles: [...s.progression.titles], title: s.progression.title, titleRarity: Object.fromEntries(s.progression.titles.map(t => [t, rarityOf(t)])),
         orchard: s.planet === 'home' ? ORCHARD_TREES.filter(t => orchardReady(s, t.index, now)).map(t => t.index) : [],

@@ -106,4 +106,11 @@ export const JA_QUESTS: Record<string, string> = {
   "All done for now!": "いまは全部クリア！",
   "{count} rewards ready": "ごほうび{count}個受け取れる",
   "{name} has appeared!": "{name}が現れた！",
+  // Bows (content.ts)
+  "Wooden bow": "木の弓",
+  "Moon bow": "月の弓",
+  "Galaxy bow": "銀河の弓",
+  "A light hunting bow: quick arrows from a safe distance. +12 attack.": "軽い狩りの弓。離れた場所からすばやく矢を放つ。攻撃力+12。",
+  "Silver arrows that glow like the moon. +48 attack, longer reach.": "月のように光る銀の矢。攻撃力+48、射程が長い。",
+  "A bow strung with starlight, the strongest ranged weapon. +60 attack.": "星の光を弦にした弓。いちばん強い遠距離武器。攻撃力+60。",
 };

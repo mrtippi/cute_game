@@ -3842,3 +3842,14 @@ ITEMS.harpoon={name:'Hunting harpoon',icon:'🔱',desc:'A reusable throwing fork
 SHOP_CATEGORIES.find(category=>category.tab==='Weapons')!.items.push({id:'harpoon',cost:650});
 RECIPES.push({result:'harpoon',energy:650,materials:{},category:'Weapons',station:'shop'});
 LOOT_TABLES.forest_raptor=[['feather',1,1,2],['meat',.7,1,2]];
+// Bows from the first hunt to the last Titan (the Star bow sits between): fast arrows from a safe distance.
+// They reuse the Star bow model, tinted (assets.ts WEAPON_TINTS).
+for (const [id, name, attack, crit, range, cd, price, materials, fx, desc] of [
+    ['bow_wood', 'Wooden bow', 12, .05, 12, .5, 120, { sap: 3, feather: 2 }, '#f2c27a', 'A light hunting bow: quick arrows from a safe distance. +12 attack.'],
+    ['bow_moon', 'Moon bow', 48, .15, 13.5, .5, 900, { moonstone: 2, icecrystal: 6, starshard: 3 }, '#bcd8ff', 'Silver arrows that glow like the moon. +48 attack, longer reach.'],
+    ['bow_galaxy', 'Galaxy bow', 60, .18, 14, .45, 1600, { moonstone: 3, thunderstone: 3, starshard: 6 }, '#d39bff', 'A bow strung with starlight, the strongest ranged weapon. +60 attack.'],
+] as const) {
+    ITEMS[id] = { name, icon: '🏹', desc, type: 'weapon', slot: 'weapon', sell: Math.round(price / 2), price, materials: { ...materials }, attack, stats: { atk: attack, crit }, rare: attack >= 40 || undefined, weapon: { kind: 'gun', range, cd, shot: 'arrow', special: 'starfall', fx } } as ItemDef;
+    SHOP_CATEGORIES.find(category => category.tab === 'Weapons')!.items.push({ id, cost: price, mats: { ...materials } });
+    RECIPES.push({ result: id, energy: price, materials: { ...materials }, category: 'Weapons', station: 'shop' });
+}

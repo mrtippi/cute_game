@@ -103,7 +103,9 @@ export function createPlanner(bot, { minutesLeft }) {
       else if (['egg', 'milk', 'duck_egg', 'truffle'].includes(o.item)) add(['animals'], 2);
       else add(['fight'], 1);
     }
-    if (g.story.event) add(EVENT_TASKS[g.story.event], 4); else if (g.story.condition) add(conditionTasks(g.story.condition), 4);
+    // The story weighs more in a story clip (clips.mjs).
+    const storyWeight = 4 * (bot.clip?.story ?? 1);
+    if (g.story.event) add(EVENT_TASKS[g.story.event], storyWeight); else if (g.story.condition) add(conditionTasks(g.story.condition), storyWeight);
     if (g.bounty) add(['fight'], 2);
     return { score, goals: g };
   }
@@ -128,7 +130,9 @@ export function createPlanner(bot, { minutesLeft }) {
     const { score } = await needs();
     const options = Object.entries(TASKS).filter(([name, t]) => ready(name) && t.can(s)).map(([name, t]) => {
       const variety = Math.min(1, ago(name) / 600000);   // recently done → less appealing
-      return { name, t, value: t.base + (t.boost?.(s) ?? 0) + (score[name] ?? 0) * 1.5 + variety * 2 + rng.between(0, 2) };
+      // The clip's focus (clips.mjs) leans the hour toward its theme.
+      const value = t.base + (t.boost?.(s) ?? 0) + (score[name] ?? 0) * 1.5 + variety * 2 + rng.between(0, 2), focus = bot.clip?.focus?.[name] ?? 0;
+      return { name, t, value: bot.clip ? (focus ? value + focus * 1.5 : value * .75) : value };
     }).sort((a, b) => b.value - a.value);
     if (!options.length) {
       // Nothing to do on another world: fly home rather than stand around.
@@ -142,7 +146,7 @@ export function createPlanner(bot, { minutesLeft }) {
     lastRun[pick.name] = Date.now();
     // Now and then, change into something that suits the activity (owned pieces only).
     const theme = ACTIVITY_THEME[pick.name];
-    if (theme && ago('dress') > 300000 && rng.chance(.45)) { lastRun.dress = Date.now(); game.deadline = Date.now() + 60000; await dress(bot, theme).catch(() => {}); await wearTitle(bot, bot.theme ?? theme).catch(() => {}); game.deadline = 0; }
+    if (theme && !bot.clip && ago('dress') > 300000 && rng.chance(.45)) { lastRun.dress = Date.now(); game.deadline = Date.now() + 60000; await dress(bot, theme).catch(() => {}); await wearTitle(bot, bot.theme ?? theme).catch(() => {}); game.deadline = 0; }
     log(`plan: ${options.slice(0, 4).map(o => `${o.name}(${o.value.toFixed(1)})`).join(' ')} → ${pick.name}`);
     // A hard limit per activity: past it, game.snap() throws and the task stops wherever it is.
     game.deadline = Date.now() + (pick.t.limit ?? 240000);

@@ -27,8 +27,10 @@ export function densest(s, candidates = s.enemies) {
  * The skill to use now, or -1: slam the pack when two or more stand inside its 4.4 m ring, spin when
  * several are close, dash at a creature a few metres off, the special on anything in reach.
  */
-export function pickSkill(s, { swordish = true, target } = {}) {
+export function pickSkill(s, { swordish = true, target, ranged = false, reach = 3.2 } = {}) {
   const ready = i => (s.cooldowns[i] ?? 1) <= 0;
+  // From range: the weapon's special (a bow's starfall) on the target; spin or slam only when creatures got close.
+  if (ranged) { if (ready(R) && target && target.d < reach) return R; if (ready(E) && around(s, 4.4).length >= 2) return E; if (ready(Q) && around(s, 2.8).length >= 2) return Q; return -1; }
   const spin = swordish ? 3.4 : 2.8;
   const ring = around(s, 4.4).length, close = around(s, spin).length;
   if (ready(E) && ring >= 2) return E;

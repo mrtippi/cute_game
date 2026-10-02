@@ -376,7 +376,9 @@ export const heroKit = new HeroLibrary();
 export const wearKit = new KitLibrary([KIT_FILES.wear]);
 export const weaponKit = new KitLibrary([KIT_FILES.weapons]);
 /** New gameplay item, existing Blender trident geometry; no duplicate weapon download. */
-export const weaponModelName = (id: string) => id === 'harpoon' ? 'trident' : id;
+/** Weapons that reuse another weapon's model (tinted by WEAPON_TINTS). */
+export const weaponModelName = (id: string) => id === 'harpoon' ? 'trident' : id.startsWith('bow_') && id !== 'bow_star' ? 'bow_star' : id;
+export const WEAPON_TINTS: Record<string, string> = { bow_wood: '#c08a4a', bow_moon: '#cfe0ff', bow_galaxy: '#b57bff' };
 export const disguiseKit = new KitLibrary([KIT_FILES.disguises]);
 export const petKit = new KitLibrary([KIT_FILES.pets]);
 /** The starship, its launch pad, stardust and asteroids. */

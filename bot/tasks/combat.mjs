@@ -103,6 +103,16 @@ const unreachable = new Map();
 let focus = null;
 
 /** Defeat up to `count` creatures it can safely take on, preferring `type` (the bounty's species). */
+/**
+ * Open ground about 4.5 m away, as close to direction `angle` as possible: every point on the way clear of water,
+ * trees and rocks (a step back into a pond would open its fishing card). Null when boxed in.
+ */
+async function openGround(bot, from, angle) {
+  const tries = [0, .5, -.5, 1, -1, 1.5, -1.5, 2.1, -2.1].map(turn => [0, 1, 2].map(i => ({ x: from.x + Math.cos(angle + turn) * (1.5 + i * 1.5), z: from.z + Math.sin(angle + turn) * (1.5 + i * 1.5) })));
+  const ponds = (await bot.game.snap()).entities.filter(e => e.kind === 'fish'), wet = p => ponds.some(o => Math.hypot(p.x - o.x, p.z - o.z) < o.r + 1.2);
+  const flags = await bot.page.evaluate(paths => paths.map(path => path.some(p => window.__zg.blocked(p.x, p.z))), tries);
+  const i = flags.findIndex((stuck, k) => !stuck && !tries[k].some(wet)); return i < 0 ? null : tries[i][2];
+}
 export async function fight(bot, { count = 3, type, timeout = 180000, range = 30 } = {}) {
   const { game, hands, rng, note, log } = bot;
   const end = Date.now() + timeout; let kills = 0;
@@ -119,18 +129,22 @@ export async function fight(bot, { count = 3, type, timeout = 180000, range = 30
     let target = remembered ?? wounded(usable(safeTargets(s, { type, range })))[0] ?? (type ? wounded(usable(safeTargets(s, { range })))[0] : undefined);
     // With Q or E ready and health to spare, go for where the creatures stand thickest and gather them first.
     const aoeReady = s.cooldowns[0] <= 0 || s.cooldowns[2] <= 0;
-    if (!remembered && !type && aoeReady && s.hp > s.maxHp * .7) {
+    // Bows and blasters fight from range (below): no pack gathering for the close-up burst.
+    const ranged = s.weapon?.kind === 'gun' && s.gear.weapon !== 'harpoon', reach = ranged ? s.weapon.range : 3.2;
+    if (!remembered && !type && aoeReady && !ranged && s.hp > s.maxHp * .7) {
       const pack = densest(s, usable(safeTargets(s, { range })));
       if (pack && pack.crowd >= 3) { target = pack.e; if (await gatherPack(bot, { pack: pack.e })) { log(`fight: gathered a pack of ${around(await game.snap(), 4.4).length}`); await burst(bot); } }
     }
     if (!target) { log('fight: nothing safe to fight'); break; }
-    const id = target.id; let engaged = false, reroutes = 0; focus = id;
+    const id = target.id; let engaged = false, reroutes = 0, keptAway = 0; focus = id;
     // Progress watch: the creature losing health or the explorer closing in. A quiet spell means stuck.
     let best = { hp: target.hp, d: target.d, at: Date.now() };
     const fightEnd = Date.now() + 60000;
     while (Date.now() < fightEnd) {
       s = await game.snap();
       if (s.modal === 'death') break;
+      // A panel opened by a stray tap (a pond's fishing card, a shop) blocks every click: close it and carry on.
+      if (s.modal || s.dialog) { await game.closePanel(); engaged = false; best.at = Date.now(); continue; }
       const e = s.enemies.find(x => x.id === id);
       if (!e) { kills++; focus = null; note(`defeated ${target.name}`, 'combat'); await new Promise(r => setTimeout(r, rng.between(300, 700))); await collectLoot(bot); break; }
       if (e.d > range + 25) { log('fight: it got away'); focus = null; break; }
@@ -145,18 +159,29 @@ export async function fight(bot, { count = 3, type, timeout = 180000, range = 30
         if (reroutes++ < 3) { log(`fight: rerouting to ${target.name}`); await game.stepToward(e.x, e.z, s); best.at = Date.now(); engaged = false; await new Promise(r => setTimeout(r, rng.between(600, 1000))); continue; }
         log(`fight: cannot reach ${target.name}, trying another`); unreachable.set(id, Date.now() + 60000); focus = null; break;
       }
+      // Ranged: keep the distance. A creature closer than 2.6 m means a few steps back (away from all close ones), then shoot again.
+      if (ranged && Date.now() - keptAway > 1200) {
+        const close = s.enemies.filter(x => x.d < 2.6);
+        if (close.length) {
+          const ax = close.reduce((n, x) => n + s.player.x - x.x, 0), az = close.reduce((n, x) => n + s.player.z - x.z, 0);
+          keptAway = Date.now();
+          const back = await openGround(bot, s.player, Math.atan2(az, ax));
+          if (back) { log(`fight: stepping back from ${close.length} (bow)`); await game.stepToward(back.x, back.z, s).catch(() => {}); }
+          await new Promise(r => setTimeout(r, rng.between(450, 750))); engaged = false; best.at = Date.now(); continue;
+        }
+      }
       if (s.hp < s.maxHp * .5) {
         // Back off and heal, then come back for this same creature (focus stays set).
         log('fight: backing off to recover'); if (e.hp > e.maxHp * .5) avoid(e.type);
         await game.stepToward(s.player.x * 2 - e.x, s.player.z * 2 - e.z, s).catch(() => {}); await recover(bot); break;
       }
-      if (e.d > 3.2 || !engaged) {
+      if (e.d > reach * .9 || !engaged) {
         if (e.d < 35 && await game.safe(e.screen, s) && await game.pick(e.screen.x, e.screen.y) === e.id) { await hands.click(e.screen.x, e.screen.y); engaged = true; await new Promise(r => setTimeout(r, rng.between(400, 800))); }
         else { await game.stepToward(e.x, e.z, s); await new Promise(r => setTimeout(r, rng.between(500, 900))); }
         continue;
       }
       // In reach the explorer swings by itself; spend skills where they hit the most creatures.
-      const skill = pickSkill(s, { swordish: /sword|hammer|scythe/.test(s.gear.weapon ?? ''), target: e });
+      const skill = pickSkill(s, { swordish: !ranged && /sword|hammer|scythe/.test(s.gear.weapon ?? ''), target: e, ranged, reach });
       if (skill >= 0) await useSkill(bot, skill);
       else if (rng.chance(.3)) { await hands.press(' '); await new Promise(r => setTimeout(r, rng.between(200, 450))); }
       else await new Promise(r => setTimeout(r, rng.between(250, 500)));

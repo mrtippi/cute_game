@@ -6,10 +6,11 @@ import { openSession } from './lib/session.mjs';
 import { wearTitle } from './tasks/titles.mjs';
 import { createPlanner } from './planner.mjs';
 import { dress } from './tasks/wardrobe.mjs';
+import { CLIPS } from './clips.mjs';
 
 const { values: opt } = parseArgs({ options: {
   minutes: { type: 'string', default: '10' }, seed: { type: 'string' }, profile: { type: 'string', default: 'D:/autogame/bot-data/profile' },
-  url: { type: 'string', default: 'http://127.0.0.1:8787/' }, theme: { type: 'string' }, out: { type: 'string', default: 'D:/autogame/bot-data/sessions' },
+  url: { type: 'string', default: 'http://127.0.0.1:8787/' }, theme: { type: 'string' }, clip: { type: 'string' }, title: { type: 'string' }, out: { type: 'string', default: 'D:/autogame/bot-data/sessions' },
 } });
 const day = opt.seed ?? new Date().toISOString().slice(0, 10), rng = createRng(day);
 const dir = `${opt.out}/${day}`; mkdirSync(dir, { recursive: true });
@@ -19,15 +20,20 @@ const log = text => { const line = `[${clock()}] ${text}`; console.log(line); ap
 const note = (text, tag = 'info') => { log(`★ ${text}`); appendFileSync(`${dir}/events.jsonl`, JSON.stringify({ t: (Date.now() - started) / 1000, tag, text }) + '\n'); };
 
 const { context, page, hands, game } = await openSession({ profile: opt.profile, url: opt.url, rng, log });
-const bot = { page, game, hands, rng, log, note, theme: opt.theme };
+// A clip from the director (clips.mjs): its focus steers the planner; its wardrobe and title themes dress the explorer.
+const clip = opt.clip ? CLIPS[opt.clip] : null;
+if (opt.clip && !clip) throw new Error('unknown clip theme ' + opt.clip);
+const theme = opt.theme ?? clip?.wardrobe;
+const bot = { page, game, hands, rng, log, note, theme, clip };
 // Planets where the explorer was knocked out: the next visit picks one star lower.
 bot.struggled = new Set();
 game.onFall = () => { note('knocked out, back home to rest', 'combat'); if (bot.lastPlanet) bot.struggled.add(bot.lastPlanet); };
 const minutesLeft = () => (deadline - Date.now()) / 60000;
 let s = await game.snap();
-note(`start · Lv.${s.level} · ϟ${s.energy} · ${s.planet}${opt.theme ? ' · theme ' + opt.theme : ''}`, 'session');
-if (opt.theme) log('dress → ' + await dress(bot, opt.theme).catch(e => e.message));
-log('title → ' + await wearTitle(bot, opt.theme ?? 'fancy').catch(e => e.message));
+note(`start · Lv.${s.level} · ϟ${s.energy} · ${s.planet}${opt.clip ? ' · clip ' + opt.clip : ''}${theme ? ' · theme ' + theme : ''}`, 'session');
+if (opt.title) note(opt.title, 'clip');
+if (theme) log('dress → ' + await dress(bot, theme).catch(e => e.message));
+log('title → ' + await wearTitle(bot, clip?.title ?? theme ?? 'fancy').catch(e => e.message));
 
 const planner = createPlanner(bot, { minutesLeft });
 while (Date.now() < deadline) {

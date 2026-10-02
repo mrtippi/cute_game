@@ -138,10 +138,19 @@ export const MAX_LEVEL = 100;
  * quest rewards stay on the gentle curve (xpReward), so the climb really slows. Tuned against the bot's
  * measured rate; adjust these two numbers to re-pace the game.
  */
-export const XP_CURVE = { knee: 12, power: 1.75 };
+/**
+ * XP to the next level = the gentle reward curve, made steeper after the knee (power) and again eased after
+ * lateFrom (late): by then the bot farms the top stars, so XP per hour stops growing (work/sim/levels.ts).
+ */
+export const XP_CURVE: { knee: number; power: number; lateFrom?: number; late?: number } = { knee: 6, power: 2.2, lateFrom: 45, late: 1 };
 /** The gentle curve: what rewards are measured in. */
 export function xpReward(level: number) { return Math.round(25 * Math.pow(Math.max(1, Math.min(level, MAX_LEVEL)), 1.55)); }
-export function xpNeeded(level: number) { const base = xpReward(level); return level <= XP_CURVE.knee ? base : Math.round(base * Math.pow(level / XP_CURVE.knee, XP_CURVE.power)); }
+export function xpNeeded(level: number) {
+    const base = xpReward(level), { knee, power, lateFrom, late } = XP_CURVE;
+    if (level <= knee) return base;
+    if (lateFrom === undefined || late === undefined || level <= lateFrom) return Math.round(base * Math.pow(level / knee, power));
+    return Math.round(base * Math.pow(lateFrom / knee, power) * Math.pow(level / lateFrom, late));
+}
 function equipped(s: SaveState) { return Object.values(s.gear).map(id => ITEMS[id]).filter(Boolean); }
 function equipmentStat(s: SaveState, key: string) { return equipped(s).reduce((sum, item) => sum + ((item.stats as Record<string, number> | undefined)?.[key] || 0), 0); }
 function effect(s: SaveState, key: BuffKey, now = Date.now()) { const buff = s.buffs[key]; return buff && buff.expiresAt > now ? buff.value : 0; }

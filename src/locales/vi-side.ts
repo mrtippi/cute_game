@@ -123,4 +123,5 @@ export const VI_SIDE: Record<string, string> = {
   "Win 12 quick challenges in a row": "Thắng 12 thử thách nhanh liên tiếp",
   "Memory room": "Phòng kỷ niệm",
   "The memory room opens at level {level}.": "Phòng kỷ niệm mở ở cấp {level}.",
+  "Choose a title": "Chọn danh hiệu",
 };
