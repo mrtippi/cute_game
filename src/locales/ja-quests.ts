@@ -96,4 +96,6 @@ export const JA_QUESTS: Record<string, string> = {
   "Conquer planet stars": "星の階級を制覇する",
   "Star conqueror": "星の征服者",
   "Earn {count} planet stars": "星の階級を{count}個獲得する",
+  // An uncaught fish in the fish log: the usual full-width mystery name.
+  "???": "？？？",
 };

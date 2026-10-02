@@ -27,7 +27,7 @@
   border-radius: 26px;
   background: #fffaf0;
   color: #2c3a26;
-  font-family: 'Nunito Variable', 'M PLUS Rounded 1c', sans-serif;
+  font-family: var(--font);
   font-weight: 700;
   box-shadow: 0 6px 0 rgba(44, 58, 38, .16), 0 18px 40px rgba(34, 60, 24, .22);
 }

@@ -3,7 +3,8 @@
    messages and prompts stack at the bottom centre, and every panel is a cream
    sheet with a colour-coded header band for the place that opened it. */
 :root {
-  --font: 'Nunito Variable', 'M PLUS Rounded 1c', 'Trebuchet MS', system-ui, sans-serif;
+    /* Emoji fonts before the Japanese font: M PLUS has plain glyphs for symbols like ❔ ✔ ♪ that the game draws as colour emoji. */
+  --font: 'Nunito Variable', 'Segoe UI Emoji', 'Apple Color Emoji', 'Noto Color Emoji', 'M PLUS Rounded 1c', 'Trebuchet MS', system-ui, sans-serif;
 
   /* Ink and paper */
   --ink: #2c3a26;
