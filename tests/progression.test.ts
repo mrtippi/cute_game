@@ -51,8 +51,9 @@ test('timed challenges track successful actions and preserve/restart streaks cor
   const s=M.newGame();assert.equal(P.startChallenge(s,'kill',start),false);s.level=2;assert.equal(P.startChallenge(s,'kill',start),true);assert.equal(P.startChallenge(s,'fish',start),false);P.recordEvent(s,'kill',4,'mushroom',start+5000);const entry=P.progressEntries(s,'challenges',start+5000)[0];assert.equal(entry.complete,true);assert.equal(P.claimProgress(s,'challenges',entry.id,start+5000),true);assert.equal(s.progression.streak,1);assert.equal(P.claimProgress(reload(s),'challenges',entry.id,start+5000),false);
   assert.equal(P.startChallenge(s,'skill',start+6000),true);P.refreshProgress(s,start+51001);assert.equal(s.progression.challenge,null);assert.equal(s.progression.streak,0);assert.equal(s.progression.bestStreak,1);
 });
-test('collection records every acquired item and offers no invented claimable reward',()=>{
-  const s=M.newGame();for(const id of M.COLLECTIONS.lava.items)M.addItem(s,id);const entry=P.progressEntries(s,'collection',start).find(e=>e.id==='lava')!;assert.equal(entry.complete,true);assert.equal(entry.claimed,true);assert.equal(P.claimProgress(s,'collection','lava',start),false);const r=reload(s);assert.deepEqual(r.collection,s.collection);
+test('collection records every acquired item; a complete set pays its reward once (side-stories.ts)',()=>{
+  const s=M.newGame();for(const id of M.COLLECTIONS.lava.items)M.addItem(s,id);const entry=P.progressEntries(s,'collection',start).find(e=>e.id==='lava')!;assert.equal(entry.complete,true);assert.equal(entry.claimed,false);
+  assert.equal(P.claimProgress(s,'collection','lava',start),true);assert.equal(P.claimProgress(s,'collection','lava',start),false);assert.ok(s.progression.titles.includes('Volcano Collector'));
 });
 test('malformed progression tasks regenerate and prototype-named events are rejected',()=>{
   const s=M.newGame();P.refreshProgress(s,start);s.progression.daily.tasks=[];const r=reload(s);assert.equal(P.progressEntries(r,'daily',start).filter(e=>!e.id.endsWith('login')&&!e.id.endsWith('chest')).length,3);

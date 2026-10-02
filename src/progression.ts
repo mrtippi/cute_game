@@ -4,11 +4,13 @@ import { addItem, gainXp, xpReward as xpNeeded, removeItem, looseQuantity, type 
 import { fillOrders, parseOrders, type OrdersState, type Order } from './orders.ts';
 import { starsEarned, titansAtTier } from './planet-tiers.ts';
 import { CHAPTERS, chapterAt } from './story.ts';
+import { FRIEND_CHAINS, PLANET_TALES, LEVEL_GIFT_STEP, levelGift, COLLECTION_TITLES, COLLECTION_KEEPSAKES, FISH_LOG_PAGES, FISH_LOG_TITLES, SIDE_TITLES, type SideChain } from './side-stories.ts';
+import { FISH } from './content.ts';
 /** 2: 星灯りの村 (story.ts). */
 export const STORY_VERSION = 2;
 import { ENEMY_TYPES } from './enemy-types.ts';
 export { STORY_STEPS } from './content.ts';
-export type ProgressKind = 'story' | 'hourly' | 'daily' | 'weekly' | 'achievements' | 'pass' | 'bounties' | 'collection' | 'challenges';
+export type ProgressKind = 'story' | 'side' | 'hourly' | 'daily' | 'weekly' | 'achievements' | 'pass' | 'bounties' | 'collection' | 'challenges';
 export interface ProgressEntry {
     id: string;
     title: string;
@@ -46,6 +48,12 @@ export interface ProgressionState {
     titles: string[];
     /** The last chapter whose Lumi opening was shown (-1: none yet). */
     lumiSeen: number;
+    /** Side stories (side-stories.ts): the current step of each friend chain and planet tale, by "friend:id" / "tale:planet". */
+    side: Record<string, { step: number; progress: number }>;
+    /** Level gifts claimed (levels, multiples of 5). */
+    gifts: number[];
+    /** Collection rewards claimed (collection ids, "fishlog:<page>"). */
+    collected: string[];
     totals: Record<string, number>;
     daily: {
         key: string;
@@ -150,7 +158,7 @@ const CHALLENGES: Record<string, {
     target: number;
     seconds: number;
 }> = { kill: { target: 4, seconds: 75 }, skill: { target: 8, seconds: 45 }, harvest: { target: 4, seconds: 100 }, fish: { target: 2, seconds: 120 }, boss: { target: 1, seconds: 150 } };
-export function createProgression(): ProgressionState { return { story: { index: 0, progress: 0 }, storyVersion: STORY_VERSION, villageRank: 1, titles: [], lumiSeen: -1, totals: {}, daily: { key: '', tasks: [], chest: false, rerolled: false }, weekly: { key: '', tasks: [], chest: false }, hourly: { key: '', tasks: [], chest: false }, orders: { next: 0, list: [] }, pass: { season: '', stars: 0, claimed: [] }, achievements: {}, login: { day: '', streak: 0 }, bounty: null, challenge: null, streak: 0, bestStreak: 0 }; }
+export function createProgression(): ProgressionState { return { story: { index: 0, progress: 0 }, storyVersion: STORY_VERSION, villageRank: 1, titles: [], lumiSeen: -1, side: {}, gifts: [], collected: [], totals: {}, daily: { key: '', tasks: [], chest: false, rerolled: false }, weekly: { key: '', tasks: [], chest: false }, hourly: { key: '', tasks: [], chest: false }, orders: { next: 0, list: [] }, pass: { season: '', stars: 0, claimed: [] }, achievements: {}, login: { day: '', streak: 0 }, bounty: null, challenge: null, streak: 0, bestStreak: 0 }; }
 function day(now: number) { return new Date(now).toISOString().slice(0, 10); }
 function week(now: number) { const d = new Date(now); d.setUTCDate(d.getUTCDate() - (d.getUTCDay() + 6) % 7); return d.toISOString().slice(0, 10); }
 function hash(text: string) { let value = 2166136261; for (const c of text)
@@ -212,6 +220,7 @@ function condition(s: SaveState, key: string) {
     case 'fishSpecies': return Object.keys(s.fishRecords).length;
     case 'collections': return Object.values(COLLECTIONS).filter(group => group.items.every(item => s.collection[item])).length;
     case 'stars': return starsEarned(s);
+    case 'animalKinds': return new Set(s.farm?.animals.filter(a => a.kind !== 'dog').map(a => a.kind) ?? []).size;
     case 'titansAt5': return titansAtTier(s, 5);
     case 'titansAt8': return titansAtTier(s, 8);
     case 'weaponAttack': return Math.max(0, ...[s.gear.weapon, ...Object.keys(s.bag).filter(id => (s.bag[id] ?? 0) > 0)].map(id => id && ITEMS[id]?.slot === 'weapon' && id !== 'harpoon' ? ITEMS[id].attack ?? 0 : 0));
@@ -231,6 +240,11 @@ export function recordEvent(s: SaveState, event: string, amount = 1, detail?: st
         for (const task of list)
             if (specs[task.type]?.event === event)
                 task.progress = Math.min(task.target, task.progress + amount);
+    for (const chain of openChains(s)) {
+        const at = sideState(p, chain), current = chain.steps[at.step];
+        if (current?.event === event && (!chain.planet || chain.planet === s.planet))
+            at.progress = Math.min(current.target, at.progress + amount);
+    }
     const step = storyStep(p.story.index);
     if (step.event === event)
         p.story.progress = Math.min(step.target, p.story.progress + amount);
@@ -258,6 +272,31 @@ function achievementReward(tier: number, target: number): Reward { return { ener
 /** Player-facing name of a challenge type (the daily task titles), never the internal id. */
 export function challengeTitle(type: string): string { return t(DAILY[type]?.title ?? type); }
 function entry(id: string, title: string, progress: number, target: number, claimed: boolean, reward: Reward = {}, icon = '📜', description = ''): ProgressEntry { return { id, title: t(title), description: t(description), progress: Math.min(progress, target), target, complete: progress >= target, claimed, rewardLabel: rewardLabel(reward), icon }; }
+/** Side chains open to this save: a friend's chain once rescued, a planet's tale once discovered (home's from level 5). */
+const chainKey = (c: SideChain) => (c.friend ? 'friend:' : 'tale:') + c.id;
+function openChains(s: SaveState) {
+    const friends = new Set((s.friends ?? []).map(f => f.id));
+    return [...FRIEND_CHAINS.filter(c => friends.has(c.friend!)), ...PLANET_TALES.filter(c => c.planet === 'home' ? s.level >= 5 : s.discovered.includes(c.planet!))];
+}
+function sideState(p: ProgressionState, chain: SideChain) { return p.side[chainKey(chain)] ??= { step: 0, progress: 0 }; }
+const chainByKey = (key: string) => [...FRIEND_CHAINS, ...PLANET_TALES].find(c => chainKey(c) === key);
+function sideStepTitle(chain: SideChain, i: number) { const st = chain.steps[i]; return t(st.title, { count: st.target, planet: chain.planet ? t(PLANETS[chain.planet].name) : '' }); }
+function sideReward(s: SaveState, chain: SideChain, i: number): Reward {
+    const last = i === chain.steps.length - 1, items: Inventory = { ...chain.steps[i].reward };
+    if (last) for (const [id, n] of Object.entries(chain.keepsake ?? {})) items[id] = (items[id] ?? 0) + n!;
+    return { energy: 60 + s.level * 10 + (last ? 200 : 0), xp: Math.round(xpNeeded(s.level) * (last ? .3 : .12)), items, stars: last ? 30 : 12 };
+}
+function giftReward(s: SaveState, level: number): Reward { const g = levelGift(level); return { energy: 100 + level * 15, xp: Math.round(xpNeeded(s.level) * .15), items: g.items, stars: 20 }; }
+const fishSpecies = () => Object.values(FISH).filter(f => f.rarity !== 'junk').length;
+function collectionReward(s: SaveState, id: string): Reward { return { energy: 300 + s.level * 20, xp: Math.round(xpNeeded(s.level) * .25), items: { ...COLLECTION_KEEPSAKES[id], moonstone: 1 }, stars: 40 }; }
+function fishLogReward(s: SaveState, page: number): Reward { return { energy: 150 + s.level * 10 + page * 150, xp: Math.round(xpNeeded(s.level) * (.12 + page * .08)), items: page === 2 ? { deco_aquarium: 1, moonstone: 1 } : { worm: 10, starshard: 1 }, stars: 25 }; }
+const giveTitle = (p: ProgressionState, title?: string) => { if (title && !p.titles.includes(title)) p.titles.push(title); };
+/** Unfinished side steps (for the bot's planner): the event or condition, the world it counts on, progress. */
+export function sideGoals(s: SaveState) {
+    return openChains(s).flatMap(chain => { const at = sideState(s.progression, chain), st = chain.steps[at.step]; return st ? [{ key: chainKey(chain), event: st.event, condition: st.condition, planet: chain.planet, progress: st.condition ? condition(s, st.condition) : at.progress, target: st.target }] : []; }).filter(g => g.progress < g.target);
+}
+/** The line a friend or Lumi says when this side step opens (shown by main.ts after a claim and on a rescue). */
+export function sideLine(s: SaveState, key: string) { const chain = chainByKey(key); return chain ? chain.steps[s.progression.side[key]?.step ?? 0]?.line : undefined; }
 export function progressEntries(s: SaveState, kind: ProgressKind, now = Date.now()): ProgressEntry[] {
     refreshProgress(s, now);
     const p = s.progression;
@@ -287,8 +326,24 @@ export function progressEntries(s: SaveState, kind: ProgressKind, now = Date.now
         const b = p.bounty;
         return b ? [entry(b.key, t('Wanted: {name}', { name: t(ENEMY_TYPES[b.type]?.name ?? b.type) }), b.progress, b.target, b.claimed, bountyReward(s), '🎯', t('{count} minutes remaining', { count: Math.max(0, Math.ceil((b.ends - now) / 60000)) }))] : [];
     }
+    if (kind === 'side') {
+        const list: ProgressEntry[] = [];
+        for (const chain of openChains(s)) {
+            const at = sideState(p, chain), st = chain.steps[at.step]; if (!st) continue;
+            const where = chain.planet ? t(chain.name) + ' · ' + t(PLANETS[chain.planet].name) : t(chain.name);
+            list.push(entry(`${chainKey(chain)}:${at.step}`, sideStepTitle(chain, at.step), st.condition ? condition(s, st.condition) : at.progress, st.target, false, sideReward(s, chain, at.step), chain.friend ? chain.icon : st.icon, `${where} · ${t('Step {step} of {count}', { step: at.step + 1, count: chain.steps.length })}`));
+        }
+        // Level gifts: every one reached and not yet opened, then the next one.
+        for (let level = LEVEL_GIFT_STEP; level <= 100; level += LEVEL_GIFT_STEP) {
+            if (p.gifts.includes(level)) continue;
+            const title = levelGift(level).title;
+            list.push(entry(`gift:${level}`, t('Level {level} gift', { level }), s.level, level, false, giftReward(s, level), '🎁', title ? t('Title: {name}', { name: t(title) }) : t('A gift box from the village')));
+            if (level > s.level) break;
+        }
+        return list.sort((a, b) => Number(b.complete) - Number(a.complete));   // ready rewards first
+    }
     if (kind === 'collection')
-        return Object.entries(COLLECTIONS).map(([id, group]) => { const found = group.items.filter(item => s.collection[item]).length; return entry(id, group.name, found, group.items.length, true, {}, group.emoji, group.items.map(item => `${s.collection[item] ? '✓' : '?'} ${t(ITEMS[item].name)}`).join(' · ')); });
+        return [...Object.entries(COLLECTIONS).map(([id, group]) => { const found = group.items.filter(item => s.collection[item]).length; return entry(id, group.name, found, group.items.length, p.collected.includes(id), collectionReward(s, id), group.emoji, group.items.map(item => `${s.collection[item] ? '✓' : '?'} ${t(ITEMS[item].name)}`).join(' · ')); }), ...FISH_LOG_PAGES.map((size, page) => { const target = size || fishSpecies(); return entry(`fishlog:${page}`, t('Fish log · page {count}', { count: page + 1 }), Object.keys(s.fishRecords).filter(id => FISH[id] && FISH[id].rarity !== 'junk').length, target, p.collected.includes(`fishlog:${page}`), fishLogReward(s, page), '🐟', t('Title: {name}', { name: t(FISH_LOG_TITLES[page]) })); })];
     const c = p.challenge;
     if (!c)
         return [];
@@ -322,7 +377,7 @@ function migrateStory(p: ProgressionState, s: SaveState) {
 }
 export function claimProgress(s: SaveState, kind: ProgressKind, id: string, now = Date.now()): boolean {
     const available = progressEntries(s, kind, now).find(e => e.id === id);
-    if (!available?.complete || available.claimed || kind === 'collection')
+    if (!available?.complete || available.claimed)
         return false;
     const p = s.progression;
     let reward: Reward = {};
@@ -332,6 +387,21 @@ export function claimProgress(s: SaveState, kind: ProgressKind, id: string, now 
         p.story = { index: p.story.index + 1, progress: 0 };
         s.quest = p.story.index;
         p.totals.questsDone = (p.totals.questsDone || 0) + 1;
+    }
+    else if (kind === 'side') {
+        const [head, key, n] = id.split(':');
+        if (head === 'gift') { const level = Number(key); p.gifts.push(level); reward = giftReward(s, level); giveTitle(p, levelGift(level).title); }
+        else {
+            const chain = chainByKey(head + ':' + key)!, at = sideState(p, chain); if (Number(n) !== at.step) return false;
+            reward = sideReward(s, chain, at.step); if (at.step === chain.steps.length - 1) giveTitle(p, chain.title);
+            p.side[chainKey(chain)] = { step: at.step + 1, progress: 0 };
+        }
+        p.totals.questsDone = (p.totals.questsDone || 0) + 1;
+    }
+    else if (kind === 'collection') {
+        p.collected.push(id);
+        if (id.startsWith('fishlog:')) { const page = Number(id.slice(8)); reward = fishLogReward(s, page); giveTitle(p, FISH_LOG_TITLES[page]); }
+        else { reward = collectionReward(s, id); giveTitle(p, COLLECTION_TITLES[id]); }
     }
     else if (kind === 'hourly') {
         const tail = id.split(':').at(-1)!;
@@ -405,7 +475,13 @@ export function normalizeProgression(raw: unknown, s: SaveState): ProgressionSta
         p.story = { index: number(raw.story.index, 1e6), progress: number(raw.story.progress) };
     p.villageRank = Math.min(5, Math.max(1, number(raw.villageRank, 5)));
     if (Array.isArray(raw.titles))
-        p.titles = [...new Set(raw.titles.filter((v: unknown) => typeof v === 'string' && CHAPTERS.some(c => c.reward.title === v)) as string[])];
+        p.titles = [...new Set(raw.titles.filter((v: unknown) => typeof v === 'string' && (CHAPTERS.some(c => c.reward.title === v) || SIDE_TITLES.includes(v))) as string[])];
+    if (record(raw.side))
+        for (const [key, v] of Object.entries(raw.side)) { const chain = chainByKey(key); if (chain && record(v)) p.side[key] = { step: Math.min(number(v.step), chain.steps.length), progress: number(v.progress) }; }
+    if (Array.isArray(raw.gifts))
+        p.gifts = [...new Set(raw.gifts.filter((v: unknown) => typeof v === 'number' && v > 0 && v <= 100 && v % LEVEL_GIFT_STEP === 0) as number[])];
+    if (Array.isArray(raw.collected))
+        p.collected = [...new Set(raw.collected.filter((v: unknown) => typeof v === 'string' && (Object.hasOwn(COLLECTION_TITLES, v) || /^fishlog:[0-2]$/.test(v))) as string[])];
     p.lumiSeen = typeof raw.lumiSeen === 'number' && Number.isInteger(raw.lumiSeen) ? Math.max(-1, Math.min(raw.lumiSeen, CHAPTERS.length)) : -1;
     if (raw.storyVersion !== STORY_VERSION)
         migrateStory(p, s);

@@ -11,6 +11,8 @@ import { JA_SOCIAL } from './locales/ja-social.ts';
 import { JA_UI } from './locales/ja-ui.ts';
 import { JA_QUESTS } from './locales/ja-quests.ts';
 import { JA_STORY } from './locales/ja-story.ts';
+import { JA_SIDE } from './locales/ja-side.ts';
+import { VI_SIDE } from './locales/vi-side.ts';
 import { VI_STORY } from './locales/vi-story.ts';
 
 export type Language = 'en' | 'vi' | 'ja';
@@ -27,8 +29,8 @@ const table = (...parts: Record<string, string>[]): Table => {
   return { exact, folded: new Map(Object.entries(exact).map(([key, value]) => [key.toLowerCase(), value])) };
 };
 const TABLES: Record<Exclude<Language, 'en'>, Table> = {
-  vi: table(VI_CATALOG, VI_GAMEPLAY, VI_ONLINE, VI_UI, VI_FRIENDS, VI_HOUSE, VI_QUESTS, VI_STORY),
-  ja: table(JA_CATALOG, JA_GAMEPLAY, JA_SOCIAL, JA_UI, JA_QUESTS, JA_STORY),
+  vi: table(VI_CATALOG, VI_GAMEPLAY, VI_ONLINE, VI_UI, VI_FRIENDS, VI_HOUSE, VI_QUESTS, VI_STORY, VI_SIDE),
+  ja: table(JA_CATALOG, JA_GAMEPLAY, JA_SOCIAL, JA_UI, JA_QUESTS, JA_STORY, JA_SIDE),
 };
 const listeners = new Set<() => void>();
 const cache = new Map<string, string>();

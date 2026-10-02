@@ -1,12 +1,12 @@
 // The everyday routines: rewards, garden, market, and fighting. Each takes the bot context
 // ({ game, hands, rng, log, note }) and returns a short result for the session log.
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
-const JOURNAL_TABS = ['story', 'hourly', 'daily', 'weekly', 'achievements', 'bounties', 'pass'];
+const JOURNAL_TABS = ['story', 'side', 'hourly', 'daily', 'weekly', 'achievements', 'bounties', 'pass', 'collection'];
 
 /** Anything waiting to be collected in the journal, as the quests() view reports it. */
 export async function claimable(game) {
   const q = await game.quests();
-  return Object.entries(q).flatMap(([kind, list]) => list.filter(e => e.complete && !e.claimed && kind !== 'collection').map(e => ({ kind, ...e })));
+  return Object.entries(q).flatMap(([kind, list]) => list.filter(e => e.complete && !e.claimed).map(e => ({ kind, ...e })));
 }
 
 export async function claimRewards(bot) {

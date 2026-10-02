@@ -23,7 +23,7 @@ const EVENT_TASKS = {
   animal: ['animals'], planet: ['travel'], stardust: ['travel'], mine: ['travel', 'mine'],
   order: ['market'], forge: ['forge'], forgeOk: ['forge'], eat: [], decorate: [], dailyDone: [], login: [],
 };
-const CONDITION_TASKS = { titans: ['boss'], stars: ['boss', 'fight', 'travel'], beds: ['expand'], upgrades: ['crystal'], fishSpecies: ['fishing'], collections: ['travel', 'fight'], level: ['fight'], equipped: ['shop'], visited: ['travel'], pen: ['animals'], animals: ['animals'], dog: ['animals'], forgeMax: ['forge'], harpoon: [], titansAt5: ['boss', 'travel'], titansAt8: ['boss', 'travel'], weaponAttack: ['gearBuy', 'gather', 'shop'] };
+const CONDITION_TASKS = { titans: ['boss'], stars: ['boss', 'fight', 'travel'], beds: ['expand'], upgrades: ['crystal'], fishSpecies: ['fishing'], collections: ['travel', 'fight'], level: ['fight'], equipped: ['shop'], visited: ['travel'], pen: ['animals'], animals: ['animals'], dog: ['animals'], forgeMax: ['forge'], harpoon: [], animalKinds: ['animals'], titansAt5: ['boss', 'travel'], titansAt8: ['boss', 'travel'], weaponAttack: ['gearBuy', 'gather', 'shop'] };
 /** Story goals naming one boss ("boss:home:bear") or one friend ("friend:sprout") go to the hunt and the cages. */
 const conditionTasks = c => c.startsWith('boss:') ? ['boss'] : c.startsWith('friend:') ? ['rescue', 'boss'] : CONDITION_TASKS[c];
 const CROPS = /^(radish|carrot|pumpkin|mint|chili|candy|bean|star|berry|coffee|moonflower|magnetmelon|melon|apple|grape|mango|pineapple|coconut|durian|lychee|peach)$/;
@@ -79,7 +79,11 @@ export function createPlanner(bot, { minutesLeft }) {
     const g = await bot.page.evaluate(() => window.__zg.goals()), score = {};
     const add = (names, n) => { for (const name of names ?? []) score[name] = (score[name] ?? 0) + n; };
     // The hourly board frames each clip, so its tasks weigh most.
-    for (const t of g.tasks) add(EVENT_TASKS[t.event], t.kind === 'hourly' ? 4 : t.kind === 'daily' ? 3 : 2);
+    for (const t of g.tasks) {
+      // Side stories: a planet tale only counts on its own world; elsewhere it is a reason to fly there.
+      if (t.kind === 'side' && t.planet && t.planet !== bot.lastPlanet) { add(['travel'], 1); continue; }
+      add(EVENT_TASKS[t.event] ?? conditionTasks(t.event ?? ''), t.kind === 'hourly' ? 4 : t.kind === 'daily' ? 3 : 2);
+    }
     // Keep a stock of cooked food: it is what heals the explorer in the field.
     const s = await game.snap(), meals = count(s.bag, id => id.startsWith('cooked_'));
     if (meals < 6) add(['cook'], 4);

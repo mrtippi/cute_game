@@ -4,7 +4,7 @@ import type { SpaceFlight } from './space.ts';
 import { STAR_MAP } from './space.ts';
 import { Vector3, type Camera } from 'three';
 import { cropProgress, maxHp, readyAnimals, attack, defense, looseQuantity, CROPS, ITEMS, RECIPES, LOOT_TABLES, PLANETS } from './model.ts';
-import { progressEntries, refreshProgress, storyStep, TASK_SPECS, type ProgressKind } from './progression.ts';
+import { progressEntries, refreshProgress, storyStep, sideGoals, TASK_SPECS, type ProgressKind } from './progression.ts';
 import { ORCHARD_TREES, orchardReady, villageRankFor } from './village.ts';
 
 /**
@@ -28,7 +28,7 @@ export interface BotSources {
 }
 
 const round = (n: number) => Math.round(n * 100) / 100;
-const KINDS: readonly ProgressKind[] = ['story', 'hourly', 'daily', 'weekly', 'achievements', 'pass', 'bounties', 'challenges'];
+const KINDS: readonly ProgressKind[] = ['story', 'side', 'collection', 'hourly', 'daily', 'weekly', 'achievements', 'pass', 'bounties', 'challenges'];
 
 export function installBotBridge(src: BotSources) {
   if (!BOT_MODE) return;
@@ -90,7 +90,7 @@ export function installBotBridge(src: BotSources) {
     goals() {
       const s = structuredClone(src.state()); refreshProgress(s); const p = s.progression, step = storyStep(p.story.index);
       const task = (kind: 'hourly' | 'daily' | 'weekly') => p[kind].tasks.filter(t => !t.claimed && t.progress < t.target).map(t => ({ kind, type: t.type, event: TASK_SPECS[kind][t.type]?.event ?? t.type, progress: t.progress, target: t.target }));
-      return { tasks: [...task('hourly'), ...task('daily'), ...task('weekly')], story: { index: p.story.index, event: step.event ?? null, condition: step.condition ?? null, target: step.target, progress: p.story.progress, title: step.title },
+      return { tasks: [...task('hourly'), ...task('daily'), ...task('weekly'), ...sideGoals(s).map(g => ({ kind: 'side', type: g.key, event: g.event ?? g.condition, planet: g.planet ?? null, progress: g.progress, target: g.target }))], story: { index: p.story.index, event: step.event ?? null, condition: step.condition ?? null, target: step.target, progress: p.story.progress, title: step.title },
         bounty: p.bounty && !p.bounty.claimed ? { type: p.bounty.type, left: p.bounty.target - p.bounty.progress } : null, totals: p.totals };
     },
     /** The game's own walking route to a point (around fences, through the gate), as waypoints. */
