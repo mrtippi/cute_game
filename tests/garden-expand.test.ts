@@ -153,8 +153,8 @@ test('"Place new beds myself" is off by default and survives a reload', () => {
   const s = M.newGame(); assert.equal(!!s.settings.placeBeds, false); assert.equal(reload(s).settings.placeBeds, undefined);
   s.settings.placeBeds = true; assert.equal(reload(s).settings.placeBeds, true);
   const odd = JSON.parse(JSON.stringify(s)); odd.settings.placeBeds = 'yes'; assert.equal(M.parseSave(JSON.stringify(odd))!.settings.placeBeds, undefined);
-  // Automatic placement: no spot given, the bed goes on the free grid spot nearest the garden.
-  s.energy = 60; assert.ok(M.expandGarden(s)); assert.deepEqual([s.plots[9].x, s.plots[9].z], [-12.43, 2.99]);
+  // Automatic placement: no spot given, the bed goes on the first free spot of the tidy ring order, beside the garden.
+  s.energy = 60; assert.ok(M.expandGarden(s)); assert.deepEqual([s.plots[9].x, s.plots[9].z], [-5.87, 1.35]);
 });
 
 test('layout 3: slim frames around the same soil pack ~20 % more beds per area, crops the same size', () => {
@@ -179,7 +179,7 @@ test('layout 2 saves move to the slim-frame grid, keeping crops, timers and hand
   old.plots.push({ crop, plantedAt: 7, x: -12.75, z: 1.85 }, { crop: null, plantedAt: 0, x: -5.55, z: 5.45 },
     { crop: null, plantedAt: 0, x: -4.1, z: 5.6, rotation: Math.PI / 4 }, { crop, plantedAt: 9, x: -13.2, z: 2.5 });
   const r = M.parseSave(JSON.stringify(old))!;
-  assert.equal(r.gardenLayout, 3); assert.equal(r.plots.length, 13);
+  assert.equal(r.gardenLayout, M.GARDEN_LAYOUT); assert.equal(r.plots.length, 13);
   assert.deepEqual(r.plots.slice(0, 9).map(p => ({ x: p.x, z: p.z })), Array.from({ length: 9 }, (_, i) => M.defaultBed(i)));
   assert.equal(r.plots[4].crop, crop); assert.equal(r.plots[4].plantedAt, now);
   assert.equal(r.plots[9].crop, crop); assert.equal(r.plots[9].plantedAt, 7, 'crops and timers stay with their beds');
@@ -196,6 +196,30 @@ test('a full garden: every extra bed fits on the dense grid, near the starting g
   const s = M.newGame(); s.energy = 1e7; while (M.expandGarden(s));
   assert.equal(s.plots.length, M.STARTING_PLOTS + M.MAX_EXTRA_PLOTS);
   const far = Math.max(...s.plots.map(p => Math.hypot(p.x! - M.GARDEN_CENTRE.x, p.z! - M.GARDEN_CENTRE.z)));
-  assert.ok(far < 9, `the farthest bed is ${far.toFixed(2)} m from the garden centre`);
+  // A tidy square block reaches a little further than the old circle order did.
+  assert.ok(far < 10, `the farthest bed is ${far.toFixed(2)} m from the garden centre`);
+  // One block: every extra bed touches another bed on the grid.
+  s.plots.forEach((a, i) => assert.ok(s.plots.some((b, j) => j !== i && Math.abs(Math.hypot(a.x! - b.x!, a.z! - b.z!) - M.BED_STEP) < .05), `bed ${i} stands next to another`));
   s.plots.forEach((a, i) => { assert.ok(M.bedClear(a.x!, a.z!), `bed ${i}`); s.plots.forEach((b, j) => { if (j > i) assert.ok(Math.max(Math.abs(a.x! - b.x!), Math.abs(a.z! - b.z!)) >= M.BED_GAP); }); });
+});
+
+test('older scattered gardens are re-laid as one block, keeping crops and hand-placed beds', () => {
+  const s = M.newGame(); s.energy = 1e6;
+  for (let i = 0; i < 4; i++) M.expandGarden(s);
+  // Scatter two automatic beds the way the old circle order did, and hand-place one rotated bed.
+  Object.assign(s.plots[10], { x: M.GARDEN_CENTRE.x, z: +(M.GARDEN_CENTRE.z - 4 * M.BED_STEP).toFixed(2) });
+  Object.assign(s.plots[11], { x: +(M.GARDEN_CENTRE.x - 4 * M.BED_STEP).toFixed(2), z: M.GARDEN_CENTRE.z });
+  // A clear spot off the grid, away from the other beds, for the hand-placed one.
+  const others = s.plots.filter((_, i) => i !== 12).map(p => ({ x: p.x!, z: p.z! }));
+  let hand = { x: 0, z: 0 };
+  search: for (let x = -16; x <= 16; x += .37) for (let z = -16; z <= 16; z += .41)
+    if (M.bedClear(x, z, .4) && Math.hypot(x, z) < 15 && others.every(o => Math.hypot(o.x - x, o.z - z) > 3.2)) { hand = { x: +x.toFixed(2), z: +z.toFixed(2) }; break search; }
+  Object.assign(s.plots[12], { ...hand, rotation: .4 });
+  M.plant(s, 10, 'radish', Date.now());
+  const old = JSON.parse(JSON.stringify(s)); old.gardenLayout = 3;
+  const r = M.parseSave(JSON.stringify(old))!;
+  assert.equal(r.gardenLayout, M.GARDEN_LAYOUT);
+  assert.deepEqual([r.plots[12].x, r.plots[12].z, r.plots[12].rotation], [hand.x, hand.z, .4], 'hand-placed bed stays');
+  assert.equal(r.plots[10].crop, 'radish', 'the crop moves with its bed');
+  for (const i of [9, 10, 11]) assert.ok(r.plots.some((b, j) => j !== i && Math.abs(Math.hypot(r.plots[i].x! - b.x!, r.plots[i].z! - b.z!) - M.BED_STEP) < .05), `bed ${i} joins the block`);
 });

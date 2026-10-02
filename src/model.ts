@@ -250,7 +250,8 @@ export function layout2Bed(i: number) { return { x: +(-10.95 + (i % 3) * 1.8).to
 /** The starting grid of saves made before the beds shrank: 2.25 m apart from (-11.4, -0.4). */
 export function legacyBed(i: number) { return { x: -11.4 + (i % 3) * 2.25, z: -.4 + Math.floor(i / 3) * 2.25 }; }
 /** Saves on the current bed layout carry this; older ones are migrated by shrinkGarden. */
-export const GARDEN_LAYOUT = 3;
+/** 4: same beds as 3; automatically placed extra beds are re-laid in the tidy ring order (tidyBeds). */
+export const GARDEN_LAYOUT = 4;
 /** Reach of a bed from its centre along the axes: 0.78 m square on, 1.1 m when turned 45°. */
 const bedSpan = (rotation = 0) => BED_HALF * (Math.abs(Math.cos(rotation)) + Math.abs(Math.sin(rotation)));
 /**
@@ -269,10 +270,38 @@ type BedSpot = { x: number; z: number; rotation?: number };
 const bedSpots = (s: SaveState): BedSpot[] => s.plots.map((p, i) => ({ ...bedPosition(s, i), rotation: p.rotation ?? 0 }));
 /** Centre of the starting garden; new beds grow outward from it on the BED_STEP garden grid. */
 export const GARDEN_CENTRE = { x: -9.15, z: 2.99 };
-const BED_GRID = Array.from({ length: 19 * 19 }, (_, i) => ({ x: +(GARDEN_CENTRE.x + (i % 19 - 9) * BED_STEP).toFixed(2), z: +(GARDEN_CENTRE.z + (Math.floor(i / 19) - 9) * BED_STEP).toFixed(2) }))
-    .sort((a, b) => Math.hypot(a.x - GARDEN_CENTRE.x, a.z - GARDEN_CENTRE.z) - Math.hypot(b.x - GARDEN_CENTRE.x, b.z - GARDEN_CENTRE.z) || a.z - b.z || a.x - b.x);
+/**
+ * Grid spots in the order new beds take them: the garden grows as a tidy square block, ring by ring
+ * (3×3, then 5×5, 7×7…), walking each ring's edge in turn (right column, bottom row, left column, top row)
+ * so beds line up side by side instead of scattering around a circle.
+ */
+export function bedOrder(col: number, row: number) {
+    const r = Math.max(Math.abs(col), Math.abs(row));
+    const [side, along] = col === r ? [0, row + r] : row === r ? [1, r - col] : col === -r ? [2, r - row] : [3, col + r];
+    return r * 10000 + side * 1000 + along;
+}
+const BED_GRID = Array.from({ length: 19 * 19 }, (_, i) => ({ col: i % 19 - 9, row: Math.floor(i / 19) - 9 }))
+    .sort((a, b) => bedOrder(a.col, a.row) - bedOrder(b.col, b.row))
+    .map(({ col, row }) => ({ x: +(GARDEN_CENTRE.x + col * BED_STEP).toFixed(2), z: +(GARDEN_CENTRE.z + row * BED_STEP).toFixed(2) }));
 /** The free grid spot nearest the garden for a new square bed, given the beds already standing, or null. */
-function freeBedSpot(s: SaveState, beds: readonly BedSpot[]) { return BED_GRID.find(p => bedClear(p.x, p.z) && bedRoom(s, p.x, p.z, 0, beds)) ?? null; }
+function freeBedSpot(s: SaveState, beds: readonly BedSpot[]) {
+    const free = (p: { x: number; z: number }) => bedClear(p.x, p.z) && bedRoom(s, p.x, p.z, 0, beds);
+    // A spot touching a standing bed first, so the block stays in one piece around paths and buildings.
+    const touching = (p: { x: number; z: number }) => beds.some(b => Math.abs(Math.hypot(b.x - p.x, b.z - p.z) - BED_STEP) < .05);
+    return BED_GRID.find(p => touching(p) && free(p)) ?? BED_GRID.find(free) ?? null;
+}
+/**
+ * Re-lays the extra beds the game placed by itself (unrotated, on the garden grid) in the tidy ring order,
+ * so an older scattered garden becomes one block. Beds a player placed by hand keep their spots; crops and
+ * timers stay with their beds.
+ */
+export function tidyBeds(s: SaveState) {
+    const onGrid = (x: number, z: number) => [(x - GARDEN_CENTRE.x) / BED_STEP, (z - GARDEN_CENTRE.z) / BED_STEP].every(k => Math.abs(k - Math.round(k)) < .01);
+    const auto = new Set(s.plots.map((p, i) => ({ p, i, at: bedPosition(s, i) })).filter(({ p, i, at }) => i >= STARTING_PLOTS && !p.rotation && onGrid(at.x, at.z)).map(({ i }) => i));
+    const standing = bedSpots(s).filter((_, i) => !auto.has(i));
+    for (const i of auto) { const spot = freeBedSpot(s, standing); if (!spot) continue; s.plots[i].x = spot.x; s.plots[i].z = spot.z; standing.push({ ...spot, rotation: 0 }); }
+    s.gardenLayout = GARDEN_LAYOUT;
+}
 /** Moves saved beds that sit on an obstacle or on an earlier bed (older saves placed them blindly) to free ground. */
 export function settleBeds(s: SaveState) {
     let moved = 0;
@@ -570,7 +599,7 @@ export function parseSave(raw: string | null): SaveState | null {
         if (!record(v) || v.version !== 1 || typeof v.name !== 'string' || typeof v.level !== 'number' || !Number.isFinite(v.level) || v.level < 1 || !planetId(v.planet) || !Array.isArray(v.plots))
             return null;
         const s = newGame(v.name, typeof v.color === 'string' && /^#[0-9a-f]{6}$/i.test(v.color) ? v.color : COLORS[0]);
-        const legacy = !(typeof v.contentVersion === 'number' && v.contentVersion >= 2), oldCropTimers = !(typeof v.contentVersion === 'number' && v.contentVersion >= 3), layoutBed = v.gardenLayout === GARDEN_LAYOUT ? defaultBed : v.gardenLayout === 2 ? layout2Bed : legacyBed;
+        const legacy = !(typeof v.contentVersion === 'number' && v.contentVersion >= 2), oldCropTimers = !(typeof v.contentVersion === 'number' && v.contentVersion >= 3), layoutBed = v.gardenLayout === GARDEN_LAYOUT || v.gardenLayout === 3 ? defaultBed : v.gardenLayout === 2 ? layout2Bed : legacyBed;
         const inventory = (data: unknown): Inventory => { const result: Inventory = {}; if (record(data))
             for (const [raw, n] of Object.entries(data)) {
                 const id = canonicalItem(raw);
@@ -669,7 +698,7 @@ export function parseSave(raw: string | null): SaveState | null {
                 if (ITEMS[id]?.type === 'decor' && Number.isFinite(d.x) && Number.isFinite(d.z) && Math.hypot(d.x, d.z) <= 16.6)
                     s.decorations.push({ uid: typeof d.uid === 'string' ? d.uid.slice(0, 80) : `decor-${s.nextDecorationId++}`, id, x: d.x, z: d.z, rotation: Number.isFinite(d.rotation) ? d.rotation : 0 });
             }
-        if (v.gardenLayout === GARDEN_LAYOUT) settleBeds(s); else shrinkGarden(s, v.gardenLayout === 2 ? 2 : 1);
+        if (v.gardenLayout === GARDEN_LAYOUT) settleBeds(s); else if (v.gardenLayout === 3) { settleBeds(s); tidyBeds(s); } else shrinkGarden(s, v.gardenLayout === 2 ? 2 : 1);
         s.farm = parseFarm(v.farm);
         const hunting = parseHunting(v.hunting); if (hunting) s.hunting = hunting;
         if (record(v.helper)) s.helper = parseHelper(v.helper);
