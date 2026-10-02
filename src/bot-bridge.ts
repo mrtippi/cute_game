@@ -3,7 +3,7 @@ import type { World, Entity, Enemy } from './world.ts';
 import type { SpaceFlight } from './space.ts';
 import { STAR_MAP } from './space.ts';
 import { Vector3, type Camera } from 'three';
-import { cropProgress, maxHp, readyAnimals, attack, defense, looseQuantity, CROPS, ITEMS } from './model.ts';
+import { cropProgress, maxHp, readyAnimals, attack, defense, looseQuantity, CROPS, ITEMS, RECIPES } from './model.ts';
 import { progressEntries, refreshProgress, storyStep, TASK_SPECS, type ProgressKind } from './progression.ts';
 
 /**
@@ -90,6 +90,8 @@ export function installBotBridge(src: BotSources) {
     healingFood() { const s = src.state(); return Object.keys(s.bag).find(id => (s.bag[id] ?? 0) > 0 && (ITEMS[id]?.heal ?? 0) > 0 && ITEMS[id]?.type !== 'material') ?? null; },
     /** Shop facts for the given items: price, level, slot and the attack/defense they give. */
     items(ids: string[]) { return Object.fromEntries(ids.filter(id => ITEMS[id]).map(id => { const i = ITEMS[id]; return [id, { price: i.price ?? 0, weapon: i.weapon?.kind ?? null, slot: i.slot ?? null, type: i.type, attack: i.attack ?? 0, defense: i.defense ?? 0, heal: i.heal ?? 0 }]; })); },
+    /** Workshop recipes by their button index, with what they make. */
+    recipes() { return RECIPES.map((r, index) => ({ index, result: r.result, slot: ITEMS[r.result]?.slot ?? null })); },
     /** A copy of the save, for the bot's daily backup. */
     save() { return JSON.stringify(src.state()); },
   };

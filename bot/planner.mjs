@@ -8,6 +8,7 @@ import { goFishing, hasRod } from './tasks/fishing.mjs';
 import { cook, craftSomething, forgeOnce, tendAnimals, harpoonHunt, mine, fertilizeCrops, expandGarden } from './tasks/home.mjs';
 import { travelTo, goHome, nextPlanet } from './tasks/travel.mjs';
 import { flourish } from './tasks/flourish.mjs';
+import { collectCosmetic, craftCosmetic, dress, ACTIVITY_THEME } from './tasks/wardrobe.mjs';
 
 /** Which activities move a quest event forward. */
 const EVENT_TASKS = {
@@ -42,7 +43,9 @@ export function createPlanner(bot, { minutesLeft }) {
     fishing: { can: s => s.planet === 'home' && (hasRod(s) || s.energy >= 30), run: async s => hasRod(s) ? goFishing(bot, { count: rng.int(2, 4), timeout: 240000 }) : buyRod(bot), cool: 180000, base: 2 },
     harpoon: { can: s => s.planet === 'home' && (s.bag.harpoon > 0 || s.gear.weapon === 'harpoon'), run: () => harpoonHunt(bot, { throws: rng.int(4, 7) }), cool: 300000, base: 0 },
     forge: { can: s => s.planet === 'home' && s.level >= 6, run: () => forgeOnce(bot), cool: 600000, base: 0 },
-    craft: { can: s => s.planet === 'home', run: () => craftSomething(bot), cool: 600000, base: 0 },
+    // A new look comes first at the workshop; otherwise any recipe the bag allows.
+    craft: { can: s => s.planet === 'home', run: async () => { const r = await craftCosmetic(bot); return r.startsWith('crafted') ? r : craftSomething(bot); }, cool: 600000, base: 0 },
+    wardrobe: { can: s => s.planet === 'home' && s.energy >= 400, run: () => collectCosmetic(bot, { theme: bot.theme }), cool: 600000, base: 2 },
     fight: { can: s => safeTargets(s, { range: s.planet === 'home' ? 30 : 70 }).length > 0, run: s => fight(bot, { count: rng.int(2, 4), type: s.bounty && s.bounty.progress < s.bounty.target ? s.bounty.type : undefined, range: s.planet === 'home' ? 30 : 70, timeout: 150000 }), cool: 20000, base: 4 },
     travel: { can: s => s.planet === 'home' && s.level >= 4 && s.energy >= 30 && minutesLeft() > 12 && !!nextPlanet(s, rng), run: async s => { const r = await travelTo(bot, nextPlanet(s, rng)); if (r.startsWith('landed')) awaySince = Date.now(); return r; }, cool: 900000, base: 1, limit: 300000 },
     mine: { can: s => s.planet !== 'home' && s.entities.some(e => e.kind === 'mine' && e.d < 80), run: () => mine(bot, { count: rng.int(2, 4) }), cool: 120000, base: 3 },
@@ -99,6 +102,9 @@ export function createPlanner(bot, { minutesLeft }) {
     let draw = rng.between(0, total), pick = top[0];
     for (const o of top) { draw -= o.value; if (draw <= 0) { pick = o; break; } }
     lastRun[pick.name] = Date.now();
+    // Now and then, change into something that suits the activity (owned pieces only).
+    const theme = ACTIVITY_THEME[pick.name];
+    if (theme && ago('dress') > 300000 && rng.chance(.45)) { lastRun.dress = Date.now(); game.deadline = Date.now() + 60000; await dress(bot, theme).catch(() => {}); game.deadline = 0; }
     log(`plan: ${options.slice(0, 4).map(o => `${o.name}(${o.value.toFixed(1)})`).join(' ')} → ${pick.name}`);
     // A hard limit per activity: past it, game.snap() throws and the task stops wherever it is.
     game.deadline = Date.now() + (pick.t.limit ?? 240000);
