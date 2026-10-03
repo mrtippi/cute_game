@@ -7,6 +7,8 @@ import { cropProgress, maxHp, readyAnimals, attack, defense, looseQuantity, CROP
 import { progressEntries, refreshProgress, storyStep, sideGoals, TASK_SPECS, type ProgressKind } from './progression.ts';
 import { ORCHARD_TREES, orchardReady, villageRankFor } from './village.ts';
 import { rarityOf } from './titles.ts';
+import { terrainHeight } from './environments.ts';
+import { WORLD_BOUNDS } from './navigation.ts';
 
 /**
  * A read-only window for the auto-play bot (bot/), enabled only by `?bot` in the page URL.
@@ -128,6 +130,22 @@ export function installBotBridge(src: BotSources) {
     },
     /** Whether the explorer could stand at this ground point (rocks, trees, water and buildings block it). */
     blocked(x: number, z: number) { return src.world().blocked(x, z); },
+    /** Whether this ground point is lava right now (the game's own burn test, src/environments.ts lavaAt). */
+    lava(x: number, z: number) { const env = src.world().environment; return !!env && env.lavaAt({ x, z }); },
+    /**
+     * The lava world as a grid for planning a walk round the lava (the game lets the explorer cross it, burning): one
+     * character per cell, row by row from (x0, z0): '0' open ground, '1' lava (or lava once it rises `rise` metres more:
+     * the tide comes and goes), '2' blocked (rocks, trees, walls), '3' outside the world. Null away from the lava world.
+     */
+    lavaGrid(cell = 1, rise = .1) {
+      const w = src.world(), env = w.environment; if (!env || env.layout.planet !== 'lava') return null;
+      const x0 = -WORLD_BOUNDS, z0 = -WORLD_BOUNDS, n = Math.ceil(WORLD_BOUNDS * 2 / cell); let data = '';
+      for (let iz = 0; iz < n; iz++) for (let ix = 0; ix < n; ix++) {
+        const p = { x: x0 + (ix + .5) * cell, z: z0 + (iz + .5) * cell };
+        data += Math.hypot(p.x, p.z) > WORLD_BOUNDS - 1 ? '3' : terrainHeight(env.layout, p) < env.lavaLevelAt(p) + rise - .03 ? '1' : w.blocked(p.x, p.z) ? '2' : '0';
+      }
+      return { x0, z0, cell, w: n, h: n, data };
+    },
     /** Workshop recipes by their button index, with what they make. */
     recipes() { return RECIPES.map((r, index) => ({ index, result: r.result, slot: ITEMS[r.result]?.slot ?? null })); },
     /** A copy of the save, for the bot's daily backup. */

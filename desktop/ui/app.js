@@ -109,20 +109,28 @@ function followLink(id, steps, done) {
 }
 
 /** Create (no account) or edit an account: folder id, Japanese name, colour, play style; new ones also get a schedule. */
-function accountForm(a) {
+async function accountForm(a) {
+  // Names and folder ids already used, so a random name or a suggested id never repeats one.
+  const others = (await call('accounts').catch(() => [])).filter(x => x.id !== a?.id);
   const style = a?.style ?? {}, sel = a?.color ?? Object.values(colors)[1];
   const m = $('#modal'), f = $('#modal-body');
   f.innerHTML = `<h2 style="margin:0">${a ? 'Sửa acc ' + esc(a.id) : 'Tạo acc mới'}</h2>
     <div class="grid2">
       <label class="field">Tên thư mục (chữ không dấu, để phân biệt clip)<input type="text" id="f-id" value="${esc(a?.id ?? '')}" ${a ? 'disabled' : ''} placeholder="vd: sakura"></label>
-      <label class="field">Tên nhân vật (tiếng Nhật)<input type="text" id="f-name" value="${esc(a?.name ?? '')}" placeholder="vd: さくら"></label>
+      <div class="field">Tên nhân vật (tiếng Nhật)<div class="name-pick"><input type="text" id="f-name" value="${esc(a?.name ?? '')}" placeholder="vd: さくら"><div class="seg">${[['female', 'Nữ'], ['male', 'Nam'], ['any', 'Bất kỳ']].map(([g, l]) => `<button type="button" data-gender="${g}" class="${g === 'any' ? 'on' : ''}">${l}</button>`).join('')}</div><button type="button" class="btn small" id="f-dice" title="Tên ngẫu nhiên">🎲</button></div></div>
     </div>
     <div class="field">Màu nhân vật<div class="swatches">${Object.entries(colors).map(([k, hex]) => `<button type="button" data-color="${hex}" title="${k}" class="${hex === sel ? 'sel' : ''}" style="background:${hex}"></button>`).join('')}</div></div>
     <div class="field">Tính cách chơi (độ ưu tiên chủ đề clip; 1 = bình thường)${Object.entries(STYLE).map(([k, v]) => `<div class="slider"><span>${v}</span><input type="range" min="0.5" max="3" step="0.25" data-style="${k}" value="${style[k] ?? 1}"><b>${style[k] ?? 1}</b></div>`).join('')}</div>
     ${a ? '' : `<div class="grid2"><label class="field">Giờ chạy hằng ngày<input type="time" id="f-start" value="08:00"></label><label class="field">Số clip mỗi ngày<input type="number" id="f-clips" min="1" max="20" value="10"></label></div>
       <label class="row small"><input type="checkbox" id="f-enabled" checked> Bật lịch chạy ngay (có thể chỉnh ở trang Lịch chạy)</label>`}
     <div class="row" style="justify-content:flex-end"><button class="btn" value="cancel">Huỷ</button><button class="btn primary" id="f-save" type="button">${a ? 'Lưu' : 'Tạo acc'}</button></div>`;
-  let color = sel;
+  let color = sel, gender = 'any', autoId = !a;
+  // A free folder id from the name's romaji (さくら → sakura, sakura2 …) until the user types one.
+  const suggestId = () => { if (!autoId) return; const base = romajiId($('#f-name').value) || 'acc'; let id = base, n = 2; while (others.some(x => x.id === id)) id = base + n++; $('#f-id').value = id.slice(0, 24); };
+  $('#f-dice').onclick = () => { $('#f-name').value = randomJapaneseName(gender, others.map(x => x.name)); suggestId(); };
+  f.querySelectorAll('[data-gender]').forEach(b => b.onclick = () => { gender = b.dataset.gender; f.querySelectorAll('[data-gender]').forEach(x => x.classList.toggle('on', x === b)); $('#f-dice').click(); });
+  $('#f-name').oninput = suggestId;
+  if (!a) { $('#f-id').oninput = () => { autoId = !$('#f-id').value; }; $('#f-dice').click(); }
   f.querySelectorAll('[data-color]').forEach(b => b.onclick = () => { color = b.dataset.color; f.querySelectorAll('[data-color]').forEach(x => x.classList.toggle('sel', x === b)); });
   f.querySelectorAll('[data-style]').forEach(r => r.oninput = () => { r.nextElementSibling.textContent = r.value; });
   $('#f-save').onclick = safe(async () => {

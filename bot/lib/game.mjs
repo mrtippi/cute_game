@@ -1,6 +1,7 @@
 // What the bot can see and do in Zoo Garden. Reading goes through window.__zg (src/bot-bridge.ts);
 // doing always goes through Hands, i.e. real pointer and keyboard input on the page.
 import { sleep } from './util.mjs';
+import { planLava, lavaAlong, LAVA_SLACK } from './lava.mjs';
 
 export class Game {
   constructor(page, hands, rng, log) { this.page = page; this.hands = hands; this.rng = rng; this.log = log; }
@@ -132,6 +133,32 @@ export class Game {
   }
 
   // ---- moving around ------------------------------------------------------------------------
+  /**
+   * On the lava world, the point to head for first on the way to (x, z) so the walk keeps off the lava (lib/lava.mjs);
+   * null: straight there is fine, or there is no better way. The grid is asked for every 15 s at most (the tide moves
+   * the shore) and the way kept per target. A crossing that cannot be avoided starts with a meal (onLava, set by
+   * play.mjs) when health is not near full.
+   */
+  async lavaStep(x, z, s) {
+    if (s.planet !== 'lava' || s.visit) return null;
+    if (!this.lava || Date.now() - this.lava.at > 15000) {
+      const grid = await this.page.evaluate(() => window.__zg.lavaGrid?.() ?? null).catch(() => null);
+      if (!grid) return null;
+      this.lava = { grid, at: Date.now(), plans: new Map() };
+    }
+    const key = Math.round(x / 2) + ',' + Math.round(z / 2), known = this.lava.plans.get(key);
+    const plan = planLava(this.lava.grid, s.player, { x, z }, known?.route);
+    this.lava.plans.set(key, { route: plan.route, told: known?.told || !!plan.via });
+    if (plan.via && !known?.told) this.log?.(`lava: going round (straight ${plan.direct.toFixed(0)} m of lava, this way ${plan.lava.toFixed(0)} m)`);
+    this.lava.crossing = plan.leg > LAVA_SLACK;
+    if (this.lava.crossing && s.hp < s.maxHp * .85 && this.onLava && !this.eating) {
+      this.eating = true;
+      try { this.log?.(`lava: no way round (${plan.lava.toFixed(0)} m), eating before the crossing`); await this.onLava(); } finally { this.eating = false; }
+    }
+    return plan.via;
+  }
+  /** False for a tap at (x, z) whose straight walk would wade into lava the planned way keeps off. */
+  offLava(x, z, s) { return !this.lava || s.planet !== 'lava' || this.lava.crossing || lavaAlong(this.lava.grid, s.player, { x, z }) <= LAVA_SLACK; }
   /** One step across open ground toward (x, z); picks a nearby clear spot when the HUD is in the way. */
   async stepToward(x, z, s) {
     // Standing at the cottage door (just stepped out): a few steps south first, as any way on from here could turn in.
@@ -142,6 +169,8 @@ export class Game {
         if (await this.safe(p, s) && await this.pick(p.x, p.y) === null && await this.tap(p.x, p.y)) return true;
       }
     }
+    // On the lava world, round the lava: head for the next point of the planned way instead.
+    const via = await this.lavaStep(x, z, s); if (via) ({ x, z } = via);
     // Follow the game's own route (around fences, through the village gate): tap the furthest waypoint
     // within reach that is open ground, so the explorer never walks into a fence toward a straight-line goal.
     const route = await this.page.evaluate(([x, z]) => window.__zg.route(x, z), [x, z]).catch(() => []);
@@ -150,7 +179,7 @@ export class Game {
       for (const p of route) { walked += Math.hypot(p.x - from.x, p.z - from.z); from = p; if (walked > 14) break; reach.push(p); }
       for (const p of reach.reverse()) {
         const screen = await this.project(p.x, p.z);
-        if (await this.safe(screen, s) && await this.pick(screen.x, screen.y) === null && !await this.intoDoor(p.x, p.z, s) && await this.tap(screen.x, screen.y)) return true;
+        if (this.offLava(p.x, p.z, s) && await this.safe(screen, s) && await this.pick(screen.x, screen.y) === null && !await this.intoDoor(p.x, p.z, s) && await this.tap(screen.x, screen.y)) return true;
       }
     }
     const dx = x - s.player.x, dz = z - s.player.z, d = Math.hypot(dx, dz) || 1;
@@ -160,7 +189,7 @@ export class Game {
       const p = await this.project(px, pz);
       // Open ground only: a tap on the cottage would walk inside, a tap on a stall would open it (and so would a
       // walk past the cottage door).
-      if (await this.safe(p, s) && await this.pick(p.x, p.y) === null && !await this.intoDoor(px, pz, s) && await this.tap(p.x, p.y)) return true;
+      if (this.offLava(px, pz, s) && await this.safe(p, s) && await this.pick(p.x, p.y) === null && !await this.intoDoor(px, pz, s) && await this.tap(p.x, p.y)) return true;
     }
     return false;
   }
@@ -179,9 +208,10 @@ export class Game {
       if (!e && this.indoors(s) && outings++ < 2) { this.log?.(`goTo: indoors on the way to ${label}, stepping out`); await this.stepOutside(); continue; }
       if (!e) { this.log?.('goTo: no ' + label); return null; }
       if (done?.(s, e)) return s;
-      // Tapped directly only when the game's walk there keeps clear of the cottage door; else step around first.
+      // Tapped directly only when the game's walk there keeps clear of the cottage door (and of lava that has a way
+      // round); else step around first.
       const k = (e.r + 1.1) / Math.max(e.d, .01), near = { x: e.x + (s.player.x - e.x) * k, z: e.z + (s.player.z - e.z) * k };
-      const screen = e.d < 40 && !await this.intoDoor(near.x, near.z, s) ? await this.aimAt(e, s) : null;
+      const screen = e.d < 40 && !await this.intoDoor(near.x, near.z, s) && !await this.lavaStep(e.x, e.z, s) ? await this.aimAt(e, s) : null;
       if (screen) {
         if (!await this.tap(screen.x, screen.y, e.id)) { await sleep(250); continue; }
         const reached = await this.waitFor(n => {

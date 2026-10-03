@@ -44,7 +44,9 @@
 /* Minimap: --mm wide under the menu; the caption names the zone the explorer is in (desktop only). */
 .minimap { right: var(--edge); top: calc(var(--edge) + var(--safe-top) + var(--b) + 8px); width: var(--mm); height: var(--mm); border-width: calc(var(--mm) / 40 + 1px); }
 .minimap > span { pointer-events: none; left: calc(50% - 8px); top: -8px; width: 16px; height: 16px; border-width: 1.5px; font-size: 9px; }
-.minimap > small { top: calc(100% + 3px); padding: 1px 8px; font-size: 10px; letter-spacing: .6px; text-transform: uppercase; }
+/* Centred under the minimap, but a long name with its star grows left rather than past the screen edge. */
+.minimap > small { top: calc(100% + 3px); left: auto; right: 50%; transform: translateX(min(50%, calc(var(--mm) / 2 + var(--edge) - 2px))); padding: 1px 8px; font-size: 10px; letter-spacing: .6px; text-transform: uppercase; }
+.map-star-note { top: calc(100% + 24px); padding: 2px 8px; font-size: 10px; }
 
 /* Quest and bounty trackers */
 .tracker-stack { left: var(--edge); top: calc(var(--edge) + var(--safe-top) + 82px); width: 236px; gap: 6px; }

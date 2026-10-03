@@ -185,7 +185,7 @@ export async function createGameServer(options = {}) {
     const current = peers.get(room.host);
     const active = available.filter(peer => peer.active);
     const next = current?.active && room.members.has(room.host) ? room.host : (active[0] || available[0])?.account.id || null;
-    if (room.host !== next) { room.host = next; broadcast(room, { type: 'authority', host: next, enemies: room.enemies, environment:room.environment, epoch: ++room.epoch }); }
+    if (room.host !== next) { room.host = next; broadcast(room, { type: 'authority', host: next, enemies: room.enemies, tier: combatAuthority.starTier(room), environment:room.environment, epoch: ++room.epoch }); }
   }
   function leave(peer) {
     const room = rooms.get(peer.room);
@@ -203,7 +203,7 @@ export async function createGameServer(options = {}) {
       if(peer.visit===visitId&&!refresh)return;
       peer.visit=visitId;
       const room=rooms.get(key);
-      send(peer.socket,{type:'joined',id:peer.account.id,room:key,party,host:room.host,planet,visiting:visitId,players:roster(room),enemies:room.enemies,environment:room.environment,epoch:room.epoch});
+      send(peer.socket,{type:'joined',id:peer.account.id,room:key,party,host:room.host,planet,visiting:visitId,players:roster(room),enemies:room.enemies,tier:combatAuthority.starTier(room),environment:room.environment,epoch:room.epoch});
       return;
     }
     const existing = rooms.get(key);
@@ -213,7 +213,7 @@ export async function createGameServer(options = {}) {
     rooms.set(key, room); room.members.add(peer.account.id);
     peer.planet = planet; peer.party = party; peer.room = key; peer.visit = visitId; peer.pose = { ...peer.pose, x: 0, z: planet === 'home' ? 0 : 9 };
     elect(room);
-    send(peer.socket, { type: 'joined', id: peer.account.id, room: key, party, host: room.host, planet, visiting:visitId, players: roster(room), enemies: room.enemies, environment:room.environment, epoch: room.epoch });
+    send(peer.socket, { type: 'joined', id: peer.account.id, room: key, party, host: room.host, planet, visiting:visitId, players: roster(room), enemies: room.enemies, tier: combatAuthority.starTier(room), environment:room.environment, epoch: room.epoch });
     broadcast(room, { type: 'enter', player: presence(peer) }, peer.account.id);
   }
 
@@ -419,7 +419,7 @@ export async function createGameServer(options = {}) {
         } else if (message.type === 'enemies' && room?.host === account.id && Array.isArray(message.enemies)) {
           if (Date.now() - room.lastSnapshot < 100) return; room.lastSnapshot = Date.now();
           combatAuthority.acceptSnapshots(room,message.enemies);
-          broadcast(room,{type:'enemies',enemies:room.enemies});
+          broadcast(room,{type:'enemies',enemies:room.enemies,tier:combatAuthority.starTier(room)});
         } else if(message.type==='basic'&&room&&!peer.visit){
           rate('basic:'+account.id,12,1000);combatAuthority.basic(peer,text(message.targetId,100));
         } else if(message.type==='skill'&&room&&!peer.visit){

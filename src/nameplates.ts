@@ -5,7 +5,8 @@ import { isTitle, rarityOf } from './titles.ts';
  * Nameplates over the explorers, like an MMO: the worn title on a plate dressed by its rarity (copper, brushed silver,
  * gold leaf with laurels, a holographic plate with wings and a little crown), the name under it, and the server
  * champion's red-velvet crown plate (server/champion.mjs) on top of it all. One for the local explorer and one for each
- * remote explorer in view. Styles live in style.css (.nameplate); each frame only moves them (transform).
+ * remote explorer in view. Plates of explorers standing close stack into tiers (stackPlates). Styles live in style.css
+ * (.nameplate); each frame only moves them (transform).
  */
 export interface PlateInfo { name: string; title: string; champion?: boolean }
 interface PlateWorld {
@@ -72,10 +73,44 @@ export function plateHtml(info: PlateInfo) {
   return `<div class="np-plate">${extra}${wings}<div class="np-face"><span>${esc(t(title))}</span></div>${wings}${sparks}</div>${name}`;
 }
 
+/**
+ * A plate on screen: its anchor (bottom centre, where it stands over the head) and its size in screen pixels, whole and
+ * name-only (a crowded plate folds to its name).
+ */
+export interface PlateRect { id: string; x: number; y: number; w: number; h: number; nameW: number; nameH: number }
+export interface PlateSpot { lift: number; compact: boolean }
+const overlaps = (a: { l: number; r: number; t: number; b: number }, b: { l: number; r: number; t: number; b: number }) => a.l < b.r && b.l < a.r && a.t < b.b && b.t < a.b;
+/**
+ * Plates of explorers standing close would cover each other: the one lowest on screen (nearest the camera) stays over its
+ * head and the others climb into tiers above it, `gap` pixels apart. Past `crowd` plates on one spot, the farther ones fold
+ * to their name. The order holds from frame to frame (`previous`) unless one plate drops `hold` pixels below another, so
+ * plates of explorers walking side by side don't swap tiers back and forth. Pure: rects in, lifts (pixels up) out.
+ */
+export function stackPlates(rects: readonly PlateRect[], previous: readonly string[] = [], { gap = 4, crowd = 5, hold = 12 } = {}) {
+  const rank = new Map(previous.map((id, i) => [id, i])), n = previous.length;
+  const key = (r: PlateRect) => r.y + hold * (n - (rank.get(r.id) ?? n));
+  const sorted = [...rects].sort((a, b) => key(b) - key(a) || (a.id < b.id ? -1 : 1));
+  const spots = new Map<string, PlateSpot>(), placed: { l: number; r: number; t: number; b: number }[] = [], whole: { l: number; r: number; t: number; b: number }[] = [];
+  for (const p of sorted) {
+    const full = { l: p.x - p.w / 2, r: p.x + p.w / 2, t: p.y - p.h, b: p.y };
+    const compact = whole.filter(o => overlaps(full, o)).length >= crowd; whole.push(full);
+    const w = compact ? p.nameW : p.w, h = compact ? p.nameH : p.h, box = { l: p.x - w / 2, r: p.x + w / 2, t: p.y - h, b: p.y };
+    // Climb over every placed plate in the way (each step only goes up, so it ends).
+    for (let hit = placed.find(o => overlaps(box, o)); hit; hit = placed.find(o => overlaps(box, o))) { box.b = hit.t - gap; box.t = box.b - h; }
+    placed.push(box); spots.set(p.id, { lift: p.y - box.b, compact });
+  }
+  return { order: sorted.map(p => p.id), spots };
+}
+
 /** Keeps a nameplate over each explorer: `local` gives the local explorer's plate, or null while it is hidden. */
 export function createNameplates(layer: HTMLElement, world: PlateWorld, local: () => PlateInfo | null) {
   layer.insertAdjacentHTML('beforeend', PLATE_DEFS);
-  const plates = new Map<string, { node: HTMLElement; sig: string; at: string }>(), seen = new Set<string>();
+  // Each plate's size is measured once when its markup changes (no layout reads per frame); `lift` eases toward its tier.
+  const plates = new Map<string, { node: HTMLElement; sig: string; at: string; w: number; h: number; nameW: number; nameH: number; lift: number; compact: boolean; measured: boolean }>(), seen = new Set<string>();
+  const shown: { id: string; x: number; y: number; scale: number }[] = [];
+  let order: string[] = [], last = 0;
+  // Plates measured before the web fonts arrived are measured again.
+  document.fonts?.addEventListener?.('loadingdone', () => { for (const plate of plates.values()) plate.measured = false; });
   // The online server tells who holds the champion's crown (online.ts → 'zg-champion'); offline there is none.
   // The champion's id once the server has told it (it also rides in each presence until then).
   let selfChampion = false, championId: string | null | undefined;
@@ -86,29 +121,45 @@ export function createNameplates(layer: HTMLElement, world: PlateWorld, local: (
     // Scale gently with the camera: the screen size of one metre at the head, against the default view's.
     const up = world.screen(x, y + 1, z), scale = Math.max(.85, Math.min(1.2, Math.hypot(up.x - p.x, up.y - p.y) / PLATE_METRE));
     let plate = plates.get(id);
-    if (!plate) { const node = document.createElement('div'); node.className = 'nameplate'; layer.append(node); plate = { node, sig: '', at: '' }; plates.set(id, plate); }
+    if (!plate) { const node = document.createElement('div'); node.className = 'nameplate'; layer.append(node); plate = { node, sig: '', at: '', w: 0, h: 0, nameW: 0, nameH: 0, lift: 0, compact: false, measured: false }; plates.set(id, plate); }
     const title = isTitle(info.title) ? info.title : '', sig = `${info.name}|${title}|${!!info.champion}|${t('Server Champion')}`;
     if (plate.sig !== sig) {
-      plate.sig = sig; plate.node.innerHTML = plateHtml({ ...info, title });
+      plate.sig = sig; plate.node.innerHTML = plateHtml({ ...info, title }); plate.measured = false;
       // The champion's plate is its own (red velvet): no rarity dressing over it.
       if (title && !info.champion) plate.node.dataset.rarity = rarityOf(title); else delete plate.node.dataset.rarity;
       plate.node.classList.toggle('champion', !!info.champion);
     }
-    const at = `translate(${Math.round(p.x)}px,${Math.round(p.y)}px) translate(-50%,-100%) scale(${scale.toFixed(2)})`;
-    if (plate.at !== at) { plate.at = at; plate.node.style.transform = at; }
-    plate.node.hidden = false; seen.add(id);
+    plate.node.hidden = false; seen.add(id); shown.push({ id, x: p.x, y: p.y, scale });
   }
 
   return {
     update() {
-      seen.clear(); const mine = local();
+      seen.clear(); shown.length = 0; const mine = local();
       if (mine) show('self', { ...mine, champion: selfChampion }, world.position.x, PLATE_Y, world.position.z, seen);
       for (const [id, remote] of world.remotePlayers ?? []) {
         const pose = remote.pose; if (!remote.mesh.visible || pose.visual?.stealth || !pose.name) continue;
         const m = remote.mesh.position, size = Math.max(.2, Math.min(4, pose.visual?.size ?? 1));
         show(`remote:${id}`, { name: pose.name, title: pose.title ?? '', champion: championId === undefined ? pose.champion === true : championId === id }, m.x, m.y + PLATE_Y * size, m.z, seen);
       }
-      for (const [id, plate] of plates) if (!seen.has(id)) { if (id.startsWith('remote:')) { plate.node.remove(); plates.delete(id); } else plate.node.hidden = true; }
+      for (const [id, plate] of plates) if (!seen.has(id)) { if (id.startsWith('remote:')) { plate.node.remove(); plates.delete(id); } else { plate.node.hidden = true; plate.lift = 0; } }
+      // Sizes of new or changed plates, read once, unfolded (layout is forced only on those frames).
+      for (const { id } of shown) {
+        const plate = plates.get(id)!; if (plate.measured) continue;
+        plate.node.classList.remove('compact'); plate.compact = false;
+        const name = plate.node.querySelector<HTMLElement>('.np-name');
+        plate.w = plate.node.offsetWidth; plate.h = plate.node.offsetHeight; plate.nameW = name?.offsetWidth ?? plate.w; plate.nameH = name?.offsetHeight ?? plate.h; plate.measured = plate.w > 0;
+      }
+      const stack = stackPlates(shown.map(({ id, x, y, scale }) => { const plate = plates.get(id)!; return { id, x, y, w: plate.w * scale, h: plate.h * scale, nameW: plate.nameW * scale, nameH: plate.nameH * scale }; }), order);
+      order = stack.order;
+      // Ease toward the tier (about a tenth of a second), frame-rate independent.
+      const now = performance.now(), ease = last ? 1 - Math.exp(-Math.min(.1, (now - last) / 1000) * 14) : 1; last = now;
+      for (const { id, x, y, scale } of shown) {
+        const plate = plates.get(id)!, spot = stack.spots.get(id)!;
+        plate.lift += (spot.lift - plate.lift) * ease; if (Math.abs(spot.lift - plate.lift) < .3) plate.lift = spot.lift;
+        if (plate.compact !== spot.compact) { plate.compact = spot.compact; plate.node.classList.toggle('compact', spot.compact); }
+        const at = `translate(${Math.round(x)}px,${Math.round(y - plate.lift)}px) translate(-50%,-100%) scale(${scale.toFixed(2)})`;
+        if (plate.at !== at) { plate.at = at; plate.node.style.transform = at; }
+      }
     },
   };
 }

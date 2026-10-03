@@ -8,6 +8,7 @@ import { openSession } from './lib/session.mjs';
 import { wearTitle } from './tasks/titles.mjs';
 import { createPlanner } from './planner.mjs';
 import { dress } from './tasks/wardrobe.mjs';
+import { recover } from './tasks/combat.mjs';
 import { CLIPS } from './clips.mjs';
 import { loadAccount } from './accounts.mjs';
 import { startRecording } from './lib/recorder.mjs';
@@ -74,6 +75,8 @@ const theme = opt.theme ?? clip?.wardrobe;
 const bot = { page, game, hands, rng, log, note, mark, theme, clip, online: online?.online ?? null };
 // Planets where the explorer was knocked out: the next visit picks one star lower.
 bot.struggled = new Set();
+// A lava crossing with no way round (lib/game.mjs lavaStep): eat up first.
+game.onLava = () => recover(bot);
 game.onFall = () => { note('knocked out, back home to rest', 'combat'); if (bot.lastPlanet) bot.struggled.add(bot.lastPlanet); };
 const minutesLeft = () => (clipEnd - Date.now()) / 60000;
 let s = await game.snap();

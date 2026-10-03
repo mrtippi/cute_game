@@ -70,3 +70,27 @@ test('star wording is translated', () => {
     assert.ok(t('Conquer ★{tier}: {kills}/{need} creatures · boss {bosses}/1', { tier: 2, kills: 10, need: 50, bosses: 0 }).includes('10'));
   }
 });
+
+test('the room star online: the server sends it, else the highest star among this planet\'s live creatures', () => {
+  const enemies = [{ id: 'home:mushroom-0', hp: 10, tier: 2 }, { id: 'home:bear-0', hp: 0, tier: 5 }, { id: 'candy:gummy-0', hp: 9, tier: 7 }, { id: 'home:slime-1', hp: 4, tier: 3 }];
+  assert.equal(M.roomTierOf({ tier: 4, enemies }, 'home'), 4, 'the server\'s tier wins');
+  assert.equal(M.roomTierOf({ tier: 99 }, 'home'), M.MAX_TIER);
+  assert.equal(M.roomTierOf({ enemies }, 'home'), 3, 'live creatures of this planet only');
+  assert.equal(M.roomTierOf({ enemies: [{ id: 'home:x', hp: 5 }, null, 'junk'] }, 'home'), 0, 'unknown');
+  assert.equal(M.roomTierOf({}, 'home'), 0);
+  // The label: never below the explorer's own star; lit up when friends set the room higher.
+  assert.deepEqual(M.shownTier(1, 4), { tier: 4, raised: true });
+  assert.deepEqual(M.shownTier(3, 3), { tier: 3, raised: false });
+  assert.deepEqual(M.shownTier(3, 2), { tier: 3, raised: false }, 'creatures not yet re-scaled to the explorer\'s star');
+  assert.deepEqual(M.shownTier(2), { tier: 2, raised: false }, 'offline');
+});
+
+test('the room star note and the online star-change toasts are translated', () => {
+  for (const language of ['vi', 'ja'] as const) {
+    setLanguage(language);
+    for (const key of ['This room is ★{tier} (matched to your friends)', 'Star changed. This room now plays at ★{tier}.', 'Star changed. This room plays at ★{tier}: it follows the highest star among the explorers here.']) {
+      const text = t(key, { tier: 4 });
+      assert.notEqual(text, key.replace('{tier}', '4'), `${language}: ${key}`); assert.ok(text.includes('★4'), `${language}: ${key}`);
+    }
+  }
+});

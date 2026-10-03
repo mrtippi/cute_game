@@ -135,10 +135,12 @@ export function initOnline(game:GameBridge) {
   function refreshButton(){const label=account?t(status,{code:party||''}):t('Play together');toggle.textContent=socialSlot?'👥':`👥 ${label}`;toggle.title=label;toggle.setAttribute('aria-label',t('Play together'));dialog.setAttribute('aria-label',t('Play together'));close.setAttribute('aria-label',t('Close online menu'));toggle.dataset.online=String(!!account);toggle.dataset.status=account?status:'';toggle.dataset.party=account&&party||'';}
   /** The server champion's crown (server/champion.mjs) for the nameplates (nameplates.ts); none while offline. */
   function crown(id:string|null){if(typeof CustomEvent==='function')globalThis.dispatchEvent?.(new CustomEvent('zg-champion',{detail:{id,self:!!id&&id===account?.id}}));}
+  /** The room's planet star (its `tier`, or its creatures'; planet-tiers.ts roomTierOf) for the star label (main.ts); null while offline. */
+  function roomStar(message:{tier?:unknown;enemies?:unknown}|null){if(typeof CustomEvent==='function')globalThis.dispatchEvent?.(new CustomEvent('zg-room-star',{detail:message&&{planet,tier:message.tier,enemies:message.enemies}}));}
   function expireSession(){
     if(!account)return;sessionEpoch++;stopped=true;if(reconnect)clearTimeout(reconnect);if(saveTimer)clearTimeout(saveTimer);
     clearChat();const previous=socket;socket=null;previous?.close();account=null;host=null;party=null;visiting=null;players.clear();rejectActions('Your session ended. Pending actions remain on this device.');
-    authority(null);world().clearRemotePlayers();crown(null);game.setVisiting(null);game.setPersistence(null);game.setActionHandler(null);
+    authority(null);world().clearRemotePlayers();crown(null);roomStar(null);game.setVisiting(null);game.setPersistence(null);game.setActionHandler(null);
     if(requireLogin){signedOutLock();announce('Your online session ended. Sign in again to continue.');return;}
     const previousOffline=offline||game.getOfflineState();if(previousOffline)game.applyState(previousOffline);offline=null;
     status='Play together';setSaveStatus('● Offline adventure restored');refreshButton();render();announce('Your online session ended. Sign in again to continue; pending online progress is kept on this device.');
@@ -213,7 +215,7 @@ export function initOnline(game:GameBridge) {
       const nextRoom=typeof message.room==='string'?message.room:`${message.party||'public'}:${message.planet}`;if(chatRoom!==nextRoom)clearChat(nextRoom);chatReady=true;
       desiredParty=null;restoring=false;if(visiting)game.setVisiting(null);players.clear();for(const player of message.players||[])players.set(player.id,player);party=message.party;planet=message.planet;visiting=typeof message.visiting==='string'?message.visiting:null;
       // A visit changes the room, never the owner's saved adventure planet.
-      if(message.enemies?.length)world().applyEnemySnapshots(message.enemies);game.clearNetworkDrops();const dropEpoch=++roomEpoch;void api<{drops:NetworkDrop[]}>('drops').then(result=>{if(socket===connection&&roomEpoch===dropEpoch&&chatRoom===nextRoom&&!visiting&&account)for(const drop of result.drops||[])if(drop.room===nextRoom)game.spawnNetworkDrop(drop,account.id);}).catch(()=>{});if(message.environment)world().applyEnvironmentSnapshot(message.environment);authority(message.host,message.enemies);renderPlayers();status=party?'Party {code}':'Online';refreshButton();if(dialog.open)render();else refreshChatControls();
+      if(message.enemies?.length)world().applyEnemySnapshots(message.enemies);game.clearNetworkDrops();const dropEpoch=++roomEpoch;void api<{drops:NetworkDrop[]}>('drops').then(result=>{if(socket===connection&&roomEpoch===dropEpoch&&chatRoom===nextRoom&&!visiting&&account)for(const drop of result.drops||[])if(drop.room===nextRoom)game.spawnNetworkDrop(drop,account.id);}).catch(()=>{});if(message.environment)world().applyEnvironmentSnapshot(message.environment);authority(message.host,message.enemies);roomStar(message);renderPlayers();status=party?'Party {code}':'Online';refreshButton();if(dialog.open)render();else refreshChatControls();
     }
     socket.addEventListener('open',()=>{if(socket!==connection)return;status='Online';refreshButton();send({type:'active',active:!document.hidden});void flushSave();});
     socket.addEventListener('message',event=>{
@@ -221,10 +223,10 @@ export function initOnline(game:GameBridge) {
       if(message.type==='welcome'){friends=message.friends||[];requests=message.requests||[];}
       else if(message.type==='champion')crown(typeof message.id==='string'?message.id:null);
       else if(message.type==='joined')joined(message);
-      else if(message.type==='authority'){if(message.environment)world().applyEnvironmentSnapshot(message.environment);authority(message.host,message.enemies);}
+      else if(message.type==='authority'){if(message.environment)world().applyEnvironmentSnapshot(message.environment);authority(message.host,message.enemies);roomStar(message);}
       else if(message.type==='enter'||message.type==='pose'){if(message.player?.id)players.set(message.player.id,message.player);renderPlayers();}
       else if(message.type==='leave'){players.delete(message.id);renderPlayers();}
-      else if(message.type==='enemies')world().applyEnemySnapshots(message.enemies);
+      else if(message.type==='enemies'){world().applyEnemySnapshots(message.enemies);roomStar(message);}
       else if(message.type==='profile'&&message.authorityVersion===1&&message.profile&&message.revision>=revision){revision=message.revision;game.applyAuthoritativeState(message.profile);}
       else if(message.type==='enemyHealth')world().applyAuthoritativeEnemyHealth(message);
       else if(message.type==='environment')world().applyEnvironmentSnapshot(message.snapshot);
@@ -254,7 +256,7 @@ export function initOnline(game:GameBridge) {
       else if(message.type==='error'){if(chatMatches(message.requestId,connection))releaseChat();if(!message.requestId){chatReady=!!chatRoom&&connection.readyState===WebSocket.OPEN;refreshChatControls();}if(restoring&&fallbackJoin){desiredParty=null;restoring=false;joined(fallbackJoin);}announce(message.message||'That action was unavailable.');}
     });
     socket.addEventListener('close',event=>{
-      if(socket!==connection)return;chatReady=false;releaseChat(chatAttempt?.pending?'Connection interrupted. Your chat draft is kept.':undefined);authority(null);world().clearRemotePlayers();crown(null);players.clear();
+      if(socket!==connection)return;chatReady=false;releaseChat(chatAttempt?.pending?'Connection interrupted. Your chat draft is kept.':undefined);authority(null);world().clearRemotePlayers();crown(null);roomStar(null);players.clear();
       if(!account||stopped)return;if(event.code===4001){stopped=true;rejectActions('This online adventure is active in another tab.');if(saveTimer)clearTimeout(saveTimer);game.setPersistence(()=>{});status='Open in another tab';announce('This online adventure is active in another tab. Close it there, then reconnect here.');}
       else{status='Reconnecting';reconnect=window.setTimeout(connect,2500);const epoch=sessionEpoch;void api<Session>('auth/session').then(session=>{if(socket===connection&&sessionEpoch===epoch&&account&&!session.account)expireSession();}).catch(()=>{});}refreshButton();
     });
@@ -299,7 +301,7 @@ export function initOnline(game:GameBridge) {
     stopped=true;const epoch=sessionEpoch;
     try{await api('auth/logout',{});if(sessionEpoch!==epoch)return;}catch(error){if(sessionEpoch!==epoch)return;if((error as {status?:number}).status===401){expireSession();return;}stopped=false;announce((error as Error).message);return;}
     sessionEpoch++;
-    clearChat();stopped=true;if(reconnect)clearTimeout(reconnect);if(saveTimer)clearTimeout(saveTimer);socket?.close();socket=null;account=null;host=null;party=null;visiting=null;players.clear();authority(null);world().clearRemotePlayers();crown(null);
+    clearChat();stopped=true;if(reconnect)clearTimeout(reconnect);if(saveTimer)clearTimeout(saveTimer);socket?.close();socket=null;account=null;host=null;party=null;visiting=null;players.clear();authority(null);world().clearRemotePlayers();crown(null);roomStar(null);
     game.setVisiting(null);game.setPersistence(null);game.setActionHandler(null);
     if(requireLogin){signedOutLock();announce('You signed out. Sign in to keep playing.');return;}
     const state=offline||game.getOfflineState();if(state)game.applyState(state);setSaveStatus('● Saved on this device');status='Play together';refreshButton();render();announce('Your offline adventure is restored.');

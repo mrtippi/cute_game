@@ -310,6 +310,12 @@ button, input, #dialog, #title-screen { pointer-events: auto; }
   letter-spacing: 1px;
   font-weight: 900;
 }
+/* The planet star next to the place name (main.ts): gold when friends have set the room higher than the explorer's own. */
+.map-star { margin-left: 6px; color: #ffe27a; letter-spacing: 0; }
+.map-star.raised { padding: 0 6px; border-radius: 999px; background: linear-gradient(180deg, #ffd95e, #f0a81c); color: #4a2a00; box-shadow: 0 0 8px rgba(255,200,60,.8); }
+/* One line sized to its text, growing left from the minimap's right edge; it wraps (never clips) only on screens too narrow for it. */
+.map-star-note { position: absolute; top: calc(100% + 32px); right: 0; width: max-content; max-width: calc(100vw - 24px); padding: 3px 10px; border-radius: 12px; background: var(--glass); color: #ffe9a8; font: 800 var(--t-xs)/1.3 var(--font); font-style: normal; text-align: right; pointer-events: none; }
+.map-star-note[hidden] { display: none; }
 
 /* Pinned tasks, bounty and active effects share one column so nothing overlaps. */
 .tracker-stack {
@@ -1666,7 +1672,11 @@ h1 > span {
   .icon-button > i { width: 13px; height: 13px; }
   .top-actions .secondary-icon { display: none; }
   .minimap { top: calc(100px + var(--safe-top)); right: 10px; width: 84px; height: 84px; border-width: 4px; }
-  .minimap > small { display: none; }
+  /* No room for the place name under the small minimap: only its star stays. */
+  .minimap > small > span { display: none; }
+  .minimap > small .map-star { margin-left: 0; }
+  /* The room note wraps beside the trackers instead of running over them. */
+  .map-star-note { max-width: calc(100vw - min(220px, 54vw) - 24px); }
   .tracker-stack { left: 10px; top: calc(76px + var(--safe-top)); width: min(220px, 54vw); gap: 6px; }
   .quest-tracker { padding: 6px 10px 8px; }
   .quest-tracker .eyebrow { display: none; }
@@ -1812,7 +1822,9 @@ h1 > span {
   .energy > span { width: 24px; height: 24px; font-size: 14px; }
   .icon-button, #social-slot .social-toggle, #platform-slot .platform-tools button { width: 34px; height: 34px; font-size: 15px; border-width: 2px; }
   .minimap { top: calc(50px + var(--safe-top)); right: 10px; width: 84px; height: 84px; border-width: 3px; }
-  .minimap > small { display: none; }
+  /* No room for the place name under the small minimap: only its star stays. */
+  .minimap > small > span { display: none; }
+  .minimap > small .map-star { margin-left: 0; }
   .tracker-stack { left: 10px; top: calc(62px + var(--safe-top)); width: 210px; gap: 5px; }
   .quest-tracker { padding: 5px 28px 6px 9px; }
   .quest-tracker .eyebrow, .chevron { display: none; }
@@ -2028,6 +2040,8 @@ h1 > span {
 .np-defs { position: absolute; width: 0; height: 0; overflow: hidden; }
 .nameplate { position: absolute; left: 0; top: 0; display: flex; flex-direction: column; align-items: center; gap: 6px; pointer-events: none; transform-origin: 50% 100%; white-space: nowrap; font-family: var(--font); }
 .nameplate[hidden] { display: none; }
+/* A crowd of plates on one spot: the farther ones fold to their name (nameplates.ts stackPlates). */
+.nameplate.compact .np-plate { display: none; }
 .np-name { font: 800 16px/1.15 var(--font); color: #fff; letter-spacing: .03em; text-shadow: 1px 0 0 #1b1430, -1px 0 0 #1b1430, 0 1px 0 #1b1430, 0 -1px 0 #1b1430, 1px 1px 0 #1b1430, -1px 1px 0 #1b1430, 1px -1px 0 #1b1430, -1px -1px 0 #1b1430, 0 2px 5px rgba(0,0,0,.6); }
 .np-plate { position: relative; isolation: isolate; display: flex; align-items: center; }
 .np-face { position: relative; overflow: hidden; padding: 4px 19px 5px; border: 2px solid var(--np-edge); border-radius: 9px; background: var(--np-bg); color: var(--np-ink); font: 800 18px/1.25 var(--font); letter-spacing: .04em; text-align: center; text-shadow: var(--np-emboss);

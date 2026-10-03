@@ -13,7 +13,8 @@ export const dangersOf = s => [...s.enemies.flatMap(e => e.danger ?? []), ...(s.
 async function blockedRays(bot, p) {
   const points = [];
   for (let k = 0; k < DIRS; k++) { const a = k / DIRS * Math.PI * 2; for (let step = STEP; step <= REACH; step += STEP) points.push([p.x + Math.cos(a) * step, p.z + Math.sin(a) * step]); }
-  const flags = await bot.page.evaluate(points => points.map(([x, z]) => window.__zg.blocked(x, z)), points);
+  // Lava counts as blocked: stepping out of a red circle must not mean stepping into the lava sea.
+  const flags = await bot.page.evaluate(points => points.map(([x, z]) => window.__zg.blocked(x, z) || !!window.__zg.lava?.(x, z)), points);
   const perDir = REACH / STEP, rays = [];
   for (let k = 0; k < DIRS; k++) rays.push(flags.slice(k * perDir, (k + 1) * perDir));
   return rays;

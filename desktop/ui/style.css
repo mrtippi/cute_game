@@ -63,3 +63,7 @@ dialog form { padding: 20px; display: grid; gap: 12px; } dialog::backdrop { back
 .seg button + button { border-left: 1px solid var(--line); }
 .seg button.on { background: var(--accent); color: var(--accent-ink); font-weight: 600; }
 .s-mix { white-space: nowrap; }
+/* Character name: the input, a female / male / any switch and the dice for a random Japanese name. */
+.name-pick { display: flex; gap: 6px; align-items: center; }
+.name-pick input { flex: 1; min-width: 0; }
+.name-pick #f-dice { font-size: 16px; padding: 4px 10px; }

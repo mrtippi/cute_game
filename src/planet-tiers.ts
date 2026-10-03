@@ -25,6 +25,28 @@ export const activeTier = (s: TierHolder, planet: PlanetId = s.planet) => Math.m
  * room, just as level sync takes the highest level. Every explorer there sees and fights the same starred creatures.
  */
 export const roomTier = (holders: TierHolder[], planet: PlanetId) => Math.max(1, ...holders.map(h => activeTier(h, planet)));
+/**
+ * The room's tier as an online client learns it (online.ts → main.ts star label): the server sends it with each room
+ * and creature update (`tier`); without it, the highest tier among this planet's live creatures. 0 while unknown.
+ */
+export function roomTierOf(message: { tier?: unknown; enemies?: unknown }, planet: string) {
+  const sent = message.tier;
+  if (typeof sent === 'number' && Number.isInteger(sent)) return Math.max(1, Math.min(MAX_TIER, sent));
+  let tier = 0;
+  for (const e of Array.isArray(message.enemies) ? message.enemies : []) {
+    const { id, hp, tier: t } = (e ?? {}) as { id?: unknown; hp?: unknown; tier?: unknown };
+    if (typeof id === 'string' && id.startsWith(`${planet}:`) && typeof hp === 'number' && hp > 0 && typeof t === 'number' && Number.isInteger(t)) tier = Math.max(tier, Math.min(MAX_TIER, t));
+  }
+  return tier;
+}
+/**
+ * The star shown next to the place name: the room's online (never below the explorer's own, as the room takes the
+ * highest), the explorer's own offline or while the room's is unknown. `raised` when friends set the room higher.
+ */
+export function shownTier(own: number, room = 0) {
+  const tier = Math.max(own, room);
+  return { tier, raised: tier > own };
+}
 /** How much stronger and more rewarding a tier is than ★1. */
 export function tierScale(tier: number) {
   const t = Math.max(1, Math.min(MAX_TIER, tier)) - 1;

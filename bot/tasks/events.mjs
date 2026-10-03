@@ -144,7 +144,7 @@ export async function fightDragon(bot, { timeout = 200000 } = {}) {
     }
     if (dangers.some(d => Math.hypot(s.player.x - d.x, s.player.z - d.z) < d.r + 4)) { await sleep(rng.between(80, 140)); continue; }
     if (dragon.d > 3.4 || !engaged) {
-      if (dragon.d < 35 && await game.safe(dragon.screen, s) && await game.pick(dragon.screen.x, dragon.screen.y) === dragon.id) { if (await game.tap(dragon.screen.x, dragon.screen.y, dragon.id)) engaged = true; }
+      if (dragon.d < 35 && await game.safe(dragon.screen, s) && await game.pick(dragon.screen.x, dragon.screen.y) === dragon.id && !await game.lavaStep(dragon.x, dragon.z, s)) { if (await game.tap(dragon.screen.x, dragon.screen.y, dragon.id)) engaged = true; }
       else await game.stepToward(dragon.x, dragon.z, s);
       await sleep(rng.between(300, 600)); continue;
     }

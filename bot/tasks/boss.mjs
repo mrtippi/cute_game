@@ -64,7 +64,7 @@ export async function huntBoss(bot, { id, timeout = 240000, loot = true } = {}) 
     // Circles close by: wait at their edge until the blow lands, rather than walking back in.
     if (dangers.some(d => Math.hypot(s.player.x - d.x, s.player.z - d.z) < d.r + 4)) { await sleep(rng.between(80, 140)); continue; }
     if (boss.d > 3.4 || !engaged) {
-      if (boss.d < 35 && await game.safe(boss.screen, s) && await game.pick(boss.screen.x, boss.screen.y) === boss.id) { if (await game.tap(boss.screen.x, boss.screen.y, boss.id)) engaged = true; }
+      if (boss.d < 35 && await game.safe(boss.screen, s) && await game.pick(boss.screen.x, boss.screen.y) === boss.id && !await game.lavaStep(boss.x, boss.z, s)) { if (await game.tap(boss.screen.x, boss.screen.y, boss.id)) engaged = true; }
       else await game.stepToward(boss.x, boss.z, s);
       await sleep(rng.between(300, 600)); continue;
     }

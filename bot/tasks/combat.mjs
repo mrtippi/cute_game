@@ -85,7 +85,8 @@ export async function collectLoot(bot, { range = 18, timeout = 15000 } = {}) {
     const drop = s.drops.find(d => d.d < range && d.d > 1.2); if (!drop) break;
     // Click the ground at the drop, or just short of it when its card covers the spot.
     let target = null;
-    for (const back of [0, .8, 1.6]) {
+    // Not into a lava pool for it when there is a way round (stepToward takes it).
+    if (!await game.lavaStep(drop.x, drop.z, s)) for (const back of [0, .8, 1.6]) {
       const k = back / Math.max(drop.d, .01), x = drop.x + (s.player.x - drop.x) * k, z = drop.z + (s.player.z - drop.z) * k;
       const p = await game.project(x, z); if (await game.safe(p, s) && await game.pick(p.x, p.y) === null && !await game.intoDoor(x, z, s)) { target = p; break; }
     }
@@ -197,7 +198,7 @@ export async function fight(bot, { count = 3, type, timeout = 180000, range = 30
         await game.stepToward(s.player.x * 2 - e.x, s.player.z * 2 - e.z, s).catch(() => {}); await recover(bot); break;
       }
       if (e.d > reach * .9 || !engaged) {
-        if (e.d < 35 && await game.safe(e.screen, s) && await game.pick(e.screen.x, e.screen.y) === e.id && !await game.intoDoor(e.x, e.z, s) && await game.tap(e.screen.x, e.screen.y, e.id)) { engaged = true; await new Promise(r => setTimeout(r, rng.between(400, 800))); }
+        if (e.d < 35 && await game.safe(e.screen, s) && await game.pick(e.screen.x, e.screen.y) === e.id && !await game.intoDoor(e.x, e.z, s) && !await game.lavaStep(e.x, e.z, s) && await game.tap(e.screen.x, e.screen.y, e.id)) { engaged = true; await new Promise(r => setTimeout(r, rng.between(400, 800))); }
         else { await game.stepToward(e.x, e.z, s); await new Promise(r => setTimeout(r, rng.between(500, 900))); }
         continue;
       }

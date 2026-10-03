@@ -261,6 +261,8 @@ test('a mixed room fights on the highest chosen star among its explorers; the Dr
  const f=await fixture(t,{profile:p=>{p.level=40;p.tiers=stars(2);}}),second=await f.store.create({id:'friend',username:'friend',hash:'h',salt:'s',profile:Object.assign(Game.newGame(),{level:40,tiers:stars(4)}),friends:[],requests:[],profileRevision:0});
  f.peers.set('friend',{account:second,active:true,visit:null,planet:'home',room:f.room.id,pose:{x:-29,z:1,facing:0,moving:false},socket:{}});f.room.members.add('friend');
  const enemy=f.spawn('mushroom');assert.equal(enemy.tier,4);assert.equal(enemy.maxHp,starred(enemy,4,40).maxHp);
+ // The room's star rides with each creature update, for the star label next to the place name (main.ts).
+ assert.equal(f.authority.starTier(f.room),4);assert.equal((await f.next(m=>m.type==='enemies')).tier,4);
  const g=await fixture(t,{planet:'lava',profile:p=>{p.level=60;p.tiers={lava:{open:3,chosen:3,kills:0,bosses:0,titan:0}};}}),dragon=g.spawn('dragon',30,0),base=starred(dragon,3);
  assert.equal(dragon.level,base.level);assert.equal(dragon.maxHp,base.maxHp);assert.equal(dragon.xp,base.xp);
 });
