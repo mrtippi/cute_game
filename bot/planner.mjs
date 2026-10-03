@@ -101,7 +101,8 @@ export function createPlanner(bot, { minutesLeft }) {
     bolt: { can: s => boltDue(bot, s), run: () => tendBolt(bot), cool: 300000, base: 3 },
     // Planet events: the lava cave (gate, daily chest, braziers), the volcano dragon, Toybox presents.
     lava: { can: s => lavaPending(bot, s), run: () => lavaEvents(bot), cool: 240000, base: 6, limit: 300000 },
-    dragon: { can: s => dragonReady(s), run: () => fightDragon(bot), cool: 60000, base: 10, limit: 260000 },
+    // The invasion lasts four minutes: go at once rather than wait on the draw.
+    dragon: { can: s => dragonReady(s), now: () => true, run: () => fightDragon(bot), cool: 60000, base: 10, limit: 260000 },
     gifts: { can: s => toyGifts(s), run: async () => { const r = await openGifts(bot, { max: rng.int(2, 5) }); if (r.startsWith('no presents')) bot.toyDone = Date.now(); return r; }, cool: 240000, base: 5, limit: 300000 },
     // Once a day: swap a daily task the bot cannot do (or a hard one barely started).
     reroll: { can: s => !s.space && bot.rerollDay !== new Date(s.now).toISOString().slice(0, 10), run: () => rerollDaily(bot), cool: 900000, base: 4 },

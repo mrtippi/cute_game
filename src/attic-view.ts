@@ -1,6 +1,6 @@
 import * as T from 'three';
 import { TROPHY_SPOTS } from './house.ts';
-import { rarityOf, type Rarity } from './titles.ts';
+import { rarityOf, RARITY_ORDER, type Rarity } from './titles.ts';
 
 /**
  * The memory room's moving parts (house.ts ATTIC): a trophy cup or a hung medal for every title held, coloured by
@@ -55,10 +55,18 @@ export function medalMesh(rarity: Rarity) {
   return g;
 }
 
-/** Every title held, in the order earned: cups on the pedestals first, then medals on the wall plaques. */
+/** The titles given a place: all of them while they fit, else the rarest (the newest among equals), still in the order earned. */
+export function shownTrophies(titles: readonly string[]) {
+  if (titles.length <= TROPHY_SPOTS.length) return [...titles];
+  const rank = (i: number) => RARITY_ORDER.indexOf(rarityOf(titles[i]));
+  const keep = new Set([...titles.keys()].sort((a, b) => rank(b) - rank(a) || b - a).slice(0, TROPHY_SPOTS.length));
+  return titles.filter((_, i) => keep.has(i));
+}
+
+/** The titles shown (shownTrophies), in the order earned: cups on the pedestals first, then medals on the wall plaques. */
 export function buildTrophies(titles: readonly string[]) {
   const g = new T.Group(); g.name = 'attic-trophies';
-  titles.slice(0, TROPHY_SPOTS.length).forEach((title, i) => {
+  shownTrophies(titles).forEach((title, i) => {
     const spot = TROPHY_SPOTS[i], rarity = rarityOf(title), item = spot.y < 1 ? trophyMesh(rarity) : medalMesh(rarity);
     item.position.set(spot.x + (spot.y < 1 ? 0 : Math.sin(spot.face) * .05), spot.y, spot.z + (spot.y < 1 ? 0 : Math.cos(spot.face) * .05));
     item.rotation.y = spot.face; item.userData.title = title; g.add(item);

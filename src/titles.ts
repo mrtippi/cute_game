@@ -4,9 +4,9 @@ import { starsEarned, titansAtTier, type TierHolder } from './planet-tiers.ts';
 
 /**
  * Titles: every name a player can earn, its rarity colour, and those earned by long-term and co-op play.
- * The worn title shows under the name on the HUD and above the explorer (main.ts); the attic's title board
- * and the character panel choose it. Rarity: bronze (early level marks), silver (friends, first fish pages,
- * habits, co-op), gold (story, collections, mastery), rainbow (the three crowning titles).
+ * The worn title shows under the name on the HUD and on the nameplate above the explorer (nameplates.ts); the attic's
+ * title board and the character panel choose it. Rarity: bronze (early level marks, small habits), silver (friends,
+ * first fish pages, habits, co-op), gold (story, collections, mastery), rainbow (the crowning titles).
  */
 export type Rarity = 'bronze' | 'silver' | 'gold' | 'rainbow';
 export const RARITY_ORDER: Rarity[] = ['bronze', 'silver', 'gold', 'rainbow'];
@@ -29,7 +29,25 @@ export const EARNED_TITLES: { title: string; rarity: Rarity; hint: string; done:
   { title: 'Welcome Guest', rarity: 'bronze', hint: "Visit friends' gardens 10 times online", done: s => (s.progression.totals.gardenVisit ?? 0) >= 10 },
   { title: 'Trusted Companion', rarity: 'silver', hint: 'Defeat 10 bosses together online', done: s => (s.progression.totals.coopBoss ?? 0) >= 10 },
   { title: 'Party Leader', rarity: 'gold', hint: 'Defeat 50 bosses together online', done: s => (s.progression.totals.coopBoss ?? 0) >= 50 },
+  // Fun titles from the everyday counters (progression.ts recordEvent), paced for about three months of long play.
+  { title: 'Hungry Explorer', rarity: 'bronze', hint: 'Eat 300 snacks and meals', done: s => (s.progression.totals.eat ?? 0) >= 300 },
+  { title: 'Hard Worker', rarity: 'bronze', hint: 'Finish 500 journal tasks', done: s => (s.progression.totals.questsDone ?? 0) >= 500 },
+  { title: 'Gale Traveller', rarity: 'silver', hint: 'Use skills 10000 times', done: s => (s.progression.totals.skill ?? 0) >= 10000 },
+  { title: 'Kitchen Wizard', rarity: 'silver', hint: 'Cook 1000 dishes', done: s => (s.progression.totals.cook ?? 0) >= 1000 },
+  { title: "Everyone's Favourite", rarity: 'silver', hint: "Visit friends' gardens 100 times online", done: s => (s.progression.totals.gardenVisit ?? 0) >= 100 },
+  { title: 'Legendary Hunter', rarity: 'gold', hint: 'Defeat 20000 creatures', done: s => (s.progression.totals.kill ?? 0) >= 20000 },
+  { title: 'Millionaire Farmer', rarity: 'gold', hint: 'Harvest 10000 crops', done: s => (s.progression.totals.harvest ?? 0) >= 10000 },
+  { title: 'Lord of the Sea', rarity: 'gold', hint: 'Catch 30 legendary fish', done: s => (s.progression.totals.legendFish ?? 0) >= 30 },
+  { title: 'Tycoon', rarity: 'rainbow', hint: 'Earn 1000000 energy at the market', done: s => (s.progression.totals.sell ?? 0) >= 1000000 },
+  { title: 'Bane of Bosses', rarity: 'rainbow', hint: 'Defeat 1000 bosses', done: s => (s.progression.totals.boss ?? 0) >= 1000 },
 ];
+
+/**
+ * The server's champion (server/champion.mjs): the explorer with the highest level on an online server wears a crown
+ * plate while it lasts; holding it for an hour in all leaves this title for good. Only the server gives it.
+ */
+export const CHAMPION_TITLE = 'Former Server Champion';
+export const CHAMPION_HOLD_MS = 3600000;
 
 /** Every title with its rarity, in the order the title board lists them. */
 export const TITLES: Record<string, Rarity> = {
@@ -39,6 +57,7 @@ export const TITLES: Record<string, Rarity> = {
   ...Object.fromEntries(CHAPTERS.flatMap(c => c.reward.title ? [[c.reward.title, c.reward.title === 'Keeper of the Starlight' ? 'rainbow' : 'gold']] : [])),
   ...Object.fromEntries(Object.values(COLLECTION_TITLES).map(title => [title, 'gold'])),
   ...Object.fromEntries(EARNED_TITLES.map(e => [e.title, e.rarity])),
+  [CHAMPION_TITLE]: 'rainbow',
 } as Record<string, Rarity>;
 export const rarityOf = (title: string): Rarity => TITLES[title] ?? 'bronze';
 export const isTitle = (title: unknown): title is string => typeof title === 'string' && Object.hasOwn(TITLES, title);
@@ -52,6 +71,7 @@ export function earnTitles(s: EarnState, titles: string[]) {
 /** How a title is earned, for the title board's locked rows (English templates; params filled by the caller). */
 export function titleHint(title: string): [string, Record<string, string | number>] {
   const earned = EARNED_TITLES.find(e => e.title === title); if (earned) return [earned.hint, {}];
+  if (title === CHAMPION_TITLE) return ['Be the Server Champion online for an hour in all', {}];
   const level = Object.entries(LEVEL_TITLES).find(([, v]) => v === title)?.[0]; if (level) return ['Reach level {level}', { level }];
   if (FRIEND_CHAINS.some(c => c.title === title)) return ["Finish a friend's side story", {}];
   if (FISH_LOG_TITLES.includes(title)) return ['Fill a page of the fish log', {}];

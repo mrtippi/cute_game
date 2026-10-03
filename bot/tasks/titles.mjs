@@ -5,14 +5,14 @@ const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
 
 /** Preferred titles per clip theme (bot/tasks/wardrobe.mjs THEMES), best first; otherwise the rarest held. */
 export const TITLE_THEMES = {
-  fishing: ['Master of the Fish Log', 'Fish Scholar', 'Junior Angler', 'Ocean Collector'],
-  combat: ['Titan Conqueror', 'Boss Hunter', 'Bear Breaker', 'Titan Hunter', 'Saviour of the Forest'],
+  fishing: ['Lord of the Sea', 'Master of the Fish Log', 'Fish Scholar', 'Junior Angler', 'Ocean Collector'],
+  combat: ['Bane of Bosses', 'Titan Conqueror', 'Legendary Hunter', 'Boss Hunter', 'Bear Breaker', 'Titan Hunter', 'Saviour of the Forest', 'Gale Traveller'],
   space: ['Ruler of the Stars', 'Star Liberator', 'Bringer of Light', 'Sky Collector', 'Night Collector'],
-  farm: ["Rancher's Friend", 'Friend of the Garden', 'Master Merchant', 'Village Courier'],
-  cozy: ['Star Chef', 'Friend of the Garden', 'Everyday Adventurer', 'Toy Collector'],
-  explore: ['Legend of the Stars', 'Master Explorer', 'Elite Explorer', 'Veteran Explorer', 'Seasoned Explorer', 'Jungle Collector'],
-  festival: ['Keeper of the Starlight', 'Challenge Champion', 'Hero of Toybox', 'Volcano Collector'],
-  fancy: ['Keeper of the Starlight', 'Legend of the Stars', 'Ruler of the Stars', 'Legendary Smith'],
+  farm: ['Millionaire Farmer', 'Tycoon', "Rancher's Friend", 'Friend of the Garden', 'Master Merchant', 'Village Courier'],
+  cozy: ['Kitchen Wizard', 'Star Chef', 'Friend of the Garden', 'Everyday Adventurer', 'Hungry Explorer', 'Toy Collector'],
+  explore: ['Legend of the Stars', 'Master Explorer', 'Elite Explorer', 'Veteran Explorer', 'Seasoned Explorer', 'Gale Traveller', 'Hard Worker', 'Jungle Collector'],
+  festival: ['Keeper of the Starlight', "Everyone's Favourite", 'Challenge Champion', 'Hero of Toybox', 'Volcano Collector'],
+  fancy: ['Former Server Champion', 'Keeper of the Starlight', 'Tycoon', 'Legend of the Stars', 'Ruler of the Stars', 'Legendary Smith'],
 };
 const RANK = { rainbow: 3, gold: 2, silver: 1, bronze: 0 };
 

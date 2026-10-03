@@ -10,6 +10,7 @@ import { createAccountStore } from './account-store.mjs';
 import { createActionService, commandHash } from './action-service.mjs';
 import { createCombatAuthority } from './combat-authority.mjs';
 import { rememberAccount } from './account-cache.mjs';
+import { serverChampion, holdChampion, CHAMPION_TITLE, CHAMPION_HOLD_MS } from './champion.mjs';
 
 const derive = promisify(scrypt);
 const SESSION_MS = 7 * 24 * 60 * 60 * 1000;
@@ -24,7 +25,7 @@ const sameString = (a, b) => {
   return first.length === second.length && timingSafeEqual(first, second);
 };
 const cookieValue = request => (request.headers.cookie || '').split(';').map(value => value.trim()).find(value => value.startsWith(COOKIE + '='))?.slice(COOKIE.length + 1);
-const publicAccount = account => ({ id: account.id, username: account.username, name: account.profile.name, color: account.profile.color, level: account.profile.level, gear: account.profile.gear });
+const publicAccount = account => ({ id: account.id, username: account.username, name: account.profile.name, color: account.profile.color, level: account.profile.level, gear: account.profile.gear, title: account.profile.progression?.title || '' });
 const publicHome = account => {
   const source = account.profile;
   return { ...publicAccount(account), discovered:source.discovered||['home'], plots: source.plots, decorations: source.decorations || [], farm: source.farm || null, helper: source.helper || null, friends: Array.isArray(source.friends) ? source.friends : [], home: source.home || null, placed: source.placed || [] };
@@ -41,6 +42,9 @@ export async function createGameServer(options = {}) {
   if ((options.databaseRequired ?? process.env.DATABASE_REQUIRED === '1') && !databaseUrl && !options.accountStore) {
     throw new Error('DATABASE_URL is required for this deployment. No temporary account storage was started.');
   }
+  // Login-required mode (default): the client offers no offline play without a session. ZG_REQUIRE_LOGIN=0 restores
+  // the optional sign-in (offline play in the browser, for development tools).
+  const requireLogin = options.requireLogin ?? process.env.ZG_REQUIRE_LOGIN !== '0';
   const store = options.accountStore || await createAccountStore({ dataDir, databaseUrl });
   const accounts = new Map(), sessions = new Map(), peers = new Map(), rooms = new Map(), parties = new Map();
   const limits = new Map(), chatReceipts = new Map();
@@ -144,7 +148,25 @@ export async function createGameServer(options = {}) {
     const room = rooms.get(peer.room); if (room) broadcast(room, { type: 'pose', player: presence(peer) }, peer.account.id);
   }
   function presence(peer) {
-    return { ...publicAccount(peer.account), ...peer.pose, id: peer.account.id, planet: peer.planet, space: peer.visit ? `home:${peer.visit}` : peer.planet === 'home' && Math.hypot(peer.pose.x, peer.pose.z) < 18 ? `home:${peer.account.id}` : 'wild', active: peer.active };
+    return { ...publicAccount(peer.account), ...peer.pose, id: peer.account.id, planet: peer.planet, space: peer.visit ? `home:${peer.visit}` : peer.planet === 'home' && Math.hypot(peer.pose.x, peer.pose.z) < 18 ? `home:${peer.account.id}` : 'wild', active: peer.active, champion: peer.account.id === champion };
+  }
+  // The server's champion (champion.mjs): every client hears who wears the crown, and its plate follows the change.
+  // Time an online champion holds it is saved on the account every few minutes and when the crown moves on.
+  let champion = null, championClock = Date.now(), championHeld = 0;
+  function saveChampionHold(id, ms) {
+    if (!id || ms <= 0) return;
+    combatAuthority.internal(id, 'championHold', [], records => ({ titled: holdChampion(records.get(id), ms) })).catch(() => {});
+  }
+  function checkChampion() {
+    const now = Date.now(), next = serverChampion(accounts.values());
+    if (champion && peers.has(champion)) championHeld += now - championClock;
+    championClock = now;
+    const total = (accounts.get(champion)?.championMs || 0) + championHeld;
+    if (championHeld && (next !== champion || championHeld >= 300_000 || total >= CHAMPION_HOLD_MS && !accounts.get(champion)?.profile.progression.titles.includes(CHAMPION_TITLE))) { saveChampionHold(champion, championHeld); championHeld = 0; }
+    if (next === champion) return;
+    champion = next;
+    // Its own message, not a pose: a resent pose would carry stale coordinates (clients take the crown from this).
+    for (const peer of peers.values()) send(peer.socket, { type: 'champion', id: champion });
   }
   function roster(room) { return [...room.members].map(id => peers.get(id)).filter(Boolean).map(presence); }
   function elect(room) {
@@ -218,7 +240,7 @@ export async function createGameServer(options = {}) {
     const account = await authenticated(request);
     if (route === 'auth/session' && method === 'GET') {
       const friends = account ? await refreshFriends(account) : {};
-      return respond(response, 200, account && validSession(request)?.id === account.id ? { account: publicAccount(account), profile: account.profile, revision:account.profileRevision||0, authorityVersion:1, ...friends } : { account: null });
+      return respond(response, 200, account && validSession(request)?.id === account.id ? { account: publicAccount(account), profile: account.profile, revision:account.profileRevision||0, authorityVersion:1, requireLogin, ...friends } : { account: null, requireLogin });
     }
     if (!account) throw failure(401, 'Sign in to play online.');
     const authorizedSession=validSession(request);
@@ -245,7 +267,15 @@ export async function createGameServer(options = {}) {
       const data=await body(request);data.payload??={};
       checkAccess();
       const peer=peers.get(account.id);
-      if(peer&&(HEALTH_ACTIONS.has(data.type)||data.type==='upgrade'&&data.payload.kind==='health'||data.type==='environmentResource'&&peer.planet==='jungle'))await combatAuthority.flushPeerHealth(peer);
+      if(peer&&(HEALTH_ACTIONS.has(data.type)||data.type==='upgrade'&&data.payload.kind==='health'||data.type==='environmentResource'&&peer.planet==='jungle')){
+        // Settling health commits the server's own bookkeeping first; an intent sent against the save just before it
+        // is not stale (the action is checked against the settled save anyway), so it follows that revision.
+        // Food stays strict: after unseen damage the explorer decides again (the heal may no longer be wanted).
+        const held=accounts.get(account.id),before=held?.profileRevision??0,hpBefore=held?.profile.hp??0;
+        await combatAuthority.flushPeerHealth(peer);
+        const now=accounts.get(account.id),after=now?.profileRevision??0,hurt=(now?.profile.hp??0)<hpBefore;
+        if(after>before&&data.expectedRevision===before&&(['equip','unequip'].includes(data.type)||!hurt))data.expectedRevision=after;
+      }
       return respond(response,200,await executeAction(account.id,data,{checkAccess}));
     }
     if(route==='drops'&&method==='GET'){
@@ -310,7 +340,7 @@ export async function createGameServer(options = {}) {
   sockets.on('connection', (socket, request, account) => {
     const previous = peers.get(account.id); if (previous) { leave(previous); previous.socket.close(4001, 'This adventure was opened in another tab.'); }
     const peer = { socket, account, active: true, visit: null, party: null, room: null, planet: account.profile.planet, pose: { x: 0, z: 0, facing: 0, moving: false }, poseAt: 0, messages: 0 };
-    peers.set(account.id, peer); send(socket, { type: 'welcome', id: account.id, ...friendList(account) });
+    peers.set(account.id, peer); send(socket, { type: 'welcome', id: account.id, ...friendList(account) }); send(socket, { type: 'champion', id: champion });
     try { join(peer, Object.hasOwn(Game.PLANETS, account.profile.planet) ? account.profile.planet : 'home'); }
     catch (error) { peers.delete(account.id); send(socket, { type: 'error', message: error.message }); socket.close(1008, 'World unavailable'); return; }
     socket.isAlive = true; socket.on('pong', () => { socket.isAlive = true; });
@@ -406,11 +436,12 @@ export async function createGameServer(options = {}) {
       socket.isAlive = false; socket.ping();
     }
   }, 30_000); heartbeat.unref();
+  const crown = setInterval(checkChampion, options.championEvery ?? 5_000); crown.unref(); checkChampion();
   try { await new Promise((resolve, reject) => { server.once('error', reject); server.listen(port, host, resolve); }); }
-  catch (error) { clearInterval(cleanup); clearInterval(heartbeat); await store.close(); throw error; }
+  catch (error) { clearInterval(cleanup); clearInterval(heartbeat); clearInterval(crown); await store.close(); throw error; }
   return {
     server, port: server.address().port, url: `http://${host}:${server.address().port}`,
-    async close() { if (closing) return; closing = true; await combatAuthority.close(); clearInterval(cleanup); clearInterval(heartbeat); for (const socket of sockets.clients) socket.terminate(); await new Promise(resolve => sockets.close(resolve)); await new Promise(resolve => server.close(resolve)); await store.close(); },
+    async close() { if (closing) return; closing = true; clearInterval(crown); if (champion && peers.has(champion)) saveChampionHold(champion, championHeld + Date.now() - championClock); await combatAuthority.close(); clearInterval(cleanup); clearInterval(heartbeat); for (const socket of sockets.clients) socket.terminate(); await new Promise(resolve => sockets.close(resolve)); await new Promise(resolve => server.close(resolve)); await store.close(); },
   };
 }
 

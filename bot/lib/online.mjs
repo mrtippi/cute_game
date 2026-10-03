@@ -56,6 +56,15 @@ export async function ensureLoggedIn(page, account, { tries = 6, log = () => {} 
   }
 }
 
+/**
+ * Whether this page's game server requires login (server.mjs requireLogin, the default): its game then has no
+ * offline play. False for a server elsewhere (the static edition) or one that does not answer.
+ */
+export async function requiresLogin(page) {
+  try { assertLocal(page.url()); } catch { return false; }
+  return (await pageApi(page, 'auth/session')).body?.requireLogin === true;
+}
+
 /** Sign the profile out (an account switched back to offline play): returns true when it had a session. */
 export async function ensureLoggedOut(page) {
   const session = await pageApi(page, 'auth/session');

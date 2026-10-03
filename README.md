@@ -38,7 +38,7 @@ npm test        # gameplay, worlds, assets, save migration and real server tests
 
 ## Online play
 
-Open **Play together** to create an account on the current game server or sign in. Accounts use usernames and passwords; no email is required. Offline and online adventures have separate saves. Signing out restores the offline adventure you left behind.
+The game server requires login by default: before play starts, the game shows a sign-in screen (create an account or sign in), and signing out returns to it. Accounts use usernames and passwords; no email is required. If the server cannot be reached, the game keeps retrying instead of starting offline. Start the server with `ZG_REQUIRE_LOGIN=0` for the optional sign-in: then **Play together** signs in, offline and online adventures have separate saves, and signing out restores the offline adventure you left behind.
 
 Online players share the wild areas, enemies, boss attacks and world events. Gardens are private; friends can visit and see planting or decorating updates. Use a party code for a private shared world. One browser tab per account is active at a time.
 

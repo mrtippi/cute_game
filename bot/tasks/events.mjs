@@ -39,7 +39,8 @@ async function tapUntil(bot, id, done, { taps = 6, label = 'target' } = {}) {
     if (s.modal || s.dialog) await game.closePanel();
     const e = find(s); if (!e) return done(s);
     const p = await game.aimAt(e, s); if (!p) return false;
-    await hands.click(p.x, p.y);
+    // Re-checked under the pointer at press time (the view may slide while walking).
+    await game.tap(p.x, p.y, e.id);
     await sleep(rng.between(450, 800));
   }
   return done(await game.snap());
@@ -116,17 +117,20 @@ export async function fightDragon(bot, { timeout = 200000 } = {}) {
   if (foodCount(await game.snap()) < 4) return 'need food first';
   await dress(bot, 'combat').catch(() => {});
   note('the volcano dragon has landed: going after it', 'boss');
-  const end = Date.now() + timeout; let engaged = false, dodges = 0, retreats = 0, last = null;
+  // The journal's boss count (model.ts grantDefeat) tells a win from the invasion ending with the dragon flying off.
+  const bossesBefore = (await readSave(bot)).progression.totals.boss ?? 0;
+  const end = Date.now() + timeout; let engaged = false, dodges = 0, retreats = 0;
   while (Date.now() < end) {
     s = await game.snap();
     if (s.modal === 'death') return 'knocked out by the dragon';
+    // A panel opened by a stray tap on the way blocks every click: close it and carry on.
+    if (s.modal || s.dialog) { await game.closePanel(); engaged = false; continue; }
     const dragon = dragonOf(s);
     if (!dragon) {
-      // Gone: beaten if it was nearly down, otherwise the invasion ended and it flew away.
-      if (last && last.hp < last.maxHp * .3) { note(`defeated the volcano dragon! (${dodges} dodges)`, 'boss'); await sleep(rng.between(600, 1200)); await collectLoot(bot, { range: 22 }); return 'defeated the volcano dragon'; }
+      const won = await game.waitFor(async () => ((await readSave(bot)).progression.totals.boss ?? 0) > bossesBefore, { timeout: 2000, every: 250 });
+      if (won) { note(`defeated the volcano dragon! (${dodges} dodges)`, 'boss'); await sleep(rng.between(600, 1200)); await collectLoot(bot, { range: 22 }); return 'defeated the volcano dragon'; }
       return 'the dragon flew away';
     }
-    last = dragon;
     const dangers = dangersOf(s);
     if (dangers.length && inDanger(s.player, dangers)) {
       if (await dodge(bot, { away: dragon })) dodges++;
@@ -141,7 +145,7 @@ export async function fightDragon(bot, { timeout = 200000 } = {}) {
     }
     if (dangers.some(d => Math.hypot(s.player.x - d.x, s.player.z - d.z) < d.r + 4)) { await sleep(rng.between(80, 140)); continue; }
     if (dragon.d > 3.4 || !engaged) {
-      if (dragon.d < 35 && await game.safe(dragon.screen, s) && await game.pick(dragon.screen.x, dragon.screen.y) === dragon.id) { await hands.click(dragon.screen.x, dragon.screen.y); engaged = true; }
+      if (dragon.d < 35 && await game.safe(dragon.screen, s) && await game.pick(dragon.screen.x, dragon.screen.y) === dragon.id) { if (await game.tap(dragon.screen.x, dragon.screen.y, dragon.id)) engaged = true; }
       else await game.stepToward(dragon.x, dragon.z, s);
       await sleep(rng.between(300, 600)); continue;
     }

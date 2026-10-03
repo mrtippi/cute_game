@@ -21,6 +21,8 @@ export interface GameBridge {
   applyAuthorityHealth(delta:number,died:boolean):void;
   getState():SaveState;applyState(next:SaveState):void;getWorld():World;getPresence():GamePresence;
   getOfflineState():SaveState|null;setPersistence(handler:((state:SaveState)=>void)|null):void;
+  /** A check before the welcome card starts play: false keeps the title screen (the sign-in screen is shown instead). */
+  setStartGate(gate:(()=>boolean)|null):void;
   setActionHandler(handler:((intent:GameIntent)=>Promise<ActionReply>)|null):void;
   applyAuthoritativeState(next:SaveState):void;
   setNetworkHooks(hooks:NetworkHooks):void;

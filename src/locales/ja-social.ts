@@ -225,4 +225,17 @@ export const JA_SOCIAL: Record<string, string> = {
   "Bedroom": "寝室",
   "Bathroom": "お風呂",
   "Study": "書斎",
+  // Login-required servers: the sign-in screen and the server check.
+  "Sign out": "ログアウト",
+  "Your progress saves to this server.": "進行状況はこのサーバーに保存されます。",
+  "Sign in to play": "ログインして遊ぶ",
+  "Sign in or create an account to play. Your adventure saves on the game server.": "遊ぶにはログインするか、アカウントを作成してください。冒険はゲームサーバーに保存されます。",
+  "Connecting to the game server…": "ゲームサーバーに接続しています…",
+  "Cannot reach the game server — retrying…": "ゲームサーバーに接続できません — 再試行中…",
+  "Zoo Garden plays on its game server. This screen tries again every few seconds.": "Zoo Gardenはゲームサーバーで遊びます。この画面は数秒ごとに再試行します。",
+  "Retry now": "今すぐ再試行",
+  "Cannot reach the game server. Please try again.": "ゲームサーバーに接続できません。もう一度お試しください。",
+  "Your online session ended. Sign in again to continue.": "オンラインのセッションが終了しました。続けるにはもう一度ログインしてください。",
+  "You signed out. Sign in to keep playing.": "ログアウトしました。続けて遊ぶにはログインしてください。",
+  "○ Signed out": "○ ログアウト中",
 };

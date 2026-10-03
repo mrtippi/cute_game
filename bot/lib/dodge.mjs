@@ -7,7 +7,7 @@ const MARGIN = .8;   // the explorer's own size, plus a little room
 const DIRS = 16, STEP = .5, REACH = 14;
 
 export const inDanger = (p, dangers) => dangers.some(d => Math.hypot(p.x - d.x, p.z - d.z) < d.r + MARGIN);
-export const dangersOf = s => s.enemies.flatMap(e => e.danger ?? []);
+export const dangersOf = s => [...s.enemies.flatMap(e => e.danger ?? []), ...(s.hazards ?? [])];
 
 /** Ground blocked along every candidate direction, asked of the game in one call. */
 async function blockedRays(bot, p) {

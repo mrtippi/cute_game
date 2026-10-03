@@ -161,6 +161,18 @@ test('healing settles buffered combat damage and preserves food on a stale revis
   const healed=await action(peer,'eat',{id:'carrot'});assert.equal(healed.status,200);assert.equal(healed.data.profile.hp,damaged.profile.hp+ITEMS.carrot.heal);assert.ok(!healed.data.profile.bag.carrot);
 });
 
+test('equipping right after the server settles health is not refused as stale',async t=>{
+  // The health settlement before an equip commits the server's own bookkeeping; the player's intent still applies.
+  t.mock.timers.enable({apis:['setInterval']});
+  const {host,peer,barrier,store,action}=await protocolRoom(t,{configure:profile=>{profile.hp=50;profile.bag.sword_wood=1;}});
+  const enemy=enemyRoster('home').find(value=>value.zone==='forest'&&!value.boss);
+  host.send({type:'enemies',enemies:[{id:enemy.id,type:enemy.type,x:-30,z:0}]});await peer.next(message=>message.type==='enemies');
+  peer.send({type:'pose',x:-30,z:1});await host.next(message=>message.type==='pose'&&message.player.id===peer.id);
+  host.send({type:'damage',id:peer.id,enemyId:enemy.id});await barrier(host,peer);
+  const equipped=await action(peer,'equip',{id:'sword_wood'},{expectedRevision:peer.session.revision});
+  assert.equal(equipped.status,200);assert.equal((await store.get(peer.id)).profile.gear.weapon,'sword_wood');
+});
+
 test('server-owned volcano weather advances through host migration and ignores forged weather',async t=>{
   const {host,peer,explorer,barrier}=await protocolRoom(t,{planet:'lava'});
   const first=(await peer.next(m=>m.type==='environment')).snapshot;assert.ok(first.time>=0);assert.ok(Number.isFinite(first.weather.seed));

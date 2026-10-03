@@ -15,6 +15,7 @@ import { CLIPS, planDay, clipTitle } from './clips.mjs';
 import { loadAccount, playsOnline } from './accounts.mjs';
 import { groupDir, groupSave, leaderOf, readJson } from './groups.mjs';
 import { clipText } from './chapters.mjs';
+import { ensureOnline } from './online.mjs';
 
 const { values: opt, positionals } = parseArgs({ allowPositionals: true, options: {
   date: { type: 'string' }, from: { type: 'string', default: '1' }, clips: { type: 'string', default: '10' }, minutes: { type: 'string', default: '60' },
@@ -108,6 +109,9 @@ function playClip(clip, title) {
   });
 }
 
+// A login-required server (the default) has no offline play: an account not linked yet is linked (keeping its offline
+// progress) before its day is planned, so it plays every clip online and can join its group.
+if (command === 'run' && account) await ensureOnline(account.id, { url: opt.url, progress: text => console.log('online link: ' + text) });
 const plan = loadPlan();
 if (command === 'plan') show(plan);
 else if (command === 'run') {

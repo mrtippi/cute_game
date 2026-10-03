@@ -4,6 +4,8 @@
 //   node dev.mjs shot [file]      screenshot of the live window
 //   node dev.mjs eval "<js>"      run an expression in the page (window.__zg is available)
 //   node dev.mjs run <module> <fn> [json-args]   run one bot task against the live window
+// `open` plays offline: it needs a game server started with ZG_REQUIRE_LOGIN=0 (by default the server requires login
+// and the game shows only its sign-in screen), e.g. ZG_REQUIRE_LOGIN=0 DATA_DIR=<scratch dir> node server/server.mjs.
 import { chromium } from 'playwright';
 import { readFileSync } from 'node:fs';
 import { createRng } from './lib/rng.mjs';

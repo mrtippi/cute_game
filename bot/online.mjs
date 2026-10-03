@@ -9,6 +9,10 @@
 // The server takes the save only on this PC, only into the caller's own brand-new account (revision 0), and checks
 // it with the game's own parseSave (server/server.mjs auth/import-save). From then on progress lives on the local
 // server; the offline save stays untouched in the profile as a backup. The profile keeps the session cookie.
+//
+// The server requires login by default (ZG_REQUIRE_LOGIN=0 turns that off): the game then has no offline play, so
+// every account plays online. ensureOnline() links an account before it plays; the offline save is still read from
+// the profile's localStorage here (the game no longer plays or changes it, but it stays there).
 import { chromium } from 'playwright';
 import { randomBytes } from 'node:crypto';
 import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
@@ -88,6 +92,28 @@ export async function linkAccount(id, { url = 'http://127.0.0.1:8787/', saveOrig
     progress(`xong: ${username} · Lv.${check.body.profile.level}`);
     return { username, level: check.body.profile.level, offlineLevel: level, source: save ? source : null };
   } finally { await context.close(); }
+}
+
+/** Whether the game server at `url` requires login (server.mjs requireLogin): true / false, null when it does not answer. */
+export async function serverRequiresLogin(url = 'http://127.0.0.1:8787/') {
+  try {
+    const response = await fetch(`${new URL(url).origin}/api/auth/session`, { signal: AbortSignal.timeout(5000) });
+    const body = await response.json();
+    return response.ok ? body.requireLogin === true : null;
+  } catch { return null; }
+}
+
+/**
+ * Before an account plays: a login-required server has no offline play, so an account not linked yet is linked now
+ * (its offline progress goes with it, linkAccount) and a linked one switched back to offline is switched on again.
+ * Returns the account as it is now. A server that does not require login, or does not answer, changes nothing.
+ */
+export async function ensureOnline(id, { url = 'http://127.0.0.1:8787/', progress = () => {} } = {}) {
+  const account = loadAccount(id);
+  if (await serverRequiresLogin(url) !== true) return account;
+  if (!account.online?.linkedAt) { progress('server yêu cầu đăng nhập: liên kết acc trước khi chơi'); await linkAccount(id, { url, progress }); }
+  else if (!account.online.enabled) { progress('server yêu cầu đăng nhập: bật chơi online'); setOnline(id, { enabled: true }); }
+  return loadAccount(id);
 }
 
 /** The server's view of a linked account (signs in from Node; no browser): { username, level, revision }. */

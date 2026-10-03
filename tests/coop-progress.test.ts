@@ -77,7 +77,8 @@ test('co-op titles appear on the title board with hints and fit the memory room 
   for (const title of ['Welcome Guest', 'Trusted Companion', 'Party Leader']) {
     assert.ok(Object.hasOwn(TITLES, title), title); assert.match(titleHint(title)[0], /online/);
   }
-  assert.ok(TROPHY_SPOTS.length >= Object.keys(TITLES).length, 'one pedestal per title');
+  // More titles than pedestals now: the rarest keep a place (titles.test.ts); the co-op ones still fit beside them.
+  assert.equal(buildTrophies(Object.keys(TITLES)).children.length, TROPHY_SPOTS.length, 'every pedestal used');
   const cups = buildTrophies(['Welcome Guest', 'Trusted Companion', 'Party Leader']);
   assert.deepEqual(cups.children.map(c => c.userData.title), ['Welcome Guest', 'Trusted Companion', 'Party Leader']);
 });

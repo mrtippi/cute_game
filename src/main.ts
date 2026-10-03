@@ -54,6 +54,7 @@ import { progressEntries, claimProgress, recordEvent, rerollDaily, startChalleng
 import { STORY_STEPS } from './content.ts';
 import type { GameBridge, GameAction, NetworkHooks, NetworkDrop } from './game-bridge.ts';
 import { initOnline } from './online.ts';
+import { createNameplates } from './nameplates.ts';
 import { initPlatform, toggleFullscreen } from './platform.ts';
 import { Sfx, type Sound } from './sfx.ts';
 import { loadGraphics, saveGraphics, QUALITY, type QualitySetting } from './graphics.ts';
@@ -104,6 +105,8 @@ let fishingWater='home';
 let shopTab='Weapons',journalTab:ProgressKind='story',craftStation:'craft'|'forge'='craft',craftTab='All';
 let placement:{id:string;rotation:number;x:number;z:number;ok:boolean}|null=null,visiting:string|null=null,visitHome:M.SaveState|null=null;
 let persistence:((state:M.SaveState)=>void)|null=null,network:NetworkHooks={role:null};
+// online.ts: false while the game server asks for a sign-in first (the start button then opens the sign-in screen).
+let startGate:(()=>boolean)|null=null;
 let actionHandler:((intent:GameIntent)=>Promise<ActionReply>)|null=null;
 async function perform<T=any>(type:string,payload:Record<string,unknown>={}):Promise<T|undefined>{
   const before=state.level,original=state,online=!!actionHandler;
@@ -266,7 +269,7 @@ const sideHeading=(key:string)=>{const [kind,id]=key.split(':'),chain=(kind==='f
 const storyChapter=()=>storyStep(state.progression.story.index).chapter;
 /** A chapter not yet introduced (a new game, or a save that just moved on): Lumi opens it. */
 function storyCheck(){if(visiting)return;const chapter=storyChapter(),seen=state.progression.lumiSeen;if(seen>=chapter||!CHAPTERS[chapter])return;sayLumi(chapterLines(-1,chapter),chapter);void perform('lumiSeen',{index:chapter});}
-async function start() {settle();void helperCatchUp();const name=$<HTMLInputElement>('#name-input').value.trim().slice(0,20)||state.name;if(name!==state.name)await perform('settings',{name});started=true;$('#title-screen').hidden=true;$('#hud').hidden=false;applyMovePad();save();updateHud();updateLabels();toast(saved?t('Welcome back, {name}. Your garden missed you!',{name:state.name}):'Start small: click a garden bed to plant your first carrot.','🌱');showZone('Clover Village');setTimeout(storyCheck,1800);}
+async function start() {if(startGate&&!startGate())return;settle();void helperCatchUp();const name=$<HTMLInputElement>('#name-input').value.trim().slice(0,20)||state.name;if(name!==state.name)await perform('settings',{name});started=true;$('#title-screen').hidden=true;$('#hud').hidden=false;applyMovePad();save();updateHud();updateLabels();toast(saved?t('Welcome back, {name}. Your garden missed you!',{name:state.name}):'Start small: click a garden bed to plant your first carrot.','🌱');showZone('Clover Village');setTimeout(storyCheck,1800);}
 
 /** Beds that ripened while the game was closed: the helper harvests and replants each once (helper.ts catchUp). */
 async function helperCatchUp(){const r=actionHandler?await perform<ReturnType<typeof Helper.catchUp>>('helperCatchUp'):change(()=>Helper.catchUp(state));if(r&&(r.harvested.length||r.planted.length))setTimeout(()=>toast(t('While you were away, Bolt harvested {count} crops and planted {beds} beds.',{count:r.harvested.length,beds:r.planted.length}),'🤖'),2600);}
@@ -283,9 +286,9 @@ function updateBoards(){
   const titles=state.progression.titles;if(titlesSeen<0)titlesSeen=titles.length;for(;titlesSeen<titles.length;titlesSeen++){const title=titles[titlesSeen];setTimeout(()=>toast(t('New title: {name}',{name:t(title)}),'🏅'),900);updateHud();}
 }
 let titlesSeen=-1;
-/** The worn title floats over the explorer, coloured by rarity (outdoors and in the cottage alike). */
-const titleFloat=document.createElement('div');titleFloat.className='title-float';titleFloat.hidden=true;$('#world-labels').append(titleFloat);
-frameListeners.add(()=>{const worn=started&&!visiting&&!flight?state.progression.title:'';if(!worn){titleFloat.hidden=true;return;}const p=world.screen(world.position.x,2.75,world.position.z);titleFloat.hidden=!p.visible;if(titleFloat.dataset.title!==worn){titleFloat.dataset.title=worn;titleFloat.dataset.rarity=rarityOf(worn);titleFloat.textContent=t(worn);}titleFloat.style.transform=`translate(${Math.round(p.x)}px,${Math.round(p.y)}px) translate(-50%,-100%)`;});
+/** Nameplates over the explorer and the explorers online: worn title by rarity, name, champion crown (outdoors and in the cottage alike). */
+const nameplates=createNameplates($('#world-labels'),world,()=>started&&!visiting&&!flight?{name:state.name,title:state.progression.title}:null);
+frameListeners.add(()=>nameplates.update());
 function updateHud() {
   updateBoards();
   const known=new Set(world.state.discovered),discoveryCount=t('Discovered {count}/{total} planets',{count:known.size,total:Object.keys(M.PLANETS).length});
@@ -1047,6 +1050,7 @@ export const gameBridge:GameBridge={
   getOfflineState:()=>{try{return M.parseSave(localStorage.getItem(M.SAVE_KEY));}catch{return null;}},
   applyState(next){fishingEpoch++;fishingView.resetMysteryAvailability();if(flight)exitSpace();shipSequence?.reset();arriving=false;autopilotTarget=null;state=next;applyMovePad();const nameInput=document.querySelector<HTMLInputElement>('#name-input');if(nameInput)nameInput.value=state.name;visiting=null;visitHome=null;world.state=state;resetCombat();world.build(state.planet);world.refreshPlayer();if(modal==='bag')inventory();else if(modal==='quests')quests();else if(modal)closeDialog();updateHud();updateLabels();},
   setPersistence(handler){persistence=handler;},
+  setStartGate(gate){startGate=gate;},
   setActionHandler(handler){actionHandler=handler;world.authoritativeAction=handler?intent=>handler(intent).then(reply=>reply.result):undefined;},
   applyAuthoritativeState(next){
     const planetChanged=next.planet!==state.planet,wasDead=state.hp<=0;const previousGear=JSON.stringify(state.gear),wasFishing=!!world.fishing&&world.fishing!=='idle',plotsChanged=next.plots.length!==state.plots.length,decorChanged=JSON.stringify(next.decorations)!==JSON.stringify(state.decorations);

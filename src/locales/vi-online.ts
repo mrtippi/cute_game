@@ -177,4 +177,17 @@ export const VI_ONLINE: Record<string, string> = {
   "Travel to the volcano first.": "Hãy đến núi lửa trước.",
   "Your adventure is still alive.": "Nhân vật của bạn vẫn còn sống.",
   "This dropped item belongs to a private garden.": "Món đồ rơi này thuộc về một khu vườn riêng.",
+  // Login-required servers: the sign-in screen and the server check.
+  'Sign out': 'Đăng xuất',
+  'Your progress saves to this server.': 'Tiến trình được lưu trên máy chủ này.',
+  'Sign in to play': 'Đăng nhập để chơi',
+  'Sign in or create an account to play. Your adventure saves on the game server.': 'Đăng nhập hoặc tạo tài khoản để chơi. Cuộc phiêu lưu của bạn được lưu trên máy chủ trò chơi.',
+  'Connecting to the game server…': 'Đang kết nối tới máy chủ trò chơi…',
+  'Cannot reach the game server — retrying…': 'Không kết nối được máy chủ trò chơi — đang thử lại…',
+  'Zoo Garden plays on its game server. This screen tries again every few seconds.': 'Zoo Garden chơi trên máy chủ trò chơi. Màn hình này sẽ tự thử lại sau vài giây.',
+  'Retry now': 'Thử lại ngay',
+  'Cannot reach the game server. Please try again.': 'Không kết nối được máy chủ trò chơi. Vui lòng thử lại.',
+  'Your online session ended. Sign in again to continue.': 'Phiên trực tuyến đã kết thúc. Hãy đăng nhập lại để chơi tiếp.',
+  'You signed out. Sign in to keep playing.': 'Bạn đã đăng xuất. Hãy đăng nhập để chơi tiếp.',
+  '○ Signed out': '○ Đã đăng xuất',
 };

@@ -1,7 +1,7 @@
 import type { GameBridge, NetworkDrop } from './game-bridge.ts';
 import { newGame, type SaveState, type PlanetId } from './model.ts';
 import './online.css';
-import { t, onLanguageChange } from './i18n.ts';
+import { t, onLanguageChange, getLanguage, setLanguage, isLanguage, LANGUAGES, LANGUAGE_NAMES } from './i18n.ts';
 import {gameplayKey} from './gameplay-controls.ts';
 import type {GameIntent,ActionReply} from './actions.ts';
 
@@ -18,8 +18,8 @@ interface NetworkWorld {
   applyEnvironmentAction(action:{kind:'light-pillar'|'collect-ore';id:string;index?:number}):{ok:boolean;rewards?:{id:string;count:number}[]};
   grantEnvironmentReward(eventId:string,rewards:{id:string;count:number}[]):unknown;
 }
-interface Session { authorityVersion?:number;account:Explorer|null;profile?:SaveState;revision?:number;friends?:Explorer[];requests?:Explorer[] }
-interface ActionJob extends GameIntent {requestId:string;expectedRevision:number;rulesVersion:1;submitted?:boolean}
+interface Session { authorityVersion?:number;requireLogin?:boolean;account:Explorer|null;profile?:SaveState;revision?:number;friends?:Explorer[];requests?:Explorer[] }
+interface ActionJob extends GameIntent {requestId:string;expectedRevision:number;rulesVersion:1;submitted?:boolean;retried?:boolean}
 interface ChatAttempt { requestId:string;draft:string;accountId:string;room:string;connection:WebSocket;pending:boolean;timer?:number }
 const el = <K extends keyof HTMLElementTagNameMap>(tag:K,className='',text='') => {const node=document.createElement(tag);node.className=className;node.textContent=text;return node;};
 const button=(label:string,action:()=>void,className='')=>{const node=el('button',className,t(label));node.type='button';node.addEventListener('click',action);return node;};
@@ -56,11 +56,20 @@ export function initOnline(game:GameBridge) {
   const players=new Map<string,Explorer>(),rewardIds=new Set<string>(),chat:{name:string;message:string}[]=[];
   let chatRoom:string|null=null,chatDraft='',chatReady=false,chatAttempt:ChatAttempt|null=null;
   let sharingLoot=false;
+  // Login-required servers (server.mjs requireLogin): no offline play. Until the first session check answers the
+  // server is 'checking'; 'unreachable' keeps retrying instead of falling back to the offline save.
+  let requireLogin=false,server:'checking'|'ready'|'unreachable'='checking',serverRetry:number|undefined,lockShown=false;
+  const locked=()=>!account&&(server!=='ready'||requireLogin);
   const toggle=button(`👥 ${t('Play together')}`,()=>{render();dialog.showModal();},'social-toggle');toggle.id='online-button';const socialSlot=document.querySelector('#social-slot');if(socialSlot){socialSlot.append(toggle);toggle.classList.add('social-inline-toggle');}else document.body.append(toggle);toggle.setAttribute('aria-label',t('Play together'));
   const dialog=el('dialog','social-dialog');dialog.id='online-dialog';dialog.setAttribute('aria-label',t('Play together'));document.body.append(dialog);
-  const header=el('header','social-header'),heading=el('h2','',t('Play together')),close=button('✕',()=>dialog.close(),'social-close');close.setAttribute('aria-label',t('Close online menu'));header.append(heading,close);
+  const header=el('header','social-header'),heading=el('h2','',t('Play together')),close=button('✕',()=>{if(!locked())dialog.close();},'social-close');close.setAttribute('aria-label',t('Close online menu'));header.append(heading,close);
   const tabs=el('nav','social-tabs'),content=el('div','social-content'),notice=el('p','social-notice');notice.setAttribute('role','status');dialog.append(header,tabs,notice,content);
-  dialog.addEventListener('click',event=>{if(event.target===dialog&&event.clientX&&(event.clientX<dialog.getBoundingClientRect().left||event.clientX>dialog.getBoundingClientRect().right))dialog.close();});
+  dialog.addEventListener('click',event=>{if(!locked()&&event.target===dialog&&event.clientX&&(event.clientX<dialog.getBoundingClientRect().left||event.clientX>dialog.getBoundingClientRect().right))dialog.close();});
+  // The sign-in screen cannot be dismissed: Escape is refused, and a forced close opens it again.
+  // Chrome lets a repeated Escape close it without a cancelable event, so the key itself is stopped first.
+  window.addEventListener('keydown',event=>{if(event.key==='Escape'&&lockShown&&locked())event.preventDefault();},true);
+  dialog.addEventListener('cancel',event=>{if(locked())event.preventDefault();});
+  dialog.addEventListener('close',()=>{if(lockShown&&locked())window.setTimeout(()=>{if(lockShown&&locked()&&!dialog.open)dialog.showModal();});});
   const world=()=>game.getWorld() as ReturnType<GameBridge['getWorld']> & NetworkWorld;
   let noticeSource='',noticeParams:Record<string,string|number>={},saveStatusSource='';
   function setNotice(message:string,params:Record<string,string|number>={}){noticeSource=message;noticeParams=params;notice.textContent=t(message,params);}
@@ -68,7 +77,7 @@ export function initOnline(game:GameBridge) {
   function setSaveStatus(message:string){saveStatusSource=message;const label=document.querySelector('#save-status');if(label)label.textContent=t(message);}
   async function api<T>(path:string,data?:unknown,method=data?'POST':'GET'):Promise<T>{
     const response=await fetch(`${serviceBase}api/${path}`,{method,credentials:'same-origin',headers:{'Content-Type':'application/json'},body:data?JSON.stringify(data):undefined});
-    let value:{error?:string};try{value=await response.json();}catch{throw new Error('Online play needs the game server. Your offline adventure is ready to play.');}
+    let value:{error?:string};try{value=await response.json();}catch{throw new Error(requireLogin?'Cannot reach the game server. Please try again.':'Online play needs the game server. Your offline adventure is ready to play.');}
     if(!response.ok)throw Object.assign(new Error(value.error||'Connection interrupted. Please try again.'),{status:response.status});return value as T;
   }
   // Effects can carry a live entity (with its mesh, which refers back to it): send only plain data, once per object.
@@ -124,10 +133,14 @@ export function initOnline(game:GameBridge) {
     if(document.querySelector('#dialog-layer:not([hidden])')||!account)return;event.preventDefault();captureChatDraft();tab='world';render();if(!dialog.open)dialog.showModal();content.querySelector<HTMLInputElement>('.social-chat-input')?.focus();
   });
   function refreshButton(){const label=account?t(status,{code:party||''}):t('Play together');toggle.textContent=socialSlot?'👥':`👥 ${label}`;toggle.title=label;toggle.setAttribute('aria-label',t('Play together'));dialog.setAttribute('aria-label',t('Play together'));close.setAttribute('aria-label',t('Close online menu'));toggle.dataset.online=String(!!account);toggle.dataset.status=account?status:'';toggle.dataset.party=account&&party||'';}
+  /** The server champion's crown (server/champion.mjs) for the nameplates (nameplates.ts); none while offline. */
+  function crown(id:string|null){if(typeof CustomEvent==='function')globalThis.dispatchEvent?.(new CustomEvent('zg-champion',{detail:{id,self:!!id&&id===account?.id}}));}
   function expireSession(){
     if(!account)return;sessionEpoch++;stopped=true;if(reconnect)clearTimeout(reconnect);if(saveTimer)clearTimeout(saveTimer);
     clearChat();const previous=socket;socket=null;previous?.close();account=null;host=null;party=null;visiting=null;players.clear();rejectActions('Your session ended. Pending actions remain on this device.');
-    authority(null);world().clearRemotePlayers();game.setVisiting(null);game.setPersistence(null);game.setActionHandler(null);const previousOffline=offline||game.getOfflineState();if(previousOffline)game.applyState(previousOffline);offline=null;
+    authority(null);world().clearRemotePlayers();crown(null);game.setVisiting(null);game.setPersistence(null);game.setActionHandler(null);
+    if(requireLogin){signedOutLock();announce('Your online session ended. Sign in again to continue.');return;}
+    const previousOffline=offline||game.getOfflineState();if(previousOffline)game.applyState(previousOffline);offline=null;
     status='Play together';setSaveStatus('● Offline adventure restored');refreshButton();render();announce('Your online session ended. Sign in again to continue; pending online progress is kept on this device.');
   }
   function renderPlayers(){
@@ -172,7 +185,7 @@ export function initOnline(game:GameBridge) {
     if(saving)return saving;if(!actionQueue.length||!account||stopped)return;
     const accountId=account.id,epoch=sessionEpoch;
     saving=(async()=>{while(actionQueue.length&&account?.id===accountId&&sessionEpoch===epoch&&!stopped){const job=actionQueue[0];
-      try{if(!job.submitted){job.expectedRevision=revision;job.submitted=true;rememberActions();}const {submitted,...body}=job;const reply=await api<ActionReply>('actions',body);if(account?.id!==accountId||sessionEpoch!==epoch)return;
+      try{if(!job.submitted){job.expectedRevision=revision;job.submitted=true;rememberActions();}const {submitted,retried,...body}=job;const reply=await api<ActionReply>('actions',body);if(account?.id!==accountId||sessionEpoch!==epoch)return;
         if(reply.revision>=revision){revision=reply.revision;game.applyAuthoritativeState(reply.profile);}actionQueue.shift();rememberActions();waiting.get(job.requestId)?.resolve(reply);waiting.delete(job.requestId);
         // A new unsubmitted intent follows the revision returned by the preceding transaction.
         rememberActions();
@@ -181,8 +194,10 @@ export function initOnline(game:GameBridge) {
         if(statusCode===401){expireSession();return;}
         if(statusCode===409){try{const fresh=await api<Session>('auth/session');if(account?.id!==accountId||sessionEpoch!==epoch)return;if(!fresh.account){expireSession();return;}if(fresh.account.id!==accountId){begin(fresh);return;}revision=fresh.revision||0;if(fresh.profile)game.applyAuthoritativeState(fresh.profile);
           // The save moved on under this intent (a friend picked up shared loot, a co-op kill): try it once more on the fresh save.
-          if(!(job as ActionJob&{retried?:boolean}).retried){(job as ActionJob&{retried?:boolean}).retried=true;job.expectedRevision=revision;rememberActions();continue;}}catch{break;}}
-        if(statusCode&&statusCode<500){actionQueue.shift();rememberActions();waiting.get(job.requestId)?.reject(error as Error);waiting.delete(job.requestId);continue;}
+          if(!job.retried){job.retried=true;job.expectedRevision=revision;rememberActions();continue;}}catch{break;}}
+        if(statusCode&&statusCode<500){actionQueue.shift();rememberActions();waiting.get(job.requestId)?.reject(error as Error);waiting.delete(job.requestId);
+          // A refused intent changed nothing on the server: the page already shows the saved adventure.
+          status=socket?.readyState===WebSocket.OPEN?'Online':'Reconnecting';setSaveStatus(actionQueue.length?'◌ Saving online…':'● Saved online');refreshButton();continue;}
         status='Action pending';setSaveStatus('○ Action pending — reconnect to finish');refreshButton();break;
       }
     }})().finally(()=>{saving=null;if(actionQueue.length&&account&&!stopped){if(sessionEpoch!==epoch)void flushSave();else saveTimer=window.setTimeout(()=>void flushSave(),5000);}});
@@ -202,6 +217,7 @@ export function initOnline(game:GameBridge) {
     socket.addEventListener('message',event=>{
       if(socket!==connection)return;let message:any;try{message=JSON.parse(event.data);}catch{return;}
       if(message.type==='welcome'){friends=message.friends||[];requests=message.requests||[];}
+      else if(message.type==='champion')crown(typeof message.id==='string'?message.id:null);
       else if(message.type==='joined')joined(message);
       else if(message.type==='authority'){if(message.environment)world().applyEnvironmentSnapshot(message.environment);authority(message.host,message.enemies);}
       else if(message.type==='enter'||message.type==='pose'){if(message.player?.id)players.set(message.player.id,message.player);renderPlayers();}
@@ -236,7 +252,7 @@ export function initOnline(game:GameBridge) {
       else if(message.type==='error'){if(chatMatches(message.requestId,connection))releaseChat();if(!message.requestId){chatReady=!!chatRoom&&connection.readyState===WebSocket.OPEN;refreshChatControls();}if(restoring&&fallbackJoin){desiredParty=null;restoring=false;joined(fallbackJoin);}announce(message.message||'That action was unavailable.');}
     });
     socket.addEventListener('close',event=>{
-      if(socket!==connection)return;chatReady=false;releaseChat(chatAttempt?.pending?'Connection interrupted. Your chat draft is kept.':undefined);authority(null);world().clearRemotePlayers();players.clear();
+      if(socket!==connection)return;chatReady=false;releaseChat(chatAttempt?.pending?'Connection interrupted. Your chat draft is kept.':undefined);authority(null);world().clearRemotePlayers();crown(null);players.clear();
       if(!account||stopped)return;if(event.code===4001){stopped=true;rejectActions('This online adventure is active in another tab.');if(saveTimer)clearTimeout(saveTimer);game.setPersistence(()=>{});status='Open in another tab';announce('This online adventure is active in another tab. Close it there, then reconnect here.');}
       else{status='Reconnecting';reconnect=window.setTimeout(connect,2500);const epoch=sessionEpoch;void api<Session>('auth/session').then(session=>{if(socket===connection&&sessionEpoch===epoch&&account&&!session.account)expireSession();}).catch(()=>{});}refreshButton();
     });
@@ -248,15 +264,43 @@ export function initOnline(game:GameBridge) {
     const previous=socket;socket=null;previous?.close();if(reconnect)clearTimeout(reconnect);if(saveTimer)clearTimeout(saveTimer);
     if(!account)offline=structuredClone(game.getState());account=session.account;friends=session.friends||[];requests=session.requests||[];stopped=false;
     revision=session.revision||0;try{const raw=localStorage.getItem(`cute-game-actions-${account.id}`),cached=raw?JSON.parse(raw):null;if(Array.isArray(cached))actionQueue=cached.filter(job=>job&&typeof job.requestId==='string'&&typeof job.type==='string'&&job.rulesVersion===1&&Number.isSafeInteger(job.expectedRevision)).slice(0,100);}catch{/* Keep this account's in-memory queue if storage is unavailable. */}
-    game.setPersistence(queueSave);game.setActionHandler(queueAction);game.applyState(session.profile);connect();render();void flushSave();announce('Welcome, {name}. Your online adventure is ready.',{name:account.name});
+    game.setPersistence(queueSave);game.setActionHandler(queueAction);game.applyState(session.profile);connect();render();syncLock();void flushSave();announce('Welcome, {name}. Your online adventure is ready.',{name:account.name});
+  }
+  /** Shows the sign-in (or server) screen over everything; nothing is saved on this device while it is up. */
+  // The welcome card's language picker sits behind the sign-in screen, so the sign-in screen carries its own.
+  function languagePicker(){const wrap=el('div','language-picker social-language'),select=document.createElement('select');select.setAttribute('aria-label','Language');
+    for(const code of LANGUAGES){const option=document.createElement('option');option.value=code;option.textContent=LANGUAGE_NAMES[code];option.setAttribute('data-i18n-skip','');option.selected=getLanguage()===code;select.append(option);}
+    select.addEventListener('change',()=>{if(isLanguage(select.value))setLanguage(select.value);});wrap.append(select);return wrap;}
+  function showLock(){if(!lockShown){lockShown=true;game.setPersistence(()=>{});}close.hidden=true;
+    render();if(!dialog.open)dialog.showModal();}
+  /** After each session check or sign-in: shows the lock while it applies, and lifts it once it no longer does. */
+  function syncLock(){
+    if(locked()){if(server!=='checking'||lockShown)showLock();return;}
+    close.hidden=false;if(!lockShown)return;lockShown=false;if(account)setSaveStatus('● Saved online');else game.setPersistence(null);if(dialog.open)dialog.close();
+  }
+  /** Signed out (or expired) on a login-required server: a fresh garden behind the sign-in screen, never the offline save. */
+  function signedOutLock(){
+    offline=null;register=false;showLock();game.applyState(newGame());status='Play together';setSaveStatus('○ Signed out');refreshButton();render();
+  }
+  function checkServer(){
+    if(serverRetry){clearTimeout(serverRetry);serverRetry=undefined;}const epoch=sessionEpoch;
+    void api<Session>('auth/session').then(session=>{
+      if(sessionEpoch!==epoch)return;requireLogin=session.requireLogin===true;server='ready';
+      if(session.account)begin(session);else syncLock();
+    }).catch(()=>{
+      // Without its server the game cannot be played: keep asking (the static Pages edition never gets here).
+      if(sessionEpoch!==epoch||server==='ready')return;server='unreachable';syncLock();serverRetry=window.setTimeout(checkServer,5000);
+    });
   }
   async function signOut(){
     const originalEpoch=sessionEpoch;await flushSave();if(sessionEpoch!==originalEpoch)return;if(pendingSave()){announce('Your latest progress is still waiting to save. Reconnect before signing out.');return;}
     stopped=true;const epoch=sessionEpoch;
     try{await api('auth/logout',{});if(sessionEpoch!==epoch)return;}catch(error){if(sessionEpoch!==epoch)return;if((error as {status?:number}).status===401){expireSession();return;}stopped=false;announce((error as Error).message);return;}
     sessionEpoch++;
-    clearChat();stopped=true;if(reconnect)clearTimeout(reconnect);if(saveTimer)clearTimeout(saveTimer);socket?.close();socket=null;account=null;host=null;party=null;visiting=null;players.clear();authority(null);world().clearRemotePlayers();
-    game.setVisiting(null);game.setPersistence(null);game.setActionHandler(null);const state=offline||game.getOfflineState();if(state)game.applyState(state);setSaveStatus('● Saved on this device');status='Play together';refreshButton();render();announce('Your offline adventure is restored.');
+    clearChat();stopped=true;if(reconnect)clearTimeout(reconnect);if(saveTimer)clearTimeout(saveTimer);socket?.close();socket=null;account=null;host=null;party=null;visiting=null;players.clear();authority(null);world().clearRemotePlayers();crown(null);
+    game.setVisiting(null);game.setPersistence(null);game.setActionHandler(null);
+    if(requireLogin){signedOutLock();announce('You signed out. Sign in to keep playing.');return;}
+    const state=offline||game.getOfflineState();if(state)game.applyState(state);setSaveStatus('● Saved on this device');status='Play together';refreshButton();render();announce('Your offline adventure is restored.');
   }
   async function reconnectOnline(){
     const epoch=++sessionEpoch;if(reconnect)clearTimeout(reconnect);stopped=true;const previous=socket;socket=null;previous?.close();
@@ -268,9 +312,15 @@ export function initOnline(game:GameBridge) {
   async function friendAction(action:string,id:string){try{const list=await api<{friends:Explorer[];requests:Explorer[]}>(`friends/${action}`,{id});friends=list.friends;requests=list.requests;render();}catch(error){announce((error as Error).message);}}
   function renderChat(){const log=content.querySelector('.social-chat-log');if(!log)return;log.replaceChildren(...chat.slice(-30).map(entry=>{const line=el('p');line.append(el('strong','',entry.name+': '),document.createTextNode(entry.message));return line;}));log.scrollTop=log.scrollHeight;}
   function render(){
-    captureChatDraft();content.replaceChildren();tabs.replaceChildren();authSubmit=null;setNotice('');heading.textContent=t(account?'Your online world':'Play together');
+    captureChatDraft();content.replaceChildren();tabs.replaceChildren();authSubmit=null;setNotice('');heading.textContent=t(account?'Your online world':locked()?'Sign in to play':'Play together');
+    if(locked()){content.append(languagePicker());const note=document.querySelector('.welcome-card .local-note');if(note)note.textContent=t('Sign in to play');}
+    if(!account&&server!=='ready'){
+      heading.textContent=t(server==='checking'?'Connecting to the game server…':'Cannot reach the game server — retrying…');
+      content.append(el('p','social-intro',t('Zoo Garden plays on its game server. This screen tries again every few seconds.')));
+      if(server==='unreachable')content.append(button('Retry now',checkServer,'social-primary'));return;
+    }
     if(!account){
-      content.append(el('p','social-intro',t('Make a home, meet friends, and explore the same world. Your offline adventure stays saved separately.')));
+      content.append(el('p','social-intro',t(requireLogin?'Sign in or create an account to play. Your adventure saves on the game server.':'Make a home, meet friends, and explore the same world. Your offline adventure stays saved separately.')));
       const form=el('form','social-auth');const username=labeledInput('Username','text','username'),password=labeledInput('Password','password','password');username.input.autocomplete='username';username.input.pattern='[a-zA-Z0-9_]{3,24}';username.input.minLength=3;username.input.maxLength=24;password.input.autocomplete=register?'new-password':'current-password';password.input.minLength=8;password.input.maxLength=128;
       form.append(username.wrapper,password.wrapper);let display:HTMLInputElement|undefined;
       if(register){const name=labeledInput('Explorer name','text','display-name');name.input.maxLength=20;name.input.value=game.getState().name;display=name.input;form.append(name.wrapper);}
@@ -292,7 +342,7 @@ export function initOnline(game:GameBridge) {
       content.append(el('h3','',t('Your friends')));if(!friends.length)content.append(el('p','social-small',t('Add a friend by username to visit each other’s gardens.')));
       for(const friend of friends)content.append(personRow(friend,[button('Visit garden',()=>{sendRoom({type:'visit',id:friend.id});dialog.close();}),button('Remove friend',()=>void friendAction('remove',friend.id),'social-link')]));
     }else{
-      content.append(el('h3','',account.name),el('p','',t('Username: {username}',{username:account.username||''})),el('p','social-small',t('Your progress saves to this server. Returning to offline play restores the adventure you left there.')),button('Save now',async()=>{queueSave(game.getState());await flushSave();if(account)announce(pendingSave()?'Save pending. Please keep this page open.':'Online adventure saved.');}),button('Reconnect',reconnectOnline),button('Sign out and play offline',()=>void signOut(),'social-primary'));
+      content.append(el('h3','',account.name),el('p','',t('Username: {username}',{username:account.username||''})),el('p','social-small',t(requireLogin?'Your progress saves to this server.':'Your progress saves to this server. Returning to offline play restores the adventure you left there.')),button('Save now',async()=>{queueSave(game.getState());await flushSave();if(account)announce(pendingSave()?'Save pending. Please keep this page open.':'Online adventure saved.');}),button('Reconnect',reconnectOnline),button(requireLogin?'Sign out':'Sign out and play offline',()=>void signOut(),'social-primary'));
     }
   }
   game.onFrame(dt=>{
@@ -318,5 +368,6 @@ export function initOnline(game:GameBridge) {
     if(saveStatusSource)setSaveStatus(saveStatusSource);
   });
   refreshButton();
-  const initialEpoch=sessionEpoch;void api<Session>('auth/session').then(session=>{if(sessionEpoch===initialEpoch&&session.account)begin(session);}).catch(()=>{/* Offline play works without a server. */});
+  game.setStartGate(()=>{if(!locked())return true;showLock();return false;});
+  checkServer();
 }

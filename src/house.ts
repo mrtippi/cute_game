@@ -181,8 +181,9 @@ export function useSpots() { return FURNITURE.filter(p => p.use); }
 
 /**
  * The memory room (屋根裏の思い出部屋), joined to the back of the cottage behind the low middle wall and entered through
- * the doorway in the study's back wall. Below level 65 a locked door stands in the doorway. Trophies for every title
- * stand on pedestals along the walls with medals hung above them (attic-view.ts); the title board picks the title to wear.
+ * the doorway in the study's back wall. Below level 65 a locked door stands in the doorway. Trophies for the titles held
+ * (the rarest 36 once there are more) stand on pedestals along the walls with medals hung above them (attic-view.ts);
+ * the title board lists every title and picks the one to wear.
  */
 export const ATTIC_LEVEL = 65;
 export const ATTIC = {

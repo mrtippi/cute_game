@@ -45,6 +45,28 @@ test('an uncertain action keeps the exact receipt identity and revision when ret
   const sent=app.requests.filter(r=>r.url.endsWith('/actions'));assert.equal(sent.length,2);assert.equal(sent[1].options.body,first);
   assert.equal(app.bridge.getState().name,'Newer','an older replay profile cannot replace newer server state');
 });
+const conflict={ok:false,status:409,json:async()=>({error:'A newer adventure is already saved. Reconnect to load it.'})};
+test('a save that moved on under an intent reloads it and sends the intent once more on the fresh revision',async()=>{
+  let conflicts=1;
+  const app=await fixture({responseFor:(url,_options,session)=>{if(url.endsWith('/actions')&&conflicts){conflicts--;session.revision=7;session.profile=newGame('Moved on');return conflict;}}});
+  const sessions=()=>app.requests.filter(r=>r.url.endsWith('/auth/session')).length,before=sessions();
+  const reply=await app.bridge.perform({type:'settings',payload:{settings:{sound:false}}});
+  const sent=app.requests.filter(r=>r.url.endsWith('/actions')).map(r=>JSON.parse(r.options.body));
+  assert.equal(reply.revision,8);assert.equal(sessions()-before,1);
+  assert.equal(sent.length,2);assert.equal(sent[1].requestId,sent[0].requestId);assert.deepEqual(sent.map(job=>job.expectedRevision),[0,7]);
+  assert.ok(sent.every(job=>!('retried'in job)&&!('submitted'in job)),'queue bookkeeping stays on this device');
+  assert.equal(app.saveStatus.textContent,'● Saved online');assert.deepEqual(JSON.parse(app.storage.get('cute-game-actions-alice')),[]);
+});
+test('a retried intent that meets another conflict is refused once, without looping',async()=>{
+  const app=await fixture({responseFor:(url,_options,session)=>{if(url.endsWith('/actions')){session.revision++;return conflict;}}});
+  const sessions=()=>app.requests.filter(r=>r.url.endsWith('/auth/session')).length,before=sessions();
+  await assert.rejects(app.bridge.perform({type:'settings',payload:{settings:{sound:false}}}),/newer adventure/);await flush();
+  assert.equal(app.requests.filter(r=>r.url.endsWith('/actions')).length,2);assert.equal(sessions()-before,2);
+  assert.deepEqual(JSON.parse(app.storage.get('cute-game-actions-alice')),[]);assert.equal(app.saveStatus.textContent,'● Saved online','nothing is left waiting to save');
+  await app.bridge.perform({type:'settings',payload:{settings:{sound:true}}}).catch(()=>{});
+  const sent=app.requests.filter(r=>r.url.endsWith('/actions')).map(r=>JSON.parse(r.options.body));
+  assert.equal(sent.length,4,'the next intent gets its own retry');
+});
 test('Enter opens chat but composition and typing keep their normal Enter behavior',async()=>{
   const app=await fixture();app.dialog.close();const key=app.document.listeners.get('keydown');let prevented=0;
   key({code:'Enter',key:'Enter',isComposing:true,target:app.body,preventDefault(){prevented++;}});assert.equal(app.dialog.open,false);
@@ -57,13 +79,13 @@ test('selecting an explorer offers a friend request addressed by immutable playe
   const sent=app.requests.find(r=>r.url.endsWith('/friends/request'));assert.deepEqual(JSON.parse(sent.options.body),{id:'bob'});
 });
 
-async function fixture({failFirstAction=false,responseFor}={}){
-  let session=sessionFor(),state=newGame('Offline'),language='en',timerId=0;
-  const document=new Element(),window=new Element(),body=new Element(),slot=new Element(),timers=new Map(),sockets=[],requests=[],notices=[],visits=[],languageListeners=[],storage=new Map(),spawned=[];
-  document.body=body;document.createElement=tag=>Object.assign(new Element(tag),{ownerDocument:document});document.createTextNode=textContent=>Object.assign(new Element('text'),{textContent});document.querySelector=selector=>selector==='#social-slot'?slot:null;
+async function fixture({failFirstAction=false,responseFor,initial,down=false}={}){
+  let session=initial??sessionFor(),state=newGame('Offline'),language='en',timerId=0;
+  const document=new Element(),window=new Element(),body=new Element(),slot=new Element(),saveStatus=new Element('span'),timers=new Map(),sockets=[],requests=[],notices=[],visits=[],languageListeners=[],storage=new Map(),spawned=[];
+  document.body=body;document.createElement=tag=>Object.assign(new Element(tag),{ownerDocument:document});document.createTextNode=textContent=>Object.assign(new Element('text'),{textContent});document.querySelector=selector=>selector==='#social-slot'?slot:selector==='#save-status'?saveStatus:null;
   const setTimeout=(fn,delay)=>{const id=++timerId;timers.set(id,{fn,delay});return id;},clearTimeout=id=>timers.delete(id);
   window.setTimeout=setTimeout;window.clearTimeout=clearTimeout;
-  const i18n={t:(text,params={})=>(language==='vi'?VI_ONLINE[text]||text:text).replace(/\{(\w+)\}/g,(match,key)=>key in params?String(params[key]):match),onLanguageChange:fn=>{languageListeners.push(fn);return()=>{};}};
+  const i18n={t:(text,params={})=>(language==='vi'?VI_ONLINE[text]||text:text).replace(/\{(\w+)\}/g,(match,key)=>key in params?String(params[key]):match),onLanguageChange:fn=>{languageListeners.push(fn);return()=>{};},LANGUAGES:['en','vi','ja'],LANGUAGE_NAMES:{en:'English',vi:'Tiếng Việt',ja:'日本語'},getLanguage:()=>language,isLanguage:value=>['en','vi','ja'].includes(value),setLanguage:next=>{language=next;for(const fn of languageListeners)fn();}};
   class Socket extends Element {
     static OPEN=1;readyState=1;sent=[];failSend=false;
     constructor(url){super();this.url=String(url);sockets.push(this);}
@@ -71,20 +93,20 @@ async function fixture({failFirstAction=false,responseFor}={}){
     message(data){this.listeners.get('message')?.({data:JSON.stringify(data)});}
     close(code=1000){this.readyState=3;this.listeners.get('close')?.({code});}
   }
-  const world=new Proxy({},{get:(object,key)=>Reflect.get(object,key)??(()=>{})}),bridge={getState:()=>state,getPresence:()=>({planet:state.planet,x:0,z:0}),getWorld:()=>world,getOfflineState:()=>newGame('Offline'),setPersistence(){},setActionHandler(fn){this.perform=fn;},applyAuthoritativeState(value){state=value;},clearNetworkDrops(){spawned.length=0;},spawnNetworkDrop(drop){spawned.push(drop);},removeNetworkDrop(){},releaseNetworkDrop(){},applyAuthorityHealth(){},setNetworkHooks(){},applyState:value=>{state=value;},showNotice:text=>notices.push(text),setVisiting:(...args)=>visits.push(args),onFrame(fn){this.frame=fn;},onAction(){}};
-  const exports={};vm.runInNewContext(compiled,{exports,document,window,clearTimeout,setTimeout,URL,structuredClone,crypto:{randomUUID},location:{href:'https://game.example/',protocol:'https:'},localStorage:{getItem:key=>storage.get(key)??null,setItem:(key,value)=>storage.set(key,value)},WebSocket:Socket,require:name=>name==='./i18n.ts'?i18n:name==='./gameplay-controls.ts'?{gameplayKey}:{newGame,parseSave},fetch:async(url,options)=>{requests.push({url,options});if(url.endsWith('/actions')&&failFirstAction){failFirstAction=false;throw new Error('Connection reset');}const response=await responseFor?.(url,options,session);if(response)return response;return {ok:true,json:async()=>url.includes('/auth/')?structuredClone(session):url.endsWith('/actions')?{ok:true,authorityVersion:1,profile:structuredClone(session.profile),revision:++session.revision,result:true}:{ok:true}};}});
-  exports.initOnline(bridge);await flush();slot.children[0].click();
+  const world=new Proxy({},{get:(object,key)=>Reflect.get(object,key)??(()=>{})}),bridge={getState:()=>state,getPresence:()=>({planet:state.planet,x:0,z:0}),getWorld:()=>world,getOfflineState:()=>newGame('Offline'),setPersistence(fn){this.persistence=fn;},setStartGate(fn){this.startGate=fn;},setActionHandler(fn){this.perform=fn;},applyAuthoritativeState(value){state=value;},clearNetworkDrops(){spawned.length=0;},spawnNetworkDrop(drop){spawned.push(drop);},removeNetworkDrop(){},releaseNetworkDrop(){},applyAuthorityHealth(){},setNetworkHooks(){},applyState:value=>{state=value;},showNotice:text=>notices.push(text),setVisiting:(...args)=>visits.push(args),onFrame(fn){this.frame=fn;},onAction(){}};
+  const exports={};vm.runInNewContext(compiled,{exports,document,window,clearTimeout,setTimeout,URL,structuredClone,crypto:{randomUUID},location:{href:'https://game.example/',protocol:'https:'},localStorage:{getItem:key=>storage.get(key)??null,setItem:(key,value)=>storage.set(key,value)},WebSocket:Socket,require:name=>name==='./i18n.ts'?i18n:name==='./gameplay-controls.ts'?{gameplayKey}:{newGame,parseSave},fetch:async(url,options)=>{requests.push({url,options});if(down)throw new TypeError('Failed to fetch');if(url.endsWith('/actions')&&failFirstAction){failFirstAction=false;throw new Error('Connection reset');}const response=await responseFor?.(url,options,session);if(response)return response;return {ok:true,json:async()=>url.includes('/auth/')?structuredClone(session):url.endsWith('/actions')?{ok:true,authorityVersion:1,profile:structuredClone(session.profile),revision:++session.revision,result:true}:{ok:true}};}});
+  exports.initOnline(bridge);await flush();if(session.account)slot.children[0].click();
   const all=()=>elements(body),find=name=>all().find(node=>node.name===name),button=label=>{const node=all().find(node=>node.tagName==='button'&&node.textContent===label);assert.ok(node,`Missing button ${label}`);return node;};
   const join=({party=null,planet='home',socket=sockets.at(-1)}={})=>socket.message({type:'joined',host:session.account?.id,planet,party,room:`${party||'public'}:${planet}`,players:session.account?[session.account]:[]});
-  join();
-  return {body,document,sockets,requests,notices,visits,bridge,all,find,button,join,storage,spawned,
+  if(session.account)join();
+  return {body,document,sockets,requests,notices,visits,bridge,all,find,button,join,storage,spawned,saveStatus,
     get socket(){return sockets.at(-1);},get input(){return find('world-chat');},get sendButton(){return all().find(node=>node.className==='social-chat-send');},get log(){return all().find(node=>node.className==='social-chat-log');},get dialog(){return all().find(node=>node.tagName==='dialog');},
     get chatPackets(){return sockets.flatMap(socket=>socket.sent).filter(message=>message.type==='chat');},
     draft(value){const input=find('world-chat');assert.ok(input);input.value=value;input.listeners.get('input')?.();},
     submit(){const form=all().find(node=>node.tagName==='form'&&node.children.some(child=>child.name==='world-chat'));assert.ok(form);form.listeners.get('submit')({preventDefault(){}});},
     fire(delay){const entry=[...timers].find(([,timer])=>timer.delay===delay);assert.ok(entry,`Missing timer ${delay}`);timers.delete(entry[0]);entry[1].fn();},
     setLanguage(value){language=value;for(const fn of languageListeners)fn();},
-    setSession(value){session=value;},
+    setSession(value){session=value;},setDown(value){down=value;},get close(){return all().find(node=>node.className==='social-close');},
     async signIn(id){session=sessionFor(id);find('username').value=id;find('password').value='test-password';const form=all().find(node=>node.className==='social-auth');await form.listeners.get('submit')({preventDefault(){}});await flush();join();if(!find('world-chat'))button('🌍 World').click();},
   };
 }
@@ -250,4 +272,41 @@ test('an older reconnect response cannot replace the account loaded by a newer r
   let release,sessionCalls=0;const app=await fixture({responseFor:url=>{if(url.endsWith('/auth/session')&&++sessionCalls===2)return new Promise(resolve=>{release=resolve;});}});
   app.button('🏡 Account').click();const reconnect=app.button('Reconnect'),first=reconnect.click();await flush();app.setSession(sessionFor('bob'));await reconnect.click();
   release({ok:true,json:async()=>sessionFor('alice')});await first;assert.equal(app.bridge.getState().name,'bob');
+});
+
+test('a login-required server shows a sign-in screen that blocks offline play until an account signs in',async()=>{
+  const app=await fixture({initial:{account:null,requireLogin:true}});
+  assert.equal(app.dialog.open,true);assert.ok(app.find('username'));assert.ok(app.find('password'));
+  assert.equal(app.bridge.startGate(),false,'the welcome card cannot start an offline game');
+  assert.equal(typeof app.bridge.persistence,'function','nothing is saved on this device behind the sign-in screen');
+  assert.equal(app.close.hidden,true);app.close.click();assert.equal(app.dialog.open,true);
+  const cancel={prevented:false,preventDefault(){this.prevented=true;}};app.dialog.listeners.get('cancel')(cancel);assert.equal(cancel.prevented,true);
+  app.dialog.close();app.dialog.listeners.get('close')();app.fire(undefined);assert.equal(app.dialog.open,true,'a forced close opens the sign-in screen again');
+  assert.ok(app.all().some(node=>node.textContent==='Sign in or create an account to play. Your adventure saves on the game server.'));
+  await app.signIn('alice');
+  assert.equal(app.dialog.open,false);assert.equal(app.bridge.startGate(),true);assert.equal(app.bridge.getState().name,'alice');assert.equal(app.close.hidden,false);
+  app.button('🏡 Account').click();assert.ok(!app.all().some(node=>node.textContent==='Sign out and play offline'));
+  app.button('Sign out').click();await flush();await flush();
+  assert.equal(app.dialog.open,true);assert.ok(app.find('username'));assert.equal(app.bridge.startGate(),false);
+  assert.notEqual(app.bridge.getState().name,'Offline','signing out never switches to the offline save');assert.match(app.notices.at(-1),/signed out/);
+});
+
+test('an expired session on a login-required server returns to the sign-in screen, not offline play',async()=>{
+  const app=await fixture({initial:{...sessionFor('alice'),requireLogin:true}});app.dialog.close();
+  assert.equal(app.bridge.startGate(),true);
+  app.setSession({account:null,requireLogin:true});app.socket.close();await flush();
+  assert.equal(app.dialog.open,true);assert.ok(app.find('username'));assert.equal(app.bridge.startGate(),false);
+  assert.notEqual(app.bridge.getState().name,'Offline');assert.match(app.notices.at(-1),/Sign in again/);
+});
+
+test('an unreachable server shows a retrying screen instead of offline play',async()=>{
+  const app=await fixture({initial:{account:null,requireLogin:true},down:true});
+  assert.equal(app.dialog.open,true);assert.ok(!app.find('username'));assert.ok(app.button('Retry now'));assert.equal(app.bridge.startGate(),false);
+  app.fire(5000);await flush();assert.equal(app.dialog.open,true,'still down: still waiting');
+  app.setDown(false);app.fire(5000);await flush();assert.ok(app.find('username'),'the server answered: sign in');
+});
+
+test('a server without required login keeps optional sign-in and offline play',async()=>{
+  const app=await fixture({initial:{account:null,requireLogin:false}});
+  assert.equal(app.dialog.open,false);assert.equal(app.bridge.startGate(),true);assert.equal(app.bridge.persistence,undefined);
 });

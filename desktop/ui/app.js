@@ -57,8 +57,8 @@ async function accountsPage() {
       <td>Lv.${a.level}</td><td>Hạng ${a.villageRank}</td><td class="small">${esc(a.title || '—')}</td><td>${a.days} ngày</td><td>${a.videos}</td><td class="small">${ago(a.lastPlayed)}</td>
       <td>${a.archived ? '<span class="chip off">Lưu trữ</span>' : a.running ? '<span class="chip on">Đang chạy</span>' : a.schedule?.enabled ? `<span class="chip wait">Lịch ${esc(a.schedule.start)}</span>` : '<span class="chip off">Nghỉ</span>'}</td>
       <td class="row">${a.archived ? `<button class="btn small" data-unarchive="${a.id}">Khôi phục</button><button class="btn small danger" data-del="${a.id}">Xoá</button>`
-        : `${a.running ? `<button class="btn small danger" data-stop="${a.id}">Dừng</button>` : `<button class="btn small primary" data-run="${a.id}">Chạy ngay</button>`}<button class="btn small" data-edit="${a.id}">Sửa</button>${a.online ? `<button class="btn small" data-online="${a.id}" data-on="${a.online.enabled ? 1 : 0}">${a.online.enabled ? 'Về chơi offline' : 'Chơi online'}</button>` : `<button class="btn small" data-link="${a.id}" ${a.running || a.linking ? 'disabled' : ''}>${a.linking ? 'Đang liên kết…' : 'Chơi online (server trên máy này)'}</button>`}<button class="btn small" data-open="${esc(a.videosDir)}">Video</button><button class="btn small" data-archive="${a.id}">Lưu trữ</button>`}</td></tr>`;
-  $('#page-accounts').innerHTML = `<div class="row"><div><h1>Tài khoản</h1><p class="sub">Mỗi acc là một thư mục riêng; tên nhân vật trong game bằng tiếng Nhật.</p></div><button class="btn primary" id="new-acc" style="margin-left:auto">＋ Tạo acc mới</button></div>
+        : `${a.running ? `<button class="btn small danger" data-stop="${a.id}">Dừng</button>` : `<button class="btn small primary" data-run="${a.id}">Chạy ngay</button>`}<button class="btn small" data-edit="${a.id}">Sửa</button>${a.online ? (a.online.enabled ? '' : `<button class="btn small" data-online="${a.id}">Chơi online</button>`) : `<button class="btn small" data-link="${a.id}" ${a.running || a.linking ? 'disabled' : ''} title="Server game yêu cầu đăng nhập: acc chưa liên kết sẽ tự liên kết trước lần chạy đầu">${a.linking ? 'Đang liên kết…' : 'Chơi online (server trên máy này)'}</button>`}<button class="btn small" data-open="${esc(a.videosDir)}">Video</button><button class="btn small" data-archive="${a.id}">Lưu trữ</button>`}</td></tr>`;
+  $('#page-accounts').innerHTML = `<div class="row"><div><h1>Tài khoản</h1><p class="sub">Mỗi acc là một thư mục riêng; tên nhân vật trong game bằng tiếng Nhật. Server game yêu cầu đăng nhập nên mọi acc chơi online (không quay về offline được).</p></div><button class="btn primary" id="new-acc" style="margin-left:auto">＋ Tạo acc mới</button></div>
     ${active.length ? `<table><tr><th>Acc</th><th>Cấp</th><th>Làng</th><th>Danh hiệu</th><th>Đã chơi</th><th>Video</th><th>Lần chơi cuối</th><th>Trạng thái</th><th></th></tr>${active.map(row).join('')}</table>` : '<div class="empty">Chưa có acc nào. Bấm “Tạo acc mới”.</div>'}
     ${archived.length ? `<h2>Đã lưu trữ</h2><table>${archived.map(row).join('')}</table>` : ''}`;
   $('#new-acc').onclick = () => accountForm();
@@ -66,7 +66,7 @@ async function accountsPage() {
   document.querySelectorAll('[data-stop]').forEach(b => b.onclick = safe(async () => { await call('stop', b.dataset.stop); render(); }));
   document.querySelectorAll('[data-edit]').forEach(b => b.onclick = () => accountForm(list.find(a => a.id === b.dataset.edit)));
   document.querySelectorAll('[data-link]').forEach(b => b.onclick = () => onlineForm(list.find(a => a.id === b.dataset.link)));
-  document.querySelectorAll('[data-online]').forEach(b => b.onclick = safe(async () => { const on = b.dataset.on !== '1'; await call('setOnlinePlay', b.dataset.online, on); toast(on ? 'Từ clip sau acc chơi online' : 'Từ clip sau acc chơi offline (từ save offline cũ)'); render(); }));
+  document.querySelectorAll('[data-online]').forEach(b => b.onclick = safe(async () => { await call('setOnlinePlay', b.dataset.online, true); toast('Từ clip sau acc chơi online'); render(); }));
   document.querySelectorAll('[data-open]').forEach(b => b.onclick = () => window.api.open(b.dataset.open));
   document.querySelectorAll('[data-archive]').forEach(b => b.onclick = safe(async () => { await call('editAccount', b.dataset.archive, { archived: true }); await call('setSchedule', b.dataset.archive, { enabled: false }); render(); }));
   document.querySelectorAll('[data-unarchive]').forEach(b => b.onclick = safe(async () => { await call('editAccount', b.dataset.unarchive, { archived: false }); render(); }));
@@ -80,7 +80,7 @@ function onlineForm(a) {
     <div class="small">
       <p>Acc sẽ có một tài khoản trên <b>server game chạy trên chính máy này</b> (127.0.0.1), không phải server công khai nào. Mật khẩu được tạo ngẫu nhiên và lưu trong account.json của acc.</p>
       <p>Save offline hiện tại (cấp Lv.${a.level}, đồ, tiến độ) được <b>chuyển lên server</b>; từ đó tiến độ của acc nằm trên server máy này (thư mục dữ liệu/server).</p>
-      <p>Save offline <b>vẫn được giữ nguyên</b> trong hồ sơ trình duyệt làm bản dự phòng. Nếu sau này chuyển về chơi offline, acc chơi tiếp từ save offline cũ đó (tiến độ online không chép ngược về).</p>
+      <p>Save offline <b>vẫn được giữ nguyên</b> trong hồ sơ trình duyệt làm bản dự phòng, nhưng không chơi lại được: server game yêu cầu đăng nhập nên acc không quay về chơi offline. Acc chưa liên kết cũng tự liên kết trước lần chạy đầu.</p>
       <p>Mỗi clip acc ở trong nhóm riêng (private party) nên bot khác không lạc vào video.</p>
     </div>
     <div class="panel small mono" id="link-steps" hidden></div>
@@ -88,17 +88,23 @@ function onlineForm(a) {
   $('#link-go').onclick = safe(async () => {
     const go = $('#link-go'), steps = $('#link-steps'); go.disabled = true; steps.hidden = false; steps.textContent = 'Bắt đầu…';
     try { await call('linkOnline', a.id); } catch (e) { go.disabled = false; throw e; }
-    const poll = async () => {
-      const job = await call('linkState', a.id); if (!job) return;
-      steps.innerHTML = job.steps.map(s => `<div>· ${esc(s)}</div>`).join('') + (job.error ? `<div>⚠ ${esc(job.error)}</div>` : '');
-      if (job.running) { setTimeout(poll, 1000); return; }
+    followLink(a.id, steps, job => {
       $('#link-close').textContent = 'Đóng';
       if (job.error) { go.disabled = false; go.textContent = 'Thử lại'; return; }
       go.hidden = true; toast(`Đã liên kết: ${a.id} chơi online (Lv.${job.result?.level ?? '?'})`); render();
-    };
-    poll();
+    });
   });
   m.showModal();
+}
+/** An account's link job (backend linkState) shown step by step in `steps` until it ends; then done(job). */
+function followLink(id, steps, done) {
+  const poll = async () => {
+    const job = await call('linkState', id); if (!job) return;
+    steps.innerHTML = job.steps.map(s => `<div>· ${esc(s)}</div>`).join('') + (job.error ? `<div>⚠ ${esc(job.error)}</div>` : '');
+    if (job.running) { setTimeout(poll, 1000); return; }
+    done(job);
+  };
+  poll();
 }
 
 /** Create (no account) or edit an account: folder id, Japanese name, colour, play style; new ones also get a schedule. */
@@ -126,8 +132,16 @@ function accountForm(a) {
       const id = $('#f-id').value.trim(); if (!/^[a-z0-9_-]{2,24}$/i.test(id)) return toast('Tên thư mục: 2–24 chữ cái không dấu, số, - hoặc _.');
       await call('newAccount', { id, name, color, style: styleOut });
       await call('setSchedule', id, { enabled: $('#f-enabled').checked, start: $('#f-start').value || '08:00', clips: Number($('#f-clips').value) || 10 });
+      // The server requires login: the new account gets its online account right away (backend newAccount); show the steps.
+      f.innerHTML = `<h2 style="margin:0">Đã tạo acc ${esc(id)}: đang liên kết online</h2>
+        <p class="small">Server game yêu cầu đăng nhập nên acc mới được tạo tài khoản trên server game của máy này (127.0.0.1) ngay. Có thể đóng cửa sổ này; nếu lỗi, acc tự liên kết lại trước lần chạy đầu.</p>
+        <div class="panel small mono" id="link-steps">Bắt đầu…</div>
+        <div class="row" style="justify-content:flex-end"><button class="btn" value="cancel">Đóng</button></div>`;
+      render();
+      followLink(id, $('#link-steps'), job => { toast(job.error ? `⚠ Liên kết online ${id} lỗi: sẽ thử lại trước lần chạy đầu` : `Đã liên kết: ${id} chơi online`); render(); });
+      return;
     }
-    m.close(); toast(a ? 'Đã lưu' : 'Đã tạo acc'); render();
+    m.close(); toast('Đã lưu'); render();
   });
   m.showModal();
 }

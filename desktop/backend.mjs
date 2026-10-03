@@ -83,7 +83,15 @@ export const colors = () => COLORS;
 export const themes = () => Object.fromEntries(Object.entries(CLIPS).map(([id, c]) => [id, { ja: c.ja, vi: c.vi, icon: c.icon }]));
 /** The scenarios a schedule can mix (clips.mjs): 'auto' plus every clip theme. */
 export const scenarios = () => SCENARIOS;
-export function newAccount({ id, name, color, style }) { const a = createAccount(id, name, color, style ?? {}); setSchedule(a.id, { enabled: false }); return a.id; }
+/**
+ * A new account. The game server requires login (no offline play), so it is linked for online play right away, in the
+ * background: the page follows linkState(id). If that fails it is linked again before its first run (start).
+ */
+export async function newAccount({ id, name, color, style }) {
+  const a = await createAccount(id, name, color, style ?? {}, { link: false }); setSchedule(a.id, { enabled: false });
+  linkOnline(a.id).catch(error => say(`⚠ Liên kết online ${a.id} lỗi: ${error.message}`));
+  return a.id;
+}
 export function editAccount(id, patch) { updateAccount(id, patch); return true; }
 /** Delete = move the folder to accounts/_deleted (videos and save stay recoverable). */
 export function removeAccount(id) {
@@ -99,8 +107,9 @@ async function serverUp() { try { await fetch(GAME_URL, { signal: AbortSignal.ti
 export async function ensureServer() {
   if (await serverUp()) return true;
   if (!existsSync(join(REPO, 'dist'))) throw new Error('Chưa build game (npm run build trong cute_game).');
-  // The server keeps its own data next to the accounts (DATA_DIR), never inside the installed app.
-  server = spawn(NODE, ['server/server.mjs'], { cwd: REPO, stdio: 'ignore', windowsHide: true, env: { ...CHILD_ENV, DATA_DIR: `${DATA}/server` } });
+  // The server keeps its own data next to the accounts (DATA_DIR), never inside the installed app. It requires login
+  // (no offline play in the game), whatever this PC's environment says.
+  server = spawn(NODE, ['server/server.mjs'], { cwd: REPO, stdio: 'ignore', windowsHide: true, env: { ...CHILD_ENV, DATA_DIR: `${DATA}/server`, ZG_REQUIRE_LOGIN: '1' } });
   for (let i = 0; i < 20; i++) { await new Promise(r => setTimeout(r, 500)); if (await serverUp()) return true; }
   throw new Error('Server game không khởi động được.');
 }
@@ -109,17 +118,18 @@ export function stopServer() { if (server) { kill(server.pid); server = null; } 
 // ---- online play on this PC's server (bot/online.mjs) ---------------------------------------------------------
 /** Link jobs by account id: { running, steps, error, result }. */
 const linking = new Map();
-export const linkState = id => linking.get(id) ?? null;
+export const linkState = id => { const job = linking.get(id); if (!job) return null; const { done, ...state } = job; return state; };
 /**
- * Link an account (the button "Chơi online"): the server must be up and the account idle (its browser profile is
- * opened to read the offline save). Runs `node online.mjs link <id>`; the page follows linkState(id).
+ * Link an account (the button "Chơi online", a new account, or an unlinked one before its first run): the server must
+ * be up and the account idle (its browser profile is opened to read the offline save). Runs `node online.mjs link <id>`;
+ * the page follows linkState(id); job.done settles when the link has finished (job.error tells how).
  */
 export async function linkOnline(id) {
   if (runs.has(id)) throw new Error('Acc đang chạy, hãy dừng trước khi chuyển sang chơi online.');
   if (linking.get(id)?.running) return false;
-  const a = loadAccount(id), job = { running: true, steps: ['Khởi động server game…'], error: null, result: null };
+  let finished; const a = loadAccount(id), job = { running: true, steps: ['Khởi động server game…'], error: null, result: null, done: new Promise(resolve => { finished = resolve; }) };
   linking.set(id, job);
-  try { await ensureServer(); } catch (error) { Object.assign(job, { running: false, error: error.message }); throw error; }
+  try { await ensureServer(); } catch (error) { Object.assign(job, { running: false, error: error.message }); finished(); throw error; }
   const child = spawn(NODE, [join(BOT, 'online.mjs'), 'link', id, '--url', GAME_URL], { cwd: BOT, stdio: ['ignore', 'pipe', 'pipe'], windowsHide: true, env: CHILD_ENV });
   let out = '', errors = '';
   child.stdout.on('data', d => { out += d; for (const line of String(d).split('\n')) if (line.startsWith('· ')) job.steps.push(line.slice(2).trim()); });
@@ -128,12 +138,14 @@ export async function linkOnline(id) {
     job.running = false;
     if (code === 0) { try { job.result = JSON.parse(out.trim().split('\n').at(-1)); } catch {} say(`🌐 ${a.name} (${id}) đã chơi online trên server máy này`); }
     else { job.error = (errors.match(/Error: (.*)/)?.[1] ?? errors.trim().split('\n').at(-1)) || `lỗi ${code}`; say(`⚠ Liên kết online ${id} lỗi: ${job.error}`); }
+    finished();
   });
   return true;
 }
-/** Switch a linked account between online and offline play (from its next clip). */
+/** Switch a linked account to online play (from its next clip). Back to offline is refused: the server requires login. */
 export function setOnlinePlay(id, enabled) {
   if (!loadAccount(id).online?.linkedAt) throw new Error('Acc chưa liên kết online.');
+  if (!enabled) throw new Error('Server game yêu cầu đăng nhập: acc không thể quay về chơi offline.');
   setOnline(id, { enabled: !!enabled });
   // Offline it can no longer play in a group.
   if (!enabled) { const c = control(); if (c.schedule[id]?.group) { delete c.schedule[id].group; saveControl(c); say(`${id} chơi offline: đã rời nhóm`); } }
@@ -156,6 +168,14 @@ export async function start(id, { clips, minutes, restarts = 0, members } = {}) 
   if (runs.has(id)) return false;
   if (linking.get(id)?.running) throw new Error(`${id} đang liên kết online, chạy lại sau ít phút.`);
   await ensureServer();
+  // The server requires login (no offline play): an account not linked yet is linked first, its progress going with it.
+  const before = loadAccount(id);
+  if (!before.online?.linkedAt) {
+    say(`🌐 ${before.name} (${id}): liên kết online trước lần chạy đầu`);
+    await linkOnline(id); const job = linking.get(id); await job.done;
+    if (job.error) throw new Error(`${id}: chưa liên kết online được (${job.error}), chưa chạy.`);
+  } else if (!before.online.enabled) setOnline(id, { enabled: true });
+  if (runs.has(id)) return false;
   const a = loadAccount(id), c = control(), date = today();
   mkdirSync(`${a.days}/${date}`, { recursive: true });
   const log = createWriteStream(`${a.days}/${date}/director.log`, { flags: 'a' });
@@ -302,6 +322,17 @@ export async function quickCheck() {
  */
 let bench = null;
 export const benchmarkState = () => bench;
+/**
+ * A throwaway account for the test (its own accounts folder): the server requires login, so the test plays online too.
+ * Created and linked once (fleet.mjs new); play.mjs links it again itself if that did not finish.
+ */
+async function benchAccount(root, i) {
+  const id = `bench-${i}`;
+  if (existsSync(`${root}/accounts/${id}/account.json`)) return id;
+  await new Promise(resolve => spawn(NODE, [join(BOT, 'fleet.mjs'), 'new', id, `テスト${i + 1}`, Object.keys(COLORS)[i % 6], '--url', GAME_URL], { cwd: BOT, stdio: 'ignore', windowsHide: true, env: { ...CHILD_ENV, ZG_ACCOUNTS: `${root}/accounts` } }).on('exit', resolve));
+  if (!existsSync(`${root}/accounts/${id}/account.json`)) throw new Error(`Không tạo được acc thử ${id}.`);
+  return id;
+}
 export async function benchmark({ maxSteps = 5, seconds = 120 } = {}) {
   if (bench?.running) return false;
   if (runs.size) throw new Error('Hãy dừng các acc đang chạy trước khi đo.');
@@ -313,8 +344,8 @@ export async function benchmark({ maxSteps = 5, seconds = 120 } = {}) {
       bench.step = k; bench.note = `Đang chạy thử ${k} acc cùng lúc…`;
       const children = [], env = { ...CHILD_ENV, ZG_ACCOUNTS: `${root}/accounts` };
       for (let i = 0; i < k; i++) {
-        const dir = `${root}/run${k}-${i}`; mkdirSync(dir, { recursive: true });
-        children.push(spawn(NODE, [join(BOT, 'play.mjs'), '--minutes', String(seconds / 60), '--seed', `bench-${k}-${i}`, '--profile', `${root}/profile-${i}`, '--out', dir, '--record', `${dir}/bench.mp4`, '--headless', '--mute', '--clip', 'hunt', '--port', String(9400 + i)], { cwd: BOT, stdio: ['ignore', 'pipe', 'ignore'], windowsHide: true, env }));
+        const dir = `${root}/run${k}-${i}`, id = await benchAccount(root, i); mkdirSync(dir, { recursive: true });
+        children.push(spawn(NODE, [join(BOT, 'play.mjs'), '--minutes', String(seconds / 60), '--seed', `bench-${k}-${i}`, '--account', id, '--out', dir, '--record', `${dir}/bench.mp4`, '--headless', '--mute', '--clip', 'hunt', '--port', String(9400 + i)], { cwd: BOT, stdio: ['ignore', 'pipe', 'ignore'], windowsHide: true, env }));
       }
       const outputs = children.map(c => { let s = ''; c.stdout.on('data', d => { s += d; }); return () => s; });
       await new Promise(r => setTimeout(r, 45000)); cpuNow();

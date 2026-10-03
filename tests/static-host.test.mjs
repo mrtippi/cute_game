@@ -39,7 +39,7 @@ async function online({staticHost='true',base='/cute_game/',slotPresent=true,lan
   class Socket extends Element {static OPEN=1;readyState=1;sent=[];constructor(){super();sockets.push(this);}send(value){this.sent.push(JSON.parse(value));}message(value){this.listeners.get('message')?.({data:JSON.stringify(value)});}}
   let registrations=0;
   let state={name:'Clover',color:'#789abc',planet:'home'};
-  const bridge=staticHost==='true'?new Proxy({},{get(){throw new Error('Static hosting must not replace the local game or save hooks');}}):{onFrame(){registrations++;},onAction(){registrations++;},getState:()=>state,getPresence:()=>({planet:'home',x:0,z:0}),getWorld:()=>new Proxy({},{get:()=>()=>{}}),setPersistence(){},setActionHandler(){},applyAuthoritativeState(){},clearNetworkDrops(){},spawnNetworkDrop(){},applyState:value=>{state=value;},setNetworkHooks(){},showNotice(){}};
+  const bridge=staticHost==='true'?new Proxy({},{get(){throw new Error('Static hosting must not replace the local game or save hooks');}}):{onFrame(){registrations++;},onAction(){registrations++;},getState:()=>state,getPresence:()=>({planet:'home',x:0,z:0}),getWorld:()=>new Proxy({},{get:()=>()=>{}}),setPersistence(){},setStartGate(){},setActionHandler(){},applyAuthoritativeState(){},clearNetworkDrops(){},spawnNetworkDrop(){},applyState:value=>{state=value;},setNetworkHooks(){},showNotice(){}};
   const exports={};
   vm.runInNewContext(await compile('online.ts',{VITE_STATIC_HOST:staticHost,BASE_URL:base}),{
     exports,document,window,

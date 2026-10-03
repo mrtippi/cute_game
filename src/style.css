@@ -1994,16 +1994,13 @@ h1 > span {
 .chapter-banner small { display: block; font-size: 11px; opacity: .75; }
 .village-rank { margin: 4px 0 8px; font-size: 12px; opacity: .85; }
 
-/* Titles (titles.ts): the worn title under the name, floating over the explorer, and the title board; colour by rarity. */
-.title-tag, .title-float, .title-row { --rare: #b87333; --rare-bg: linear-gradient(90deg, #f6d3b0, #e6a874); --rare-ink: #5a3214; }
+/* Titles (titles.ts): the worn title under the name and the title board, coloured by rarity (the plate over the explorer: .nameplate below). */
+.title-tag, .title-row { --rare: #b87333; --rare-bg: linear-gradient(90deg, #f6d3b0, #e6a874); --rare-ink: #5a3214; }
 [data-rarity="silver"] { --rare: #8f9aa6; --rare-bg: linear-gradient(90deg, #f4f7fa, #cfd7df); --rare-ink: #3b4652; }
 [data-rarity="gold"] { --rare: #e0a800; --rare-bg: linear-gradient(90deg, #fff4c2, #ffd55a); --rare-ink: #5c4100; }
 [data-rarity="rainbow"] { --rare: #c36bff; --rare-bg: linear-gradient(90deg, #ffb3c7, #ffe38a, #b5f5c8, #a9dcff, #dcc2ff); --rare-ink: #4a2a66; }
 .title-tag { display: inline-block; margin-top: 2px; max-width: 100%; padding: 1px 8px; border: 1.5px solid var(--rare); border-radius: 999px; background: var(--rare-bg); color: var(--rare-ink); font: 800 11px/1.5 var(--font); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; cursor: pointer; pointer-events: auto; }
-.title-tag[hidden], .title-float[hidden] { display: none; }
-.title-float { position: absolute; left: 0; top: 0; padding: 1px 9px; border: 1.5px solid var(--rare); border-radius: 999px; background: var(--rare-bg); color: var(--rare-ink); font: 800 12px/1.5 var(--font); white-space: nowrap; pointer-events: none; box-shadow: 0 2px 6px rgba(0,0,0,.18); }
-.title-float[data-rarity="rainbow"] { animation: title-shine 3s linear infinite; background-size: 200% 100%; }
-@keyframes title-shine { to { background-position: 200% 0; } }
+.title-tag[hidden] { display: none; }
 .title-list { display: grid; gap: 8px; }
 .title-row { display: flex; align-items: center; gap: 10px; padding: 8px 12px; border-radius: 14px; border: 2px solid var(--rare); background: var(--rare-bg); color: var(--rare-ink); }
 .title-row > div { flex: 1; min-width: 0; }
@@ -2020,3 +2017,75 @@ h1 > span {
 .title-row[data-rarity="gold"] { --medal: linear-gradient(135deg, #fff1a8, #f2b01e); --ribbon-a: #d6303f; --ribbon-b: #ffd84a; }
 .title-row[data-rarity="rainbow"] { --medal: conic-gradient(#ff6b8b, #ffb84d, #ffe45c, #6fe3a0, #5bb8ff, #b78cff, #ff6b8b); --ribbon-a: #8a5cff; --ribbon-b: #ff7ac8; }
 .title-row[data-rarity="bronze"] { --medal: linear-gradient(135deg, #f0b07a, #b8652c); }
+
+/* Nameplates (nameplates.ts): over each explorer the worn title on a plate dressed by rarity, the name under it, and
+   the server champion's red-velvet crown plate. Only transform, opacity and background-position animate. */
+.np-defs { position: absolute; width: 0; height: 0; overflow: hidden; }
+.nameplate { position: absolute; left: 0; top: 0; display: flex; flex-direction: column; align-items: center; gap: 6px; pointer-events: none; transform-origin: 50% 100%; white-space: nowrap; font-family: var(--font); }
+.nameplate[hidden] { display: none; }
+.np-name { font: 800 16px/1.15 var(--font); color: #fff; letter-spacing: .03em; text-shadow: 1px 0 0 #1b1430, -1px 0 0 #1b1430, 0 1px 0 #1b1430, 0 -1px 0 #1b1430, 1px 1px 0 #1b1430, -1px 1px 0 #1b1430, 1px -1px 0 #1b1430, -1px -1px 0 #1b1430, 0 2px 5px rgba(0,0,0,.6); }
+.np-plate { position: relative; isolation: isolate; display: flex; align-items: center; }
+.np-face { position: relative; overflow: hidden; padding: 4px 19px 5px; border: 2px solid var(--np-edge); border-radius: 9px; background: var(--np-bg); color: var(--np-ink); font: 800 18px/1.25 var(--font); letter-spacing: .04em; text-align: center; text-shadow: var(--np-emboss);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.75), inset 0 -2px 0 rgba(0,0,0,.22), 0 2px 0 var(--np-deep), 0 4px 10px rgba(0,0,0,.42), var(--np-glow, 0 0 0 transparent); }
+.np-face::before { content: ''; position: absolute; inset: 2px; border: 1px solid rgba(255,255,255,.42); border-radius: 6px; pointer-events: none; }
+.np-face > * { position: relative; display: block; }
+/* A slow light sweep across the metal plates. */
+.np-face::after { content: ''; position: absolute; top: -30%; bottom: -30%; left: 0; width: 34%; background: linear-gradient(100deg, transparent, rgba(255,255,255,.7), transparent); transform: translateX(-160%) skewX(-18deg); opacity: 0; pointer-events: none; }
+[data-rarity="silver"] .np-face::after, [data-rarity="gold"] .np-face::after, [data-rarity="rainbow"] .np-face::after, .np-champion .np-face::after { opacity: 1; animation: np-sweep 6s ease-in-out infinite; }
+[data-rarity="gold"] .np-face::after { animation-duration: 4.5s; }
+@keyframes np-sweep { 0%, 55% { transform: translateX(-160%) skewX(-18deg); } 100% { transform: translateX(420%) skewX(-18deg); } }
+
+/* Bronze: warm copper with rivets. */
+.nameplate[data-rarity="bronze"] .np-plate { --np-edge: #6f3816; --np-deep: #4b220b; --np-ink: #fff4e6;
+  --np-bg: radial-gradient(circle at 8px 50%, #ffe2c4 0 1.6px, #7a3d17 2.3px, transparent 3.2px), radial-gradient(circle at calc(100% - 8px) 50%, #ffe2c4 0 1.6px, #7a3d17 2.3px, transparent 3.2px), linear-gradient(180deg, #f8c79a 0%, #dc915a 40%, #b7652f 56%, #c9783f 78%, #e7a06a 100%);
+  --np-emboss: 0 1px 0 #6a3110, 0 -1px 0 rgba(106,49,16,.55), 1px 0 0 rgba(106,49,16,.55), -1px 0 0 rgba(106,49,16,.55); }
+/* Silver: brushed metal. */
+.nameplate[data-rarity="silver"] .np-plate { --np-edge: #5f6b78; --np-deep: #36404b; --np-ink: #222b36; --np-emboss: 0 1px 0 rgba(255,255,255,.9);
+  --np-bg: repeating-linear-gradient(90deg, rgba(255,255,255,.22) 0 1px, rgba(0,0,0,.04) 1px 2px, transparent 2px 4px), linear-gradient(180deg, #ffffff 0%, #e8edf2 38%, #b8c3ce 52%, #d6dde5 72%, #f6f8fa 100%);
+  --np-glow: 0 0 10px rgba(220,235,255,.45); }
+/* Gold: gold leaf, dark ink, laurels, a soft glow and the odd sparkle. */
+.nameplate[data-rarity="gold"] .np-plate { --np-edge: #8a5800; --np-deep: #573600; --np-ink: #3d2300; --np-emboss: 0 1px 0 rgba(255,248,210,.9);
+  --np-bg: radial-gradient(ellipse at 50% -30%, rgba(255,255,255,.8), transparent 60%), linear-gradient(180deg, #fff4bd 0%, #ffd95e 36%, #efb021 52%, #d8950f 62%, #ffd458 100%);
+  --np-glow: 0 0 14px rgba(255,196,60,.7); }
+.nameplate[data-rarity="gold"] .np-face { font-size: 19px; }
+/* Rainbow: a dark glass plate in a holographic frame, pastel holo letters, feathered wings, a little crown and an aura. */
+.nameplate[data-rarity="rainbow"] .np-plate { --np-edge: transparent; --np-deep: #120a2e; --np-ink: #fff; --np-emboss: none; --np-glow: 0 0 16px rgba(190,140,255,.75); }
+.nameplate[data-rarity="rainbow"] .np-face { border-width: 2.5px; font-size: 19px; background: linear-gradient(180deg, #46337f 0%, #271b57 55%, #1a1242 100%) padding-box, linear-gradient(90deg, #ff6b8b, #ffb84d, #ffe45c, #6fe3a0, #5bb8ff, #b78cff, #ff6b8b) 0 0 / 240px 100% repeat-x border-box; animation: np-holo 4s linear infinite; }
+.nameplate[data-rarity="rainbow"] .np-face > span { background: linear-gradient(90deg, #ffc6dc, #fff0a8, #bdfedb, #bfe3ff, #e6cfff, #ffc6dc) 0 0 / 180px 100% repeat-x; -webkit-background-clip: text; background-clip: text; color: transparent; animation: np-holo-text 4s linear infinite; }
+@keyframes np-holo { to { background-position: 0 0, 240px 0; } }
+@keyframes np-holo-text { to { background-position: 180px 0; } }
+.nameplate[data-rarity="rainbow"] .np-plate::before { content: ''; position: absolute; z-index: -1; inset: -7px 6px; border-radius: 50%; background: linear-gradient(90deg, #ff8fb1, #ffd36b, #8ff0bd, #7cc7ff, #c9a2ff); filter: blur(10px); opacity: .45; animation: np-aura 2.6s ease-in-out infinite alternate; }
+@keyframes np-aura { to { opacity: .8; } }
+
+/* Wings: gold laurels (gold plate, champion), feathered wings (rainbow); the right one is the left mirrored. */
+.np-wing { flex: none; width: 22px; height: 38px; margin: 0 -3px; fill: url(#np-gold); stroke: #6e4400; stroke-width: .5; filter: drop-shadow(0 1px 1px rgba(0,0,0,.5)); }
+.np-face ~ .np-wing { transform: scaleX(-1); }
+.np-stem { stroke: #8a5a00; stroke-width: 1.3; }
+/* The two wings hang from the same anchor, the plate's mid-height, mirrored: symmetric whatever the title's width. */
+.np-feathers { position: absolute; z-index: -1; top: 50%; right: calc(100% - 12px); transform: translateY(-78%); fill: url(#np-feather); stroke: rgba(110,80,190,.7); stroke-width: .6; filter: drop-shadow(0 0 3px rgba(200,160,255,.9)); }
+.np-face ~ .np-feathers { right: auto; left: calc(100% - 12px); transform: translateY(-78%) scaleX(-1); }
+.np-crown { position: absolute; z-index: 2; left: 50%; top: -17px; width: 26px; height: 18px; margin-left: -13px; stroke: #5a3ea0; stroke-width: .9; stroke-linejoin: round; filter: drop-shadow(0 1px 1px rgba(0,0,0,.45)); }
+.np-crown .np-crown-body, .np-crown .np-crown-band { fill: url(#np-holo); }
+.np-pearl { fill: #fffaf0; }
+.np-jewel { fill: #ff3f78; stroke: none; }
+.np-jewel-side { fill: #3d86ff; }
+.np-spark { position: absolute; z-index: 3; width: 14px; height: 14px; background: radial-gradient(circle, #fff 0 25%, #fff3b8 45%, #ffcf4a 70%); clip-path: polygon(50% 0, 60% 40%, 100% 50%, 60% 60%, 50% 100%, 40% 60%, 0 50%, 40% 40%); opacity: 0; animation: np-twinkle 3.4s ease-in-out infinite; }
+.np-spark:nth-of-type(1) { top: -5px; right: 18px; }
+.np-spark:nth-of-type(2) { bottom: -4px; left: 22px; animation-delay: 1.7s; }
+.np-spark:nth-of-type(3) { top: 4px; left: 6px; animation-delay: 2.6s; }
+@keyframes np-twinkle { 0%, 72%, 100% { opacity: 0; transform: scale(.3) rotate(0deg); } 82% { opacity: 1; transform: scale(1) rotate(45deg); } 92% { opacity: 0; transform: scale(.4) rotate(90deg); } }
+
+/* The server champion: red velvet in a double gold frame under a jewelled crown, flanked by laurels. */
+.np-champion { margin-top: 26px; --np-edge: #ffd45c; --np-deep: #3d0a0a; --np-ink: #fff; --np-emboss: none; }
+.np-champion .np-face { padding: 5px 22px 6px; border-width: 2.5px; border-radius: 11px;
+  background: radial-gradient(ellipse at 50% -10%, rgba(255,150,160,.55), transparent 60%), repeating-linear-gradient(115deg, rgba(255,255,255,.04) 0 2px, transparent 2px 5px), linear-gradient(180deg, #d4203f 0%, #a30e2a 52%, #6a0416 100%);
+  box-shadow: inset 0 0 0 1.5px #7a3f00, inset 0 2px 6px rgba(255,200,200,.35), 0 0 0 1.5px #5a2a00, 0 3px 0 #3d0a0a, 0 6px 14px rgba(0,0,0,.5), 0 0 20px rgba(255,190,70,.65); }
+.np-champion .np-face::before { inset: 3px; border-color: rgba(255,214,110,.7); border-radius: 8px; }
+.np-champion .np-face > b { font: 800 22px/1.2 var(--font); letter-spacing: .08em; background: linear-gradient(180deg, #fffbe2 0%, #ffe07a 45%, #f0a915 62%, #ffd75a 100%); -webkit-background-clip: text; background-clip: text; color: transparent; filter: drop-shadow(0 1px 0 #4a0010) drop-shadow(0 0 1.5px rgba(60,0,10,.9)); }
+.np-champion .np-face > small { margin-top: 1px; font: 800 14px/1.2 var(--font); letter-spacing: .05em; color: #ffe7a8; text-shadow: 0 1px 0 #4a0010; }
+.np-champion .np-wing { width: 32px; height: 58px; margin: 0 -5px; }
+.np-crown-big { top: -32px; width: 48px; height: 34px; margin-left: -24px; stroke: #6b3f00; animation: np-bob 2.4s ease-in-out infinite; }
+.np-crown-big .np-crown-body, .np-crown-big .np-crown-band { fill: url(#np-gold); }
+.np-crown-big .np-jewel { fill: #e8173d; }
+.np-crown-big .np-jewel-side { fill: #2f74ff; }
+@keyframes np-bob { 50% { transform: translateY(-2px); } }

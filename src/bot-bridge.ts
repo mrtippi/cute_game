@@ -68,6 +68,8 @@ export function installBotBridge(src: BotSources) {
         farm: { built: !!s.farm?.built, animals: s.farm?.animals.length ?? 0, ready: readyAnimals(s, now).length },
         entities: w.entities.filter(e => e.kind !== 'enemy').map(e => entity(w, e, Math.hypot(e.x - w.position.x, e.z - w.position.z) < 60)),
         enemies: w.enemies.filter((e: Enemy) => e.hp > 0).map((e: Enemy) => ({ ...entity(w, e, true), danger: dangerOf(e), type: e.type, hp: Math.round(e.hp), maxHp: Math.round(e.maxHp), boss: e.boss, level: (e as Enemy & { level?: number }).level ?? 1, damage: round(e.damage), cooldown: e.definition?.cooldown ?? 1.5 })),
+        // Ground fire the world itself drops (the volcano dragon's fire rain, vents): red circles a player would step out of.
+        hazards: (w.environment?.fireRain ?? []).map(d => ({ x: round(d.x), z: round(d.z), r: 1.2, t: round(d.remaining) })),
         fishing: src.fishing(),
         reel: reel && !reel.hidden ? (reel.classList.contains('hunt') ? 'hunt' : reel.classList.contains('cast') ? 'cast' : 'reel') : null,
         cooldowns: src.cooldowns().map(round),

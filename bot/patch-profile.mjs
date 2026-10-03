@@ -1,6 +1,7 @@
 // Test tool: patch the offline save of a bot profile before a trial run, the way a tester would set up a scene.
 //   node patch-profile.mjs <profile dir> '{"level":30,"bag":{"bow_galaxy":1},"gear":{"weapon":"bow_galaxy"}}'
 // bag, gear and progression are merged; other keys replace the save's value. Runs once per profile (sessionStorage guard).
+// Offline saves are played only by a game server started with ZG_REQUIRE_LOGIN=0 (the default server requires login).
 import { openSession, startGame } from './lib/session.mjs';
 import { createRng } from './lib/rng.mjs';
 const [profile, json] = process.argv.slice(2), patch = JSON.parse(json), rng = createRng('p');

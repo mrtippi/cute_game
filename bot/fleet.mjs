@@ -1,6 +1,7 @@
 // Several accounts playing side by side, each recording its own clips (accounts.mjs, director.mjs, lib/recorder.mjs).
 //
-//   node fleet.mjs new <folder-id> <日本語の名前> <colour> ['{"fishing":2}']   create an account (blue pink green orange purple red)
+//   node fleet.mjs new <folder-id> <日本語の名前> <colour> ['{"fishing":2}'] [--url ...]   create an account (blue pink green
+//                                                                    orange purple red), linked online when the server is up
 //   node fleet.mjs list                                                       accounts, levels and days played
 //   node fleet.mjs run --accounts sakura,haruto [--date ...] [--clips 10] [--minutes 60] [--no-record] [--show]
 //
@@ -30,8 +31,9 @@ function latest(account) {
 if (command === 'new') {
   const [id, name, color = 'blue', style] = rest;
   if (!id || !name) { console.error('usage: node fleet.mjs new <folder-id> <名前> <colour> [style json]'); process.exit(2); }
-  const a = createAccount(id, name, color, style ? JSON.parse(style) : {});
-  console.log(`created ${a.id}: ${a.name} ${a.color} (port ${a.port}) → ${a.dir}`);
+  // Linked for online play right away when the game server answers (--url): it requires login by default.
+  const a = await createAccount(id, name, color, style ? JSON.parse(style) : {}, { url: opt.url, progress: text => console.log('· ' + text) });
+  console.log(`created ${a.id}: ${a.name} ${a.color} (port ${a.port}) → ${a.dir}${a.online?.linkedAt ? ` · online as ${a.online.username}` : ' · not linked yet'}`);
 } else if (command === 'list') {
   for (const a of listAccounts()) {
     const save = latest(a), days = existsSync(a.days) ? readdirSync(a.days).filter(d => /^\d{4}-\d\d-\d\d$/.test(d)).length : 0;

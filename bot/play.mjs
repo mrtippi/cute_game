@@ -1,4 +1,6 @@
 // Plays one session of Zoo Garden like a person: node play.mjs --minutes 60 [--seed 2026-10-02] [--profile dir]
+// --profile without --account plays offline: only on a game server started with ZG_REQUIRE_LOGIN=0 (the default server
+// requires login). With --account on a login-required server the account is linked and plays online by itself.
 import { mkdirSync, appendFileSync, writeFileSync } from 'node:fs';
 import { parseArgs } from 'node:util';
 import { createRng } from './lib/rng.mjs';
@@ -10,6 +12,7 @@ import { CLIPS } from './clips.mjs';
 import { loadAccount } from './accounts.mjs';
 import { startRecording } from './lib/recorder.mjs';
 import { startOnline, keepOnline } from './lib/online.mjs';
+import { ensureOnline, serverRequiresLogin } from './online.mjs';
 import { createCoop, startTogether, fallBack, coopTick, coopIdle } from './tasks/coop.mjs';
 
 const { values: opt } = parseArgs({ options: {
@@ -32,7 +35,10 @@ const log = text => { const line = `[${clock()}] ${text}`; console.log(line); ap
 const mark = (tag, data = {}) => appendFileSync(`${dir}/events.jsonl`, JSON.stringify({ t: (Date.now() - started) / 1000, tag, ...data }) + '\n');
 const note = (text, tag = 'info') => { log(`★ ${text}`); appendFileSync(`${dir}/events.jsonl`, JSON.stringify({ t: (Date.now() - started) / 1000, tag, text }) + '\n'); };
 
-const account = opt.account ? loadAccount(opt.account) : null;
+let account = opt.account ? loadAccount(opt.account) : null;
+// A login-required server (the default) has no offline play: the account is linked first (its offline progress goes
+// with it, online.mjs) and plays online. Without --account only a server started with ZG_REQUIRE_LOGIN=0 can be played.
+if (account && await serverRequiresLogin(opt.url)) { account = await ensureOnline(account.id, { url: opt.url, progress: text => log('online link: ' + text) }); opt.online = true; }
 if (opt.online && !account?.online?.linkedAt) throw new Error('--online needs a linked account (node online.mjs link <id>)');
 const [px, py] = (opt.pos ?? '0,0').split(',').map(Number);
 const { context, page, hands, game } = await openSession({ profile: account?.profile ?? opt.profile, url: opt.url, rng, log, name: account?.name, color: account?.color, port: opt.port ? Number(opt.port) : account?.port, position: { x: px, y: py }, // Silent unless asked (--sound): bots play next to other work on the same PC.

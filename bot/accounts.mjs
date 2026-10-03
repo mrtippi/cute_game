@@ -17,8 +17,11 @@ export function loadAccount(id) {
 /**
  * A new account: folder id (letters, digits, - and _), the explorer's Japanese name, a colour (a COLORS key or #hex)
  * and an optional play style (extra weight for clip themes, e.g. { fishing: 2 }). Each gets its own debugging port.
+ * The game server requires login (no offline play), so with `link` (the default) the account is linked for online
+ * play at once when the server at `url` answers (online.mjs linkAccount; a new account just registers). Otherwise,
+ * or when linking fails, it is linked before its first run (online.mjs ensureOnline). progress(text) reports steps.
  */
-export function createAccount(id, name, color = 'blue', style = {}) {
+export async function createAccount(id, name, color = 'blue', style = {}, { link = true, url = 'http://127.0.0.1:8787/', progress = () => {} } = {}) {
   if (!/^[a-z0-9_-]{2,24}$/i.test(id)) throw new Error('the folder id takes 2-24 letters, digits, - or _');
   const p = paths(id); if (existsSync(p.file)) throw new Error(`account "${id}" exists already`);
   const hex = COLORS[color] ?? color; if (!Object.values(COLORS).includes(hex)) throw new Error(`colour must be one of ${Object.keys(COLORS).join(', ')}`);
@@ -26,7 +29,16 @@ export function createAccount(id, name, color = 'blue', style = {}) {
   for (const dir of [p.dir, p.profile, p.days, p.videos]) mkdirSync(dir, { recursive: true });
   const account = { id, name: name.slice(0, 20), color: hex, style, port, created: new Date().toISOString().slice(0, 10) };
   writeFileSync(p.file, JSON.stringify(account, null, 1));
-  return { ...account, ...p };
+  if (link) {
+    // Loaded here only: the link opens a browser (Playwright), which the control app's main process does not need.
+    const { linkAccount, serverRequiresLogin } = await import('./online.mjs');
+    if (await serverRequiresLogin(url) === null) progress('server game không trả lời: acc sẽ được liên kết online trước lần chạy đầu');
+    else {
+      try { await linkAccount(id, { url, progress }); }
+      catch (error) { progress(`liên kết online lỗi (${error.message}): sẽ thử lại trước lần chạy đầu`); }
+    }
+  }
+  return loadAccount(id);
 }
 
 /** Change an account's settings (name, colour, play style, show-window switch, archived); the folder id stays. */
