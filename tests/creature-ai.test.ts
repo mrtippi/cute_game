@@ -107,7 +107,17 @@ test('fifty aggro creatures around the explorer outside the forest gate cost und
   assert.ok(awake.filter(e=>e.phase!=='idle').length>=45,'the creatures are fighting, not resting');
   // Shared CI runners are 2-3x slower than a desktop (1.6 ms measured there); the code before the fix took 12-55 ms.
   const budget=process.env.CI?4:1;
-  assert.ok(best<budget,`median step ${best.toFixed(3)} ms (budget ${budget} ms)`);
+  if(best>=budget){
+    // A slower or busy machine (the rest of the suite runs in parallel): judge the step against a fixed reference
+    // workload timed alongside it, so the load cancels out. A desktop measures about 0.09; the old code was above 1.
+    const points=Array.from({length:4000},(_,i)=>({x:Math.sin(i)*30,z:Math.cos(i*1.3)*30}));
+    const reference=()=>{const t=performance.now();let n=0;for(let k=0;k<25;k++)for(let i=0;i<points.length;i+=3){const p=points[i];for(let j=0;j<12;j++){const q=points[(i+j*97)%points.length];if(Math.hypot(p.x-q.x,p.z-q.z)<5)n++;}}return n>=0?performance.now()-t:0;};
+    const steps:number[]=[],refs:number[]=[];
+    for(let i=0;i<41;i++){refs.push(reference());const t=performance.now();step(w);steps.push(performance.now()-t);}
+    const ratio=steps.sort((a,b)=>a-b)[20]/refs.sort((a,b)=>a-b)[20];
+    t.diagnostic(`step / reference workload: ${ratio.toFixed(3)}`);
+    assert.ok(ratio<.2,`median step ${best.toFixed(3)} ms (budget ${budget} ms), ${ratio.toFixed(3)} of the reference workload (budget 0.2)`);
+  }
 });
 
 test('a minute in the home forest never stalls on a calm wanderer searching for a route',()=>{

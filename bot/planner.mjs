@@ -196,7 +196,8 @@ export function createPlanner(bot, { minutesLeft }) {
     log(`plan: ${options.slice(0, 4).map(o => `${o.name}(${o.value.toFixed(1)})`).join(' ')} → ${pick.name}`);
     // A hard limit per activity: past it, game.snap() throws and the task stops wherever it is.
     // bot.taskCap: a shorter limit when the clip needs the explorer soon (a together clip's goodbye, tasks/coop.mjs).
-    game.deadline = Date.now() + Math.min(pick.t.limit ?? 240000, bot.taskCap?.() ?? Infinity);
+    // No task outlives the clip: it stops when the clip ends (a few seconds of grace to finish the step in hand).
+    game.deadline = Date.now() + Math.min(pick.t.limit ?? 240000, bot.taskCap?.() ?? Infinity, Math.max(10000, minutesLeft() * 60000 + 5000));
     let result;
     try { result = await pick.t.run(s); }
     catch (error) { result = 'stopped: ' + error.message; await game.closePanel().catch(() => {}); }
