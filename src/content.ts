@@ -3853,3 +3853,9 @@ for (const [id, name, attack, crit, range, cd, price, materials, fx, desc] of [
     SHOP_CATEGORIES.find(category => category.tab === 'Weapons')!.items.push({ id, cost: price, mats: { ...materials } });
     RECIPES.push({ result: id, energy: price, materials: { ...materials }, category: 'Weapons', station: 'shop' });
 }
+// The outfitters' Decor tab sells the everyday decorations (six times what they sell for); rare ones stay crafted or found.
+for (const [id, item] of Object.entries(ITEMS))
+    if (item.type === 'decor' && !item.rare && item.price === undefined) {
+        item.price = Math.max(60, Math.round((item.sell ?? 10) * 6));
+        RECIPES.push({ result: id, energy: item.price, materials: {}, category: 'Decor', station: 'shop' });
+    }

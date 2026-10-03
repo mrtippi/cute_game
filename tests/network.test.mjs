@@ -97,6 +97,19 @@ test('visiting a garden from another planet preserves the saved destination and 
   assert.equal((await store.get(peer.id)).profile.planet,'lava');
 });
 
+test('a friend garden visit records gardenVisit once per friend per day on the server profile',async t=>{
+  const {game,host,peer,store,barrier}=await protocolRoom(t);
+  await store.friendAction(host.id,peer.id,'request');await store.friendAction(peer.id,host.id,'accept');
+  for(const client of [host,peer])await fetch(game.url+'/api/auth/session',{headers:{Cookie:client.cookie}});
+  peer.send({type:'visit',id:host.id});
+  const counted=await peer.next(m=>m.type==='profile'&&m.profile.progression.totals.gardenVisit===1);assert.ok(counted.revision>peer.session.revision);
+  peer.send({type:'leaveVisit'});await peer.next(m=>m.type==='visit'&&!m.home);
+  peer.send({type:'visit',id:host.id});await peer.next(m=>m.type==='visit'&&m.home?.id===host.id);await barrier(peer,host);await barrier(host,peer);
+  const saved=await store.get(peer.id);assert.equal(saved.profile.progression.totals.gardenVisit,1,'a second visit the same day does not count');
+  assert.deepEqual(saved.visitLedger.friends,[host.id]);
+  assert.equal((await store.get(host.id)).profile.progression.totals.gardenVisit,undefined,'the garden owner is not credited');
+});
+
 test('returning from a garden in the same room refreshes the canonical scene and restores visible ground loot',async t=>{
   const {game,host,peer,store,action}=await protocolRoom(t,{configure:profile=>{profile.bag.carrot=1;}});
   await store.friendAction(host.id,peer.id,'request');await store.friendAction(peer.id,host.id,'accept');

@@ -17,8 +17,8 @@ const now = Date.UTC(2026, 9, 3, 12);
 const reload = (s: M.SaveState) => M.parseSave(JSON.stringify(s))!;
 const act = (s: M.SaveState, type: string, payload: Record<string, unknown>) => applyGameAction(s, { type, payload }, { now, random: () => .5 });
 
-test('32 titles in four rarities: eight new ones from long-term play, three rainbow crowns', () => {
-  assert.equal(Object.keys(TITLES).length, 32); assert.equal(EARNED_TITLES.length, 8);
+test('35 titles in four rarities: eight from long-term play, three from online co-op, three rainbow crowns', () => {
+  assert.equal(Object.keys(TITLES).length, 35); assert.equal(EARNED_TITLES.length, 11);
   assert.deepEqual(Object.keys(TITLES).filter(x => TITLES[x] === 'rainbow').sort(), ['Keeper of the Starlight', 'Legend of the Stars', 'Ruler of the Stars']);
   for (const r of RARITY_ORDER) assert.ok(Object.values(TITLES).includes(r), r);
   assert.equal(rarityOf('Seasoned Explorer'), 'bronze'); assert.equal(rarityOf("Rancher's Friend"), 'silver'); assert.equal(rarityOf('Bear Breaker'), 'gold');

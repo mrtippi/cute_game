@@ -19,6 +19,7 @@ import { decorateHome, decorDue } from './tasks/decor.mjs';
 import { tendBolt, boltDue } from './tasks/helpers.mjs';
 import { lavaPending, lavaEvents, dragonReady, fightDragon, openGifts, rerollDaily } from './tasks/events.mjs';
 import { dressFriend, visitFriend, playDisguise, disguises } from './tasks/friends.mjs';
+import { coopTasks } from './tasks/coop.mjs';
 
 /** Which activities move a quest event forward. */
 const EVENT_TASKS = {
@@ -42,6 +43,8 @@ export function createPlanner(bot, { minutesLeft }) {
   const ready = name => !(until[name] > Date.now());
   const ago = name => Date.now() - (lastRun[name] ?? 0);
   let awaySince = 0, awayFor = 300000, gearAt = 0, idleAt = 0;
+  // Energy kept back from the crystal for flights, the helpers, decorations and repairs (more at higher levels).
+  const reserve = s => Math.min(3000, 200 + s.level * 15);
   const mealsIn = s => count(s.bag, id => id.startsWith('cooked_'));
   // A boss clip remembers when this world's bosses return: one due within two minutes keeps the explorer here.
   // An event clip stays on its world while the world still has its event to do (presents, the lava cave).
@@ -60,7 +63,7 @@ export function createPlanner(bot, { minutesLeft }) {
     market: { can: s => s.planet === 'home' && (s.orders.some(o => o.have >= o.count) || count(s.bag, id => CROPS.test(id) || id.startsWith('fish_')) >= 5), run: () => sellProduce(bot), cool: 120000, base: 3 },
     shop: { can: s => s.planet === 'home' && s.energy >= 60, run: () => upgradeWeapon(bot), cool: 420000, base: 1 },
     // Spare energy goes into the crystal: more upgrades per visit the richer the explorer is.
-    crystal: { can: s => s.planet === 'home' && s.energy >= 150, run: s => crystalUpgrade(bot, { times: s.energy > 2000 ? 4 : s.energy > 800 ? 3 : 2 }), cool: 240000, base: 2, boost: s => s.energy > 1000 ? 4 : s.energy > 500 ? 2 : 0 },
+    crystal: { can: s => s.planet === 'home' && s.energy >= reserve(s) + 150, run: s => crystalUpgrade(bot, { times: s.energy - reserve(s) > 2000 ? 4 : s.energy - reserve(s) > 800 ? 3 : 2, keep: reserve(s) }), cool: 240000, base: 2, boost: s => s.energy - reserve(s) > 1000 ? 4 : s.energy - reserve(s) > 500 ? 2 : 0 },
     // A stronger weapon: buy it as soon as the materials are in the bag, otherwise hunt what drops them.
     gearBuy: { can: s => s.planet === 'home' && !!bot.gear && !Object.keys(bot.gear.missing).length && s.energy >= bot.gear.price, run: async () => { const r = await buyWeapon(bot, bot.gear.id); bot.gear = null; gearAt = 0; return r; }, cool: 60000, base: 9 },
     gather: { can: s => !!bot.gear && huntTypes(bot.gear, s).length > 0, run: () => gatherForGoal(bot, { goal: bot.gear }), cool: 120000, base: 4, limit: 300000 },
@@ -109,6 +112,8 @@ export function createPlanner(bot, { minutesLeft }) {
     browse: { can: () => true, run: () => flourish(bot), cool: 150000, base: 1.5 },
     // Back home when the stay is up, the session ends soon, or the explorer is hurt with no food left.
     home: { can: s => s.planet !== 'home' && (Date.now() - awaySince > awayFor && !bossSoon(s) && !eventsHere(s) || minutesLeft() < 6 || !mealsIn(s) && s.hp < s.maxHp * .8), run: () => goHome(bot), cool: 60000, base: 20 },
+    // Playing with a group (the together clip): group bosses, following the leader, garden visits (tasks/coop.mjs).
+    ...coopTasks(bot, { minutesLeft }),
   };
 
   /** Points from what the journal asks for right now. */
@@ -166,7 +171,8 @@ export function createPlanner(bot, { minutesLeft }) {
     // The weapon goal is worked out again every few minutes (energy and materials change).
     if (Date.now() - gearAt > 180000) { gearAt = Date.now(); bot.gear = await gearGoal(bot).catch(() => null); if (bot.gear) log(`gear goal: ${bot.gear.id} (ATK ${bot.gear.attack}), missing ${JSON.stringify(Object.fromEntries(Object.entries(bot.gear.missing).map(([k, v]) => [k, v.short])))}`); }
     const { score } = await needs();
-    const options = Object.entries(TASKS).filter(([name, t]) => ready(name) && t.can(s)).map(([name, t]) => {
+    // A together clip keeps each role to its own activities (clip.only).
+    const options = Object.entries(TASKS).filter(([name, t]) => (!bot.clip?.only || bot.clip.only.includes(name)) && ready(name) && t.can(s)).map(([name, t]) => {
       const variety = Math.min(1, ago(name) / 600000);   // recently done → less appealing
       // The clip's focus (clips.mjs) leans the hour toward its theme.
       const value = t.base + (t.boost?.(s) ?? 0) + (score[name] ?? 0) * 1.5 + variety * 2 + rng.between(0, 2), focus = bot.clip?.focus?.[name] ?? 0;
@@ -181,13 +187,16 @@ export function createPlanner(bot, { minutesLeft }) {
     const top = options.slice(0, 3), total = top.reduce((n, o) => n + o.value, 0);
     let draw = rng.between(0, total), pick = top[0];
     for (const o of top) { draw -= o.value; if (draw <= 0) { pick = o; break; } }
+    // Some tasks answer someone else and cannot wait for the draw (now(s): a mate arriving, a boss the group called).
+    pick = options.find(o => o.t.now?.(s)) ?? pick;
     lastRun[pick.name] = Date.now(); bot.mark?.('task', { task: pick.name, planet: s.planet });
     // Now and then, change into something that suits the activity (owned pieces only).
     const theme = ACTIVITY_THEME[pick.name];
     if (theme && !bot.clip && ago('dress') > 300000 && rng.chance(.45)) { lastRun.dress = Date.now(); game.deadline = Date.now() + 60000; await dress(bot, theme).catch(() => {}); await wearTitle(bot, bot.theme ?? theme).catch(() => {}); game.deadline = 0; }
     log(`plan: ${options.slice(0, 4).map(o => `${o.name}(${o.value.toFixed(1)})`).join(' ')} → ${pick.name}`);
     // A hard limit per activity: past it, game.snap() throws and the task stops wherever it is.
-    game.deadline = Date.now() + (pick.t.limit ?? 240000);
+    // bot.taskCap: a shorter limit when the clip needs the explorer soon (a together clip's goodbye, tasks/coop.mjs).
+    game.deadline = Date.now() + Math.min(pick.t.limit ?? 240000, bot.taskCap?.() ?? Infinity);
     let result;
     try { result = await pick.t.run(s); }
     catch (error) { result = 'stopped: ' + error.message; await game.closePanel().catch(() => {}); }

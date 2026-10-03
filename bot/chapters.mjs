@@ -24,6 +24,8 @@ const GROUPS = {
   stroll: { tasks: ['sightsee', 'tidy', 'browse', 'home'], ja: '村をおさんぽ' },
   story: { tasks: ['rescue'], ja: '仲間を助けに' },
   attic: { tasks: ['attic'], ja: '思い出の部屋へ' },
+  together: { tasks: ['groupBoss', 'follow', 'groupTrip'], ja: '仲間といっしょに冒険' },
+  visit: { tasks: ['visitMate', 'host'], ja: '友だちの畑におじゃま' },
 };
 const groupOf = task => Object.keys(GROUPS).find(g => GROUPS[g].tasks.includes(task)) ?? 'stroll';
 const planetJa = id => t(PLANETS[id]?.name ?? id);

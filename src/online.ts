@@ -71,7 +71,11 @@ export function initOnline(game:GameBridge) {
     let value:{error?:string};try{value=await response.json();}catch{throw new Error('Online play needs the game server. Your offline adventure is ready to play.');}
     if(!response.ok)throw Object.assign(new Error(value.error||'Connection interrupted. Please try again.'),{status:response.status});return value as T;
   }
-  const send=(value:unknown)=>{if(socket?.readyState===WebSocket.OPEN){socket.send(JSON.stringify(value));return true;}return false;};
+  // Effects can carry a live entity (with its mesh, which refers back to it): send only plain data, once per object.
+  const plain=()=>{const seen=new WeakSet<object>();return(_key:string,v:unknown)=>{if(v&&typeof v==='object'){if(seen.has(v)||(v as {isObject3D?:boolean}).isObject3D)return undefined;seen.add(v);}return v;};};
+  // A combat effect is built from the struck target itself ({...point}): only the drawing fields go over the wire.
+  const effectData=(e:unknown)=>{if(!e||typeof e!=='object')return undefined;const v=e as Record<string,unknown>,out:Record<string,unknown>={};for(const k of ['x','z','kind','color','radius','facing','duration'])if(typeof v[k]==='number'||typeof v[k]==='string')out[k]=v[k];return out;};
+  const send=(value:unknown)=>{if(socket?.readyState===WebSocket.OPEN){socket.send(JSON.stringify(value,plain()));return true;}return false;};
   function captureChatDraft(){const input=content.querySelector<HTMLInputElement>('.social-chat-input');if(input)chatDraft=input.value;}
   function refreshChatControls(){
     const input=content.querySelector<HTMLInputElement>('.social-chat-input');if(input)input.value=chatDraft;
@@ -119,7 +123,7 @@ export function initOnline(game:GameBridge) {
     if(gameplayKey(event)!=='Enter'||event.repeat||(event.target as HTMLElement).closest('input,textarea,select,[contenteditable="true"]'))return;
     if(document.querySelector('#dialog-layer:not([hidden])')||!account)return;event.preventDefault();captureChatDraft();tab='world';render();if(!dialog.open)dialog.showModal();content.querySelector<HTMLInputElement>('.social-chat-input')?.focus();
   });
-  function refreshButton(){const label=account?t(status,{code:party||''}):t('Play together');toggle.textContent=socialSlot?'👥':`👥 ${label}`;toggle.title=label;toggle.setAttribute('aria-label',t('Play together'));dialog.setAttribute('aria-label',t('Play together'));close.setAttribute('aria-label',t('Close online menu'));toggle.dataset.online=String(!!account);}
+  function refreshButton(){const label=account?t(status,{code:party||''}):t('Play together');toggle.textContent=socialSlot?'👥':`👥 ${label}`;toggle.title=label;toggle.setAttribute('aria-label',t('Play together'));dialog.setAttribute('aria-label',t('Play together'));close.setAttribute('aria-label',t('Close online menu'));toggle.dataset.online=String(!!account);toggle.dataset.status=account?status:'';toggle.dataset.party=account&&party||'';}
   function expireSession(){
     if(!account)return;sessionEpoch++;stopped=true;if(reconnect)clearTimeout(reconnect);if(saveTimer)clearTimeout(saveTimer);
     clearChat();const previous=socket;socket=null;previous?.close();account=null;host=null;party=null;visiting=null;players.clear();rejectActions('Your session ended. Pending actions remain on this device.');
@@ -297,7 +301,7 @@ export function initOnline(game:GameBridge) {
     // damage and rewards with canonical combat values before relaying the snapshot.
     if(host===account.id&&enemyClock>=.15){enemyClock=0;send({type:'enemies',enemies:world().enemySnapshots()});}
   });
-  game.onAction(action=>{if(!account)return;if(action.kind==='basic')send({type:'basic',targetId:action.targetId,requestId:crypto.randomUUID()});else if(action.kind==='skill')send({type:'skill',index:action.index,requestId:crypto.randomUUID()});if(account)send({type:'effect',effect:action.special||action.kind,visual:action.effect,x:action.x,z:action.z,color:action.kind==='skill'?'#d1a6ff':'#fff2a0'});});
+  game.onAction(action=>{if(!account)return;if(action.kind==='basic')send({type:'basic',targetId:action.targetId,requestId:crypto.randomUUID()});else if(action.kind==='skill')send({type:'skill',index:action.index,requestId:crypto.randomUUID()});if(account)send({type:'effect',effect:action.special||action.kind,visual:effectData(action.effect),x:action.x,z:action.z,color:action.kind==='skill'?'#d1a6ff':'#fff2a0'});});
   document.addEventListener('visibilitychange',()=>{send({type:'active',active:!document.hidden});if(document.hidden)void flushSave();});
   window.addEventListener('pagehide',rememberActions);
   onLanguageChange(()=>{

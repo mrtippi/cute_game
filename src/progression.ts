@@ -155,7 +155,9 @@ const ACHIEVEMENTS: [
     string
 ][] = [['kills', 'kill', [50, 200, 1000, 5000], 'Creature hunter', '⚔️'], ['boss', 'boss', [1, 10, 50, 200], 'Boss hunter', '👑'], ['farm', 'harvest', [20, 100, 500, 2000], 'Gardener', '🌾'], ['fish', 'fish', [10, 50, 200, 1000], 'Angler', '🎣'], ['legend', 'legendFish', [1, 3, 10], 'Legendary angler', '🐋'], ['cook', 'cook', [10, 50, 200], 'Volcano chef', '🔥'], ['mine', 'mine', [20, 100, 500], 'Space miner', '⛏️'], ['planets', 'visited', [2, 3, 5, 9], 'Explorer', '🔭'], ['decor', 'decor', [3, 10, 25], 'Decorator', '🏡'], ['quests', 'questsDone', [5, 30, 100, 300], 'Helpful neighbor', '📜'], ['bounty', 'bounty', [1, 10, 50, 150], 'Bounty hunter', '🎯'], ['chal', 'chal', [5, 30, 100, 300], 'Challenge champion', '⏱️'], ['streak', 'bestStreak', [3, 5, 8, 12], 'Winning streak', '🔥'], ['story', 'story', [9, 15, 21, 29, 53, 100, 150], 'Storyteller', '🧭'], ['level', 'level', [5, 10, 20, 30, 50, 75, 100], 'Growing stronger', '⭐'],
     ['rancher', 'animal', [25, 100, 500, 2000], 'Rancher', '🥚'], ['orchard', 'fruit', [1, 10, 50, 200], 'Orchard keeper', '🍎'], ['smith', 'forgeOk', [1, 10, 30, 60], 'Blacksmith', '⚒️'], ['harpoon', 'harpoon', [10, 50, 200, 1000], 'Harpoon hunter', '🔱'],
-    ['shadow', 'mystery', [1, 10, 30, 100], 'Shadow seeker', '❓'], ['pilot', 'stardust', [50, 300, 1000, 5000], 'Stardust pilot', '✨'], ['titan', 'titans', [1, 3, 6, 9], 'Titan slayer', '🗿'], ['visitor', 'login', [7, 30, 100, 365], 'Regular visitor', '🗓️'], ['neighbor', 'order', [5, 25, 100, 500], 'Good neighbor', '📦'], ['stars', 'stars', [1, 5, 15, 40, 81], 'Star conqueror', '🌟']];
+    ['shadow', 'mystery', [1, 10, 30, 100], 'Shadow seeker', '❓'], ['pilot', 'stardust', [50, 300, 1000, 5000], 'Stardust pilot', '✨'], ['titan', 'titans', [1, 3, 6, 9], 'Titan slayer', '🗿'], ['visitor', 'login', [7, 30, 100, 365], 'Regular visitor', '🗓️'], ['neighbor', 'order', [5, 25, 100, 500], 'Good neighbor', '📦'], ['stars', 'stars', [1, 5, 15, 40, 81], 'Star conqueror', '🌟'],
+    // Online only: the server records these (recordCoopDefeat, recordGardenVisit); offline saves never move them.
+    ['together', 'coopBoss', [1, 5, 20, 50], 'Together', '🤝'], ['guest', 'gardenVisit', [1, 5, 15, 40], 'Garden guest', '🚪']];
 export const ACHIEVEMENT_TITLES: readonly string[] = ACHIEVEMENTS.map(a => a[3]);
 const CHALLENGES: Record<string, {
     target: number;
@@ -232,7 +234,7 @@ function condition(s: SaveState, key: string) {
     default: return s.progression.totals[key] || 0;
 } }
 export function recordEvent(s: SaveState, event: string, amount = 1, detail?: string, now = Date.now()) {
-    if (!Number.isFinite(amount) || amount <= 0 || !Number.isFinite(now) || !Object.hasOwn({ kill: 1, harvest: 1, sell: 1, craft: 1, fish: 1, skill: 1, upgrade: 1, boss: 1, fishrare: 1, legendFish: 1, cook: 1, mine: 1, planet: 1, expand: 1, decorate: 1, bounty: 1, chal: 1, order: 1, hourChest: 1, tierUp: 1, animal: 1, fertilize: 1, eat: 1, mystery: 1, fruit: 1, hawk: 1, stardust: 1, forge: 1, forgeOk: 1, harpoon: 1, titan: 1, dailyDone: 1, login: 1 }, event))
+    if (!Number.isFinite(amount) || amount <= 0 || !Number.isFinite(now) || !Object.hasOwn({ kill: 1, harvest: 1, sell: 1, craft: 1, fish: 1, skill: 1, upgrade: 1, boss: 1, fishrare: 1, legendFish: 1, cook: 1, mine: 1, planet: 1, expand: 1, decorate: 1, bounty: 1, chal: 1, order: 1, hourChest: 1, tierUp: 1, animal: 1, fertilize: 1, eat: 1, mystery: 1, fruit: 1, hawk: 1, stardust: 1, forge: 1, forgeOk: 1, harpoon: 1, titan: 1, dailyDone: 1, login: 1, coopKill: 1, coopBoss: 1, gardenVisit: 1, shareLoot: 1 }, event))
         return;
     refreshProgress(s, now);
     const p = s.progression;
@@ -256,6 +258,31 @@ export function recordEvent(s: SaveState, event: string, amount = 1, detail?: st
         p.bounty.progress = Math.min(p.bounty.target, p.bounty.progress + amount);
     if (p.challenge?.type === event && !p.challenge.claimed)
         p.challenge.progress = Math.min(p.challenge.target, p.challenge.progress + amount);
+}
+// Co-op progress. Only the server calls these (combat-authority.mjs, server.mjs, action-service.mjs), from what it saw
+// itself: a client never reports a co-op count. Each refreshes at the end so a title earned by the event is held at once.
+/** A defeat with `contributors` explorers who hit the enemy (the server's 30-second list); counts from two. */
+export function recordCoopDefeat(s: SaveState, type: string, boss: boolean, contributors: number, now = Date.now()) {
+    if (contributors < 2) return false;
+    recordEvent(s, 'coopKill', 1, type, now);
+    if (boss || type.startsWith('titan_')) recordEvent(s, 'coopBoss', 1, type, now);
+    refreshProgress(s, now);
+    return true;
+}
+/** Friends' gardens visited today (UTC), kept by the server beside the account. */
+export interface VisitLedger { day: string; friends: string[] }
+/** A visit to a friend's garden counts once per friend per UTC day: returns the new ledger, or null when it does not count. */
+export function recordGardenVisit(s: SaveState, ledger: VisitLedger | undefined, friendId: string, now = Date.now()): VisitLedger | null {
+    const today = day(now), friends = ledger?.day === today && Array.isArray(ledger.friends) ? ledger.friends : [];
+    if (friends.includes(friendId)) return null;
+    recordEvent(s, 'gardenVisit', 1, friendId, now);
+    refreshProgress(s, now);
+    return { day: today, friends: [...friends, friendId] };
+}
+/** Protected loot this explorer released early, picked up by another explorer. */
+export function recordSharedLoot(s: SaveState, item: string, now = Date.now()) {
+    recordEvent(s, 'shareLoot', 1, item, now);
+    refreshProgress(s, now);
 }
 function rewardLabel(r: Reward) { return [r.energy ? t('{count} energy', { count: r.energy }) : '', r.xp ? `${r.xp} XP` : '', r.stars ? t('{count} stars', { count: r.stars }) : '', ...Object.entries(r.items || {}).map(([id, n]) => `${t(ITEMS[id]?.name || id)} ×${n}`)].filter(Boolean).join(' · '); }
 function give(s: SaveState, r: Reward, now: number) { s.energy += r.energy || 0; if (r.xp)

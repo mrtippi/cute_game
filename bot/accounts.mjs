@@ -39,3 +39,16 @@ export function updateAccount(id, patch) {
   writeFileSync(a.file, JSON.stringify(next, null, 1));
   return loadAccount(id);
 }
+
+/**
+ * Online play (online.mjs): account.json online = { username, password, linkedAt, enabled, party }. Merges `patch`
+ * into it (null removes it). The password is a random one for this PC's own server only.
+ */
+export function setOnline(id, patch) {
+  const a = loadAccount(id), next = JSON.parse(readFileSync(a.file, 'utf8'));
+  if (patch === null) delete next.online; else next.online = { ...next.online, ...patch };
+  writeFileSync(a.file, JSON.stringify(next, null, 1));
+  return loadAccount(id);
+}
+/** Linked to the local server and switched on: the director plays its clips online (play.mjs --online). */
+export const playsOnline = a => !!(a?.online?.linkedAt && a.online.enabled);

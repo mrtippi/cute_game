@@ -43,6 +43,7 @@ export const VI_CATALOG: Record<string, string> = {
   "Fashion": "Thời trang",
   "Disguises": "Cải trang",
   "Supplies": "Vật dụng",
+  "Decor": "Trang trí",
   "Space gear": "Trang bị vũ trụ",
   "Legendary": "Huyền thoại",
   "Volcano equipment": "Trang bị dung nham",

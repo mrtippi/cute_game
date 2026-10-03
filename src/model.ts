@@ -14,7 +14,7 @@ export * from './content.ts';
 export * from './farm.ts';
 export * from './helper-state.ts';
 export * from './friends-state.ts';
-export { recordEvent, progressEntries, claimProgress, type ProgressKind, type ProgressEntry } from './progression.ts';
+export { recordEvent, recordCoopDefeat, recordGardenVisit, recordSharedLoot, progressEntries, claimProgress, type ProgressKind, type ProgressEntry } from './progression.ts';
 export interface Plot {
     crop: CropId | null;
     plantedAt: number;
@@ -288,9 +288,17 @@ export const villageRankOf = (s: { level?: number; progression?: { villageRank?:
 /** The farthest a bed corner may reach at this village rank (17.4 m at rank 1). */
 export const bedReach = (rank = 1) => BED_REACH + placementRadius(rank) - placementRadius(1);
 /** Keeps beds and decorations off the zones a bigger village opens (orchard trees, pasture, pond, plaza, houses, deck). */
-function villageZonesClear(x: number, z: number, half: number, rank: number) {
-    return zonesOpen(rank).every(o => Math.hypot(Math.max(0, Math.abs(o.x - x) - half), Math.max(0, Math.abs(o.z - z) - half)) >= o.r + .6)
+function villageZonesClear(x: number, z: number, half: number, rank: number, decor = false) {
+    return zonesOpen(rank).every(o => decor && o.id === 'plaza' ? plazaDecorOk(o, x, z) : Math.hypot(Math.max(0, Math.abs(o.x - x) - half), Math.max(0, Math.abs(o.z - z) - half)) >= o.r + .6)
         && (rank < 2 || ORCHARD_TREES.every(t => Math.hypot(Math.max(0, Math.abs(t.x - x) - half), Math.max(0, Math.abs(t.z - z) - half)) >= 1.2));
+}
+/** The decoration plaza takes decorations on its paving: clear of the fountain (1.25 m) and the four lamp posts (village-view.ts). */
+function plazaDecorOk(o: { x: number; z: number; r: number }, x: number, z: number) {
+    const d = Math.hypot(x - o.x, z - o.z);
+    if (d > o.r + .6) return true;
+    if (d < 1.95) return false;
+    for (let i = 0; i < 4; i++) { const a = i * Math.PI / 2 + Math.PI / 4; if (Math.hypot(x - o.x - Math.cos(a) * (o.r - .5), z - o.z - Math.sin(a) * (o.r - .5)) < .8) return false; }
+    return true;
 }
 export function bedClear(x: number, z: number, rotation = 0, rank = 1) {
     const half = Number.isFinite(rotation) ? bedSpan(rotation) : NaN;
@@ -376,7 +384,7 @@ function bedRoom(s: SaveState, x: number, z: number, rotation = 0, beds: readonl
         && beds.every(b => bedsApart(x, z, rotation, b.x, b.z, b.rotation ?? 0));
 }
 export function gardenExpansionCost(s: SaveState) { return 60 + Math.max(0, s.plots.length - STARTING_PLOTS) * 20; }
-function placementFree(s: SaveState, x: number, z: number, radius: number, omit?: string) { const rank = villageRankOf(s); return Number.isFinite(x) && Number.isFinite(z) && Math.hypot(x, z) <= placementRadius(rank) && (rank < 2 || villageZonesClear(x, z, radius * .5, rank)) && !s.plots.some((_, i) => { const p = bedPosition(s, i); return Math.hypot(x - p.x, z - p.z) < radius; }) && !s.decorations.some(d => d.uid !== omit && Math.hypot(x - d.x, z - d.z) < (ITEMS[d.id]?.collider || .6) + radius * .5); }
+function placementFree(s: SaveState, x: number, z: number, radius: number, omit?: string) { const rank = villageRankOf(s); return Number.isFinite(x) && Number.isFinite(z) && Math.hypot(x, z) <= placementRadius(rank) && (rank < 2 || villageZonesClear(x, z, radius * .5, rank, true)) && !s.plots.some((_, i) => { const p = bedPosition(s, i); return Math.hypot(x - p.x, z - p.z) < radius; }) && !s.decorations.some(d => d.uid !== omit && Math.hypot(x - d.x, z - d.z) < (ITEMS[d.id]?.collider || .6) + radius * .5); }
 /** Adds a bed (a kit from the bag, else energy): at (x, z) when given, otherwise automatically at the free spot nearest the garden. */
 export function expandGarden(s: SaveState, x?: number, z?: number, rotation = 0) { if (s.planet !== 'home' || s.plots.length >= STARTING_PLOTS + MAX_EXTRA_PLOTS)
     return false; const cost = gardenExpansionCost(s), kit = (s.bag.plot_kit || 0) > 0; if (!kit && s.energy < cost)

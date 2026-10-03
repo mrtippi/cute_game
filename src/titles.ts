@@ -3,10 +3,10 @@ import { FRIEND_CHAINS, LEVEL_TITLES, COLLECTION_TITLES, FISH_LOG_TITLES } from 
 import { starsEarned, titansAtTier, type TierHolder } from './planet-tiers.ts';
 
 /**
- * Titles: every name a player can earn, its rarity colour, and the eight earned by long-term play.
+ * Titles: every name a player can earn, its rarity colour, and those earned by long-term and co-op play.
  * The worn title shows under the name on the HUD and above the explorer (main.ts); the attic's title board
  * and the character panel choose it. Rarity: bronze (early level marks), silver (friends, first fish pages,
- * habits), gold (story, collections, mastery), rainbow (the three crowning titles).
+ * habits, co-op), gold (story, collections, mastery), rainbow (the three crowning titles).
  */
 export type Rarity = 'bronze' | 'silver' | 'gold' | 'rainbow';
 export const RARITY_ORDER: Rarity[] = ['bronze', 'silver', 'gold', 'rainbow'];
@@ -25,6 +25,10 @@ export const EARNED_TITLES: { title: string; rarity: Rarity; hint: string; done:
   { title: 'Titan Conqueror', rarity: 'gold', hint: 'Defeat a Titan on ★10', done: s => titansAtTier(s, 10) >= 1 },
   { title: 'Master Merchant', rarity: 'gold', hint: 'Earn 100000 energy at the market', done: s => (s.progression.totals.sell ?? 0) >= 100000 },
   { title: 'Challenge Champion', rarity: 'gold', hint: 'Win 12 quick challenges in a row', done: s => s.progression.bestStreak >= 12 },
+  // Online co-op: these totals are recorded only by the server (progression.ts, recordCoopDefeat / recordGardenVisit).
+  { title: 'Welcome Guest', rarity: 'bronze', hint: "Visit friends' gardens 10 times online", done: s => (s.progression.totals.gardenVisit ?? 0) >= 10 },
+  { title: 'Trusted Companion', rarity: 'silver', hint: 'Defeat 10 bosses together online', done: s => (s.progression.totals.coopBoss ?? 0) >= 10 },
+  { title: 'Party Leader', rarity: 'gold', hint: 'Defeat 50 bosses together online', done: s => (s.progression.totals.coopBoss ?? 0) >= 50 },
 ];
 
 /** Every title with its rarity, in the order the title board lists them. */

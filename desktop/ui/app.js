@@ -8,7 +8,8 @@ const safe = fn => async (...a) => { try { await fn(...a); } catch (e) { toast('
 const TASKS = { garden: 'Làm vườn', fertilize: 'Bón phân', orchard: 'Hái quả', animals: 'Chăm vật nuôi', market: 'Bán hàng', cook: 'Nấu ăn', expand: 'Mở luống',
   fight: 'Đánh quái', gather: 'Săn nguyên liệu', challenge: 'Thử thách nhanh', boss: 'Săn boss', travel: 'Bay sang hành tinh', mine: 'Đào mỏ', fishing: 'Câu cá', harpoon: 'Phóng lao',
   shop: 'Mua sắm', crystal: 'Nâng pha lê', gearBuy: 'Mua vũ khí', forge: 'Rèn vũ khí', craft: 'Chế tạo', wardrobe: 'Thay đồ', sightsee: 'Dạo chơi', tidy: 'Dọn kho', browse: 'Ngắm nghía', home: 'Về nhà', rescue: 'Cứu bạn', attic: 'Phòng kỷ niệm',
-  penUpgrade: 'Nâng chuồng', penHelper: 'Trợ thủ chuồng trại', dish: 'Nấu món đặc biệt', snack: 'Ăn món hiệu ứng', decorate: 'Trang trí làng', bolt: 'Robot Bolt', lava: 'Hang dung nham', dragon: 'Đánh rồng', gifts: 'Mở quà Đồ chơi', reroll: 'Đổi nhiệm vụ ngày', dressFriend: 'Mặc đồ cho bạn', visitFriend: 'Thăm bạn', disguise: 'Cải trang' };
+  penUpgrade: 'Nâng chuồng', penHelper: 'Trợ thủ chuồng trại', dish: 'Nấu món đặc biệt', snack: 'Ăn món hiệu ứng', decorate: 'Trang trí làng', bolt: 'Robot Bolt', lava: 'Hang dung nham', dragon: 'Đánh rồng', gifts: 'Mở quà Đồ chơi', reroll: 'Đổi nhiệm vụ ngày', dressFriend: 'Mặc đồ cho bạn', visitFriend: 'Thăm bạn', disguise: 'Cải trang',
+  groupBoss: 'Săn boss cùng nhóm', follow: 'Đi cùng trưởng nhóm', visitMate: 'Sang thăm vườn bạn', host: 'Đón bạn tới vườn', groupTrip: 'Cả nhóm bay sang hành tinh' };
 const STYLE = { fishing: 'Câu cá', hunt: 'Săn quái', boss: 'Đánh boss', space: 'Du hành vũ trụ', titan: 'Đánh Titan', story: 'Cốt truyện', village: 'Xây làng', forge: 'Rèn đồ', quests: 'Nhiệm vụ', helpers: 'Trợ thủ & bạn bè', events: 'Sự kiện hành tinh' };
 const DAYS = [[1, 'T2'], [2, 'T3'], [3, 'T4'], [4, 'T5'], [5, 'T6'], [6, 'T7'], [0, 'CN']];
 const ago = ms => { if (!ms) return '—'; const m = Math.round((Date.now() - ms) / 60000); return m < 60 ? `${m} phút trước` : m < 1440 ? `${Math.round(m / 60)} giờ trước` : `${Math.round(m / 1440)} ngày trước`; };
@@ -52,11 +53,11 @@ async function overview() {
 async function accountsPage() {
   const list = await call('accounts'), active = list.filter(a => !a.archived), archived = list.filter(a => a.archived);
   const row = a => `<tr>
-      <td><span class="dot" style="background:${a.color}"></span><b>${esc(a.name)}</b><div class="small muted">${esc(a.id)}</div></td>
+      <td><span class="dot" style="background:${a.color}"></span><b>${esc(a.name)}</b><div class="small muted">${esc(a.id)}${a.online ? ` · ${a.online.enabled ? '🌐 online' : 'offline (đã liên kết)'}` : ''}</div></td>
       <td>Lv.${a.level}</td><td>Hạng ${a.villageRank}</td><td class="small">${esc(a.title || '—')}</td><td>${a.days} ngày</td><td>${a.videos}</td><td class="small">${ago(a.lastPlayed)}</td>
       <td>${a.archived ? '<span class="chip off">Lưu trữ</span>' : a.running ? '<span class="chip on">Đang chạy</span>' : a.schedule?.enabled ? `<span class="chip wait">Lịch ${esc(a.schedule.start)}</span>` : '<span class="chip off">Nghỉ</span>'}</td>
       <td class="row">${a.archived ? `<button class="btn small" data-unarchive="${a.id}">Khôi phục</button><button class="btn small danger" data-del="${a.id}">Xoá</button>`
-        : `${a.running ? `<button class="btn small danger" data-stop="${a.id}">Dừng</button>` : `<button class="btn small primary" data-run="${a.id}">Chạy ngay</button>`}<button class="btn small" data-edit="${a.id}">Sửa</button><button class="btn small" data-open="${esc(a.videosDir)}">Video</button><button class="btn small" data-archive="${a.id}">Lưu trữ</button>`}</td></tr>`;
+        : `${a.running ? `<button class="btn small danger" data-stop="${a.id}">Dừng</button>` : `<button class="btn small primary" data-run="${a.id}">Chạy ngay</button>`}<button class="btn small" data-edit="${a.id}">Sửa</button>${a.online ? `<button class="btn small" data-online="${a.id}" data-on="${a.online.enabled ? 1 : 0}">${a.online.enabled ? 'Về chơi offline' : 'Chơi online'}</button>` : `<button class="btn small" data-link="${a.id}" ${a.running || a.linking ? 'disabled' : ''}>${a.linking ? 'Đang liên kết…' : 'Chơi online (server trên máy này)'}</button>`}<button class="btn small" data-open="${esc(a.videosDir)}">Video</button><button class="btn small" data-archive="${a.id}">Lưu trữ</button>`}</td></tr>`;
   $('#page-accounts').innerHTML = `<div class="row"><div><h1>Tài khoản</h1><p class="sub">Mỗi acc là một thư mục riêng; tên nhân vật trong game bằng tiếng Nhật.</p></div><button class="btn primary" id="new-acc" style="margin-left:auto">＋ Tạo acc mới</button></div>
     ${active.length ? `<table><tr><th>Acc</th><th>Cấp</th><th>Làng</th><th>Danh hiệu</th><th>Đã chơi</th><th>Video</th><th>Lần chơi cuối</th><th>Trạng thái</th><th></th></tr>${active.map(row).join('')}</table>` : '<div class="empty">Chưa có acc nào. Bấm “Tạo acc mới”.</div>'}
     ${archived.length ? `<h2>Đã lưu trữ</h2><table>${archived.map(row).join('')}</table>` : ''}`;
@@ -64,10 +65,40 @@ async function accountsPage() {
   document.querySelectorAll('[data-run]').forEach(b => b.onclick = safe(async () => { toast('Đang khởi động ' + b.dataset.run + '…'); await call('startNow', [b.dataset.run]); render(); }));
   document.querySelectorAll('[data-stop]').forEach(b => b.onclick = safe(async () => { await call('stop', b.dataset.stop); render(); }));
   document.querySelectorAll('[data-edit]').forEach(b => b.onclick = () => accountForm(list.find(a => a.id === b.dataset.edit)));
+  document.querySelectorAll('[data-link]').forEach(b => b.onclick = () => onlineForm(list.find(a => a.id === b.dataset.link)));
+  document.querySelectorAll('[data-online]').forEach(b => b.onclick = safe(async () => { const on = b.dataset.on !== '1'; await call('setOnlinePlay', b.dataset.online, on); toast(on ? 'Từ clip sau acc chơi online' : 'Từ clip sau acc chơi offline (từ save offline cũ)'); render(); }));
   document.querySelectorAll('[data-open]').forEach(b => b.onclick = () => window.api.open(b.dataset.open));
   document.querySelectorAll('[data-archive]').forEach(b => b.onclick = safe(async () => { await call('editAccount', b.dataset.archive, { archived: true }); await call('setSchedule', b.dataset.archive, { enabled: false }); render(); }));
   document.querySelectorAll('[data-unarchive]').forEach(b => b.onclick = safe(async () => { await call('editAccount', b.dataset.unarchive, { archived: false }); render(); }));
   document.querySelectorAll('[data-del]').forEach(b => b.onclick = safe(async () => { if (!confirm(`Xoá acc ${b.dataset.del}? Thư mục (save và video) được chuyển vào accounts/_deleted, có thể lấy lại.`)) return; await call('removeAccount', b.dataset.del); toast('Đã chuyển vào _deleted'); render(); }));
+}
+
+/** Link an account for online play on this PC's own game server: what changes, then the steps as they happen. */
+function onlineForm(a) {
+  const m = $('#modal'), f = $('#modal-body');
+  f.innerHTML = `<h2 style="margin:0">Chơi online: ${esc(a.name)} (${esc(a.id)})</h2>
+    <div class="small">
+      <p>Acc sẽ có một tài khoản trên <b>server game chạy trên chính máy này</b> (127.0.0.1), không phải server công khai nào. Mật khẩu được tạo ngẫu nhiên và lưu trong account.json của acc.</p>
+      <p>Save offline hiện tại (cấp Lv.${a.level}, đồ, tiến độ) được <b>chuyển lên server</b>; từ đó tiến độ của acc nằm trên server máy này (thư mục dữ liệu/server).</p>
+      <p>Save offline <b>vẫn được giữ nguyên</b> trong hồ sơ trình duyệt làm bản dự phòng. Nếu sau này chuyển về chơi offline, acc chơi tiếp từ save offline cũ đó (tiến độ online không chép ngược về).</p>
+      <p>Mỗi clip acc ở trong nhóm riêng (private party) nên bot khác không lạc vào video.</p>
+    </div>
+    <div class="panel small mono" id="link-steps" hidden></div>
+    <div class="row" style="justify-content:flex-end"><button class="btn" value="cancel" id="link-close">Huỷ</button><button class="btn primary" id="link-go" type="button">Liên kết và chơi online</button></div>`;
+  $('#link-go').onclick = safe(async () => {
+    const go = $('#link-go'), steps = $('#link-steps'); go.disabled = true; steps.hidden = false; steps.textContent = 'Bắt đầu…';
+    try { await call('linkOnline', a.id); } catch (e) { go.disabled = false; throw e; }
+    const poll = async () => {
+      const job = await call('linkState', a.id); if (!job) return;
+      steps.innerHTML = job.steps.map(s => `<div>· ${esc(s)}</div>`).join('') + (job.error ? `<div>⚠ ${esc(job.error)}</div>` : '');
+      if (job.running) { setTimeout(poll, 1000); return; }
+      $('#link-close').textContent = 'Đóng';
+      if (job.error) { go.disabled = false; go.textContent = 'Thử lại'; return; }
+      go.hidden = true; toast(`Đã liên kết: ${a.id} chơi online (Lv.${job.result?.level ?? '?'})`); render();
+    };
+    poll();
+  });
+  m.showModal();
 }
 
 /** Create (no account) or edit an account: folder id, Japanese name, colour, play style; new ones also get a schedule. */
@@ -141,22 +172,37 @@ function mixForm(tr, entry) {
   draw(); m.showModal();
 }
 /** A schedule row's settings as shown. */
-const rowEntry = tr => ({ enabled: tr.querySelector('.s-on').checked, start: `${tr.querySelector('.s-h').value}:${tr.querySelector('.s-m').value}`, days: [...tr.querySelectorAll('.s-day:checked')].map(i => Number(i.value)), clips: Number(tr.querySelector('.s-clips').value) || 10 });
+const rowEntry = tr => ({ enabled: tr.querySelector('.s-on').checked, start: `${tr.querySelector('.s-h').value}:${tr.querySelector('.s-m').value}`, days: [...tr.querySelectorAll('.s-day:checked')].map(i => Number(i.value)), clips: Number(tr.querySelector('.s-clips').value) || 10, group: tr.querySelector('.s-group').value || null });
+/** Groups (bot/groups.mjs): accounts in one group play together; the first id (sorted) leads, the others follow its settings. */
+const GROUP_NAMES = ['A', 'B', 'C', 'D'];
+const groupLeader = (schedule, g) => Object.keys(schedule).filter(id => schedule[id]?.group === g).sort()[0] ?? null;
+/** The toast after saving: which members took their leader's start, days, clip count and scenarios. */
+const followedText = (followed, names) => followed.length ? ' · ' + GROUP_NAMES.map(g => { const f = followed.filter(x => x.group === g); return f.length ? `Nhóm ${g}: ${f.map(x => names[x.id] ?? x.id).join(', ')} theo giờ, ngày, số clip và kịch bản của ${names[f[0].leader] ?? f[0].leader}` : ''; }).filter(Boolean).join(' · ') : '';
 async function schedulePage() {
   const [list, c, w, waiting] = await Promise.all([call('accounts'), call('control'), call('waves'), call('waiting')]);
+  const names = Object.fromEntries(list.map(a => [a.id, a.name]));
   const rows = list.filter(a => !a.archived).map(a => { const e = c.schedule[a.id] ?? { enabled: false, days: [1, 2, 3, 4, 5, 6, 0], start: '08:00', clips: c.settings.clips };
+    // A member follows its group's leader: its own time, days, clips and scenarios are not used (greyed out).
+    const leader = e.group ? groupLeader(c.schedule, e.group) : null, follows = leader && leader !== a.id, off = follows ? `disabled title="Theo trưởng nhóm ${esc(names[leader] ?? leader)}"` : '';
+    const online = !!a.online?.enabled;
     return `<tr data-id="${a.id}" data-name="${esc(a.name)}"><td><span class="dot" style="background:${a.color}"></span><b>${esc(a.name)}</b> <span class="small muted">${esc(a.id)}</span></td>
-      <td><input type="checkbox" class="s-on" ${e.enabled ? 'checked' : ''}></td><td class="row" style="gap:4px;flex-wrap:nowrap">${timePicker(e.start)}</td>
-      <td><div class="days">${DAYS.map(([d, l]) => `<label><input type="checkbox" class="s-day" value="${d}" ${e.days?.includes(d) ? 'checked' : ''}>${l}</label>`).join('')}</div></td>
-      <td><button class="btn small s-mix" type="button" title="Chọn kịch bản">${mixText(e.mix, e.clips ?? c.settings.clips)}</button></td><td><input type="number" class="s-clips" min="1" max="20" value="${e.clips ?? c.settings.clips}" style="width:70px"></td><td class="s-end">${finishAt(e.start, e.clips ?? c.settings.clips, c.settings.minutes)}</td><td class="small muted">${c.lastRun[a.id] ? 'đã chạy ' + c.lastRun[a.id] : '—'}</td></tr>`; }).join('');
+      <td><input type="checkbox" class="s-on" ${e.enabled ? 'checked' : ''}></td>
+      <td><select class="s-group" ${online ? '' : 'disabled title="Cần bật Chơi online (trang Tài khoản)"'}><option value="">—</option>${GROUP_NAMES.map(g => `<option ${e.group === g ? 'selected' : ''}>${g}</option>`).join('')}</select>
+        <div class="small muted">${!online ? 'cần bật Chơi online' : follows ? `theo ${esc(names[leader] ?? leader)}` : leader ? 'trưởng nhóm' : ''}</div></td>
+      <td class="row" style="gap:4px;flex-wrap:nowrap">${timePicker(e.start).replace(/<select /g, `<select ${off} `)}</td>
+      <td><div class="days">${DAYS.map(([d, l]) => `<label><input type="checkbox" class="s-day" value="${d}" ${e.days?.includes(d) ? 'checked' : ''} ${off}>${l}</label>`).join('')}</div></td>
+      <td><button class="btn small s-mix" type="button" title="Chọn kịch bản" ${off}>${mixText(e.mix, e.clips ?? c.settings.clips)}</button></td><td><input type="number" class="s-clips" min="1" max="20" value="${e.clips ?? c.settings.clips}" style="width:70px" ${off}></td><td class="s-end">${finishAt(e.start, e.clips ?? c.settings.clips, c.settings.minutes)}</td><td class="small muted">${c.lastRun[a.id] ? 'đã chạy ' + c.lastRun[a.id] : '—'}</td></tr>`; }).join('');
   $('#page-schedule').innerHTML = `<h1>Lịch chạy</h1><p class="sub">App chạy ngầm ở khay hệ thống và tự bắt đầu các acc đúng giờ. Khi số acc đến giờ nhiều hơn sức máy, acc sau chờ lượt và tự chạy khi có chỗ.</p>
     ${w.overloaded ? `<div class="warn">Hôm nay có lúc ${w.overlap} acc chạy cùng lúc, máy chỉ chạy được ${w.capacity}. Các acc dư sẽ chờ lượt (xong muộn hơn). Có thể giãn giờ bắt đầu.</div>` : `<div class="ok">Lịch hôm nay vừa sức máy (tối đa ${w.capacity} acc cùng lúc).</div>`}
+    ${(w.groups ?? []).map(g => `<div class="warn">Nhóm ${g.group} có ${g.size} acc nhưng máy chỉ chạy được ${w.capacity} acc cùng lúc. Nhóm luôn chạy đủ cả nhóm, nên sẽ chỉ bắt đầu khi không còn acc nào khác chạy, và máy sẽ quá tải. Nên bớt acc khỏi nhóm.</div>`).join('')}
     ${waiting.length ? `<div class="warn">Đang chờ lượt: ${waiting.map(esc).join(', ')}</div>` : ''}
-    ${rows ? `<table><tr><th>Acc</th><th>Bật</th><th>Giờ bắt đầu</th><th>Ngày</th><th>Kịch bản</th><th>Số clip</th><th>Xong khoảng</th><th>Lần cuối</th></tr>${rows}</table>
+    ${rows ? `<table><tr><th>Acc</th><th>Bật</th><th>Nhóm</th><th>Giờ bắt đầu</th><th>Ngày</th><th>Kịch bản</th><th>Số clip</th><th>Xong khoảng</th><th>Lần cuối</th></tr>${rows}</table>
+      <p class="small muted">Nhóm: các acc cùng nhóm (chỉ acc chơi online) chạy cùng lúc, cùng giờ, ngày, số clip và kịch bản của trưởng nhóm (acc đứng đầu theo tên thư mục). Chọn kịch bản 👥 Chơi cùng nhau để có clip cả nhóm gặp nhau, đánh boss chung, sang thăm vườn nhau.</p>
       <div class="row" style="margin-top:12px"><button class="btn primary" id="s-save">Lưu lịch</button><span class="small muted">Mỗi video dài đúng ${c.settings.minutes} phút; tính cả mở game và chuyển clip, mỗi clip chiếm khoảng ${c.settings.minutes + CLIP_OVERHEAD} phút · 10 clip ≈ ${(10 * (c.settings.minutes + CLIP_OVERHEAD) / 60).toFixed(1).replace('.', ',')} giờ</span></div>` : '<div class="empty">Chưa có acc.</div>'}`;
   const save = $('#s-save'); if (save) save.onclick = safe(async () => {
-    for (const tr of document.querySelectorAll('#page-schedule tr[data-id]')) await call('setSchedule', tr.dataset.id, rowEntry(tr));
-    toast('Đã lưu lịch'); render();
+    const rows = Object.fromEntries([...document.querySelectorAll('#page-schedule tr[data-id]')].map(tr => [tr.dataset.id, rowEntry(tr)]));
+    const { followed } = await call('saveSchedule', rows);
+    toast('Đã lưu lịch' + followedText(followed, names)); render();
   });
   // The finish time follows the start and the clip count as they change.
   for (const tr of document.querySelectorAll('#page-schedule tr[data-id]')) {

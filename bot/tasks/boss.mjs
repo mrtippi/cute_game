@@ -7,7 +7,7 @@ import { dodge, dangersOf, inDanger } from '../lib/dodge.mjs';
 import { pickSkill, useSkill } from '../lib/skills.mjs';
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
 
-const foodCount = s => Object.entries(s.bag).filter(([id]) => id.startsWith('cooked_') || ['potion', 'honey', 'omelette', 'pancake', 'milkshake', 'cheese'].includes(id)).reduce((n, [, c]) => n + c, 0);
+export const foodCount = s => Object.entries(s.bag).filter(([id]) => id.startsWith('cooked_') || ['potion', 'honey', 'omelette', 'pancake', 'milkshake', 'cheese'].includes(id)).reduce((n, [, c]) => n + c, 0);
 
 /** Health the fight would cost (boss skills hit harder than their basic damage), against health plus food. */
 export function bossReady(s, boss) {
@@ -25,7 +25,8 @@ export function huntable(s) {
     .sort((a, b) => Number(a.titan) - Number(b.titan) || a.d - b.d);
 }
 
-export async function huntBoss(bot, { id, timeout = 240000 } = {}) {
+/** loot: false leaves the drops lying (tasks/coop.mjs shares them with the group first). */
+export async function huntBoss(bot, { id, timeout = 240000, loot = true } = {}) {
   const { game, hands, rng, note, log } = bot;
   let s = await game.snap();
   const target = id ? s.bosses.find(b => b.id === id) : huntable(s)[0];
@@ -39,10 +40,12 @@ export async function huntBoss(bot, { id, timeout = 240000 } = {}) {
   while (Date.now() < end) {
     s = await game.snap();
     if (s.modal === 'death') return 'knocked out by the boss';
+    // A panel opened by a stray tap on the way (the pen, a stall) blocks every click: close it and carry on.
+    if (s.modal || s.dialog) { await game.closePanel(); engaged = false; continue; }
     const boss = s.enemies.find(e => e.id === target.id);
     if (!boss) {
       const gone = s.bosses.find(b => b.id === target.id);
-      if (gone && !gone.alive) { note(`defeated the boss ${target.name}! (${dodges} dodges)`, 'boss'); await sleep(rng.between(600, 1200)); await collectLoot(bot, { range: 22 }); return `defeated ${target.name}`; }
+      if (gone && !gone.alive) { note(`defeated the boss ${target.name}! (${dodges} dodges)`, 'boss'); await sleep(rng.between(600, 1200)); if (loot) await collectLoot(bot, { range: 22 }); return `defeated ${target.name}`; }
       return 'boss vanished';
     }
     const dangers = dangersOf(s);

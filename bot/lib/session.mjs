@@ -5,6 +5,7 @@ import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { Hands } from './hands.mjs';
 import { Game } from './game.mjs';
+import { assertLocal, ensureLoggedIn, ensureLoggedOut, reloadGame } from './online.mjs';
 
 /**
  * The game window. This PC's screen works at 2048×1112 (125% Windows scaling), so a 1920×1080 page plus Chrome's
@@ -46,7 +47,10 @@ const CURSOR = readFileSync(fileURLToPath(new URL('./cursor.js', import.meta.url
  * Several accounts can play at once (fleet.mjs): each has its own profile, debugging port and window position, and
  * the fleet mutes them (the recordings carry no sound; music is added afterwards).
  */
-export async function openSession({ url = 'http://127.0.0.1:8787/', profile, rng, name = 'さくら', color, port = 9333, position, mute = false, fps = 0, headless = false, width = WINDOW.width, height = WINDOW.height, scale = WINDOW.scale, log = console.log, speed = 1 }) {
+export async function openSession({ url = 'http://127.0.0.1:8787/', profile, rng, name = 'さくら', color, port = 9333, position, mute = false, fps = 0, headless = false, width = WINDOW.width, height = WINDOW.height, scale = WINDOW.scale, log = console.log, speed = 1, online = null, signOut = false }) {
+  // online: a linked account (lib/online.mjs) — signed in on this PC's own server before the game starts.
+  // signOut: a linked account playing offline again — its profile drops the server session.
+  if (online) assertLocal(url);
   quietProfile(profile);
   const context = await chromium.launchPersistentContext(profile, {
     ...BROWSER, headless: false, chromiumSandbox: true, viewport: { width, height }, deviceScaleFactor: scale, locale: 'ja-JP', timezoneId: 'Asia/Tokyo',
@@ -65,6 +69,8 @@ export async function openSession({ url = 'http://127.0.0.1:8787/', profile, rng
   await page.waitForFunction(() => !!window.__zg, null, { timeout: 30000 });
   const hands = new Hands(page, rng, { speed }), game = new Game(page, hands, rng, log);
   await page.waitForTimeout(2500);
+  // The game checks its session once while loading, so a new sign-in (or sign-out) needs a reload.
+  if (online ? (await ensureLoggedIn(page, online, { log })).fresh : signOut && await ensureLoggedOut(page)) await reloadGame(page);
   await startGame({ page, hands, game, rng, name, color });
   return { context, page, hands, game };
 }

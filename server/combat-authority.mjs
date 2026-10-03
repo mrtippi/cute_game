@@ -130,6 +130,8 @@ export function createCombatAuthority({store,peers,rooms,remember,send,broadcast
       let loot=[];
       for(const id of contributors){const account=records.get(id);if(!account||(account.adventureEpoch||0)!==contributorEpochs.get(id))continue;const profile=Game.parseSave(JSON.stringify(account.profile));if(!profile)continue;
         const rolled=Game.grantDefeat(profile,enemy.type,enemy.roster.xp,enemy.boss,Math.random,false);if(id===killer.account.id)loot=rolled;
+        // Co-op progress counts the server's own contributor list, never a client report.
+        Game.recordCoopDefeat(profile,enemy.type,enemy.boss||enemy.roster.titan,contributors.length,now);
         if(execute&&id===killer.account.id&&(account.lifeEpoch||0)===killerEpoch.life)profile.hp=Math.min(Game.maxHp(profile),profile.hp+Game.maxHp(profile)*.25);
         account.profile=profile;
       }

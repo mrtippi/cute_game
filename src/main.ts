@@ -602,7 +602,7 @@ function beginPlacement(id:string){if(visiting)return;if(state.planet!=='home'){
 function cancelPlacement(){placement=null;$('#placement-bar').hidden=true;document.body.classList.remove('placing');$('#placement-bar').classList.remove('bad');world.placementGhost(null);}
 function movePlacement(x:number,z:number){
   if(!placement)return;placement.x=Math.round(x*100)/100;placement.z=Math.round(z*100)/100;const {id,rotation}=placement;
-  placement.ok=M.ITEMS[id]?.type==='placeable'?M.bedSpotOk(state,placement.x,placement.z,rotation):M.decorSpotOk(state,placement.x,placement.z)&&!world.blocked(placement.x,placement.z);
+  placement.ok=M.ITEMS[id]?.type==='placeable'?M.bedSpotOk(state,placement.x,placement.z,rotation):M.decorSpotOk(state,placement.x,placement.z)&&!world.blocked(placement.x,placement.z)&&Math.hypot(placement.x-world.position.x,placement.z-world.position.z)>=1.3;
   world.placementGhost(placement);$('#placement-bar').classList.toggle('bad',!placement.ok);
   $('#placement-hint').textContent=t(placement.ok?'':'Blocked here or outside the fence');
 }

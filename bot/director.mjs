@@ -1,7 +1,7 @@
 // The director: one day of ten one-hour clips (clips.mjs), planned from the latest save and played one after another.
 //
 //   node director.mjs plan [--date 2026-10-03]            plan the day and print it (writes plan.json)
-//   node director.mjs run  [--date ...] [--from 1] [--clips 10] [--minutes 60]
+//   node director.mjs run  [--date ...] [--from 1] [--clips 10] [--minutes 60] [--group A --members id1,id2]
 //
 // Each clip runs play.mjs in its own browser session (seed <date>-c01 …) with the clip's theme and YouTube title, so
 // every clip has its own folder with session.log, events.jsonl (chapters) and save.json. The day folder keeps
@@ -12,7 +12,8 @@ import { parseArgs } from 'node:util';
 import { fileURLToPath } from 'node:url';
 import { createRng } from './lib/rng.mjs';
 import { CLIPS, planDay, clipTitle } from './clips.mjs';
-import { loadAccount } from './accounts.mjs';
+import { loadAccount, playsOnline } from './accounts.mjs';
+import { groupDir, groupSave, leaderOf, readJson } from './groups.mjs';
 import { clipText } from './chapters.mjs';
 
 const { values: opt, positionals } = parseArgs({ allowPositionals: true, options: {
@@ -23,6 +24,10 @@ const { values: opt, positionals } = parseArgs({ allowPositionals: true, options
   account: { type: 'string' }, record: { type: 'boolean', default: false }, pos: { type: 'string', default: '0,0' }, mute: { type: 'boolean', default: false }, sound: { type: 'boolean', default: false }, headless: { type: 'boolean', default: false },
   // The scenarios picked in the control app, as JSON { theme: weight } (clips.mjs); none = the automatic day.
   mix: { type: 'string' },
+  // The game's address (this PC's server); an account linked for online play signs in there (play.mjs --online).
+  url: { type: 'string', default: 'http://127.0.0.1:8787/' },
+  // A group (the control app's Nhóm): its letter and every member's account id. The members plan one shared day.
+  group: { type: 'string' }, members: { type: 'string' },
 } });
 const account = opt.account ? loadAccount(opt.account) : null;
 if (account) { opt.profile = account.profile; opt.root = account.days; }
@@ -31,10 +36,10 @@ const dayDir = `${opt.root}/${date}`; mkdirSync(dayDir, { recursive: true });
 const PLAY = fileURLToPath(new URL('./play.mjs', import.meta.url));
 
 /** The newest save.json written by any session (director clips or hand-run sessions); level 1 when none. */
-function latestSave() {
+function latestSave(root = opt.root) {
   const found = [];
   const walk = dir => { if (!existsSync(dir)) return; for (const name of readdirSync(dir)) { const p = `${dir}/${name}`; if (statSync(p).isDirectory()) walk(p); else if (name === 'save.json') found.push({ p, t: statSync(p).mtimeMs }); } };
-  walk(opt.root); if (!account) walk('D:/autogame/bot-data/sessions');
+  walk(root); if (!account) walk('D:/autogame/bot-data/sessions');
   found.sort((a, b) => b.t - a.t);
   try { return found.length ? JSON.parse(readFileSync(found[0].p, 'utf8')) : { level: 1 }; } catch { return { level: 1 }; }
 }
@@ -46,27 +51,54 @@ function seriesDay() {
   return days.indexOf(date) + 1;
 }
 
+/**
+ * A group's day: every member gets the same themes in the same order (one seed for the group, planned from the
+ * weakest member's save), so clip N is `together` for all of them. The first member to plan writes the group's plan
+ * file and the others take it from there.
+ */
+function groupThemes(group, mix) {
+  const file = `${groupDir(group.id)}/${date}-plan.json`, count = Number(opt.clips), shared = readJson(file);
+  if (shared && shared.members.join() === group.members.join() && shared.clips.length === count && JSON.stringify(shared.mix) === JSON.stringify(mix)) return shared.clips;
+  const save = groupSave(group.members.map(id => { try { return latestSave(loadAccount(id).days); } catch { return null; } }));
+  const themes = planDay(save, createRng(`director:group:${group.id}:${group.members.join(',')}:${date}`), count, {}, mix, { group: group.id });
+  mkdirSync(groupDir(group.id), { recursive: true });
+  try { writeFileSync(file, JSON.stringify({ members: group.members, mix, clips: themes, at: new Date().toISOString() }, null, 1), { flag: shared ? 'w' : 'wx' }); }
+  catch { const other = readJson(file); if (other?.members.join() === group.members.join() && other.clips.length === count) return other.clips; }
+  return themes;
+}
+/** The group this account plays with today: { id, members, leader }, or null (alone, or not playing online). */
+function playGroup() {
+  const members = [...new Set((opt.members ?? '').split(',').map(id => id.trim()).filter(Boolean))].sort();
+  if (!opt.group || !account || members.length < 2 || !members.includes(account.id)) return null;
+  if (!playsOnline(account)) { console.log(`group ${opt.group}: ${account.id} does not play online, playing alone`); return null; }
+  return { id: opt.group, members, leader: leaderOf(members) };
+}
+
 function loadPlan() {
   const file = `${dayDir}/plan.json`;
   if (existsSync(file)) return JSON.parse(readFileSync(file, 'utf8'));
-  const save = latestSave(), day = seriesDay(), rng = createRng(`director:${account?.id ?? ''}:${date}`);
-  const mix = opt.mix ? JSON.parse(opt.mix) : null, themes = planDay(save, rng, Number(opt.clips), account?.style, mix);
-  const plan = { date, day, startLevel: save.level ?? 1, mix, clips: themes.map((theme, i) => ({ index: i + 1, theme, seed: `${date}-c${String(i + 1).padStart(2, '0')}`, status: 'planned' })) };
+  const save = latestSave(), day = seriesDay(), rng = createRng(`director:${account?.id ?? ''}:${date}`), group = playGroup();
+  const mix = opt.mix ? JSON.parse(opt.mix) : null, themes = group ? groupThemes(group, mix) : planDay(save, rng, Number(opt.clips), account?.style, mix);
+  const plan = { date, day, startLevel: save.level ?? 1, mix, ...(group ? { group } : {}), clips: themes.map((theme, i) => ({ index: i + 1, theme, seed: `${date}-c${String(i + 1).padStart(2, '0')}`, status: 'planned' })) };
   writeFileSync(file, JSON.stringify(plan, null, 1));
   return plan;
 }
 const savePlan = plan => writeFileSync(`${dayDir}/plan.json`, JSON.stringify(plan, null, 1));
 
 function show(plan) {
-  console.log(`Day ${plan.day} · ${plan.date} · from Lv.${plan.startLevel}`);
+  console.log(`Day ${plan.day} · ${plan.date} · from Lv.${plan.startLevel}${plan.group ? ` · group ${plan.group.id} (${plan.group.members.join(', ')})` : ''}`);
   for (const c of plan.clips) console.log(`  #${String(c.index).padStart(2)} ${CLIPS[c.theme].icon} ${c.theme.padEnd(8)} ${c.status.padEnd(8)} ${c.title ?? ''}${c.levelAfter ? ` → Lv.${c.levelAfter}` : ''}`);
 }
 
 /** One clip: play.mjs with the clip's theme and title, the clip folder under the day folder. */
 function playClip(clip, title) {
   return new Promise(resolve => {
-    const args = [PLAY, '--minutes', opt.minutes, '--seed', clip.seed, '--clip', clip.theme, '--title', title, '--profile', opt.profile, '--out', dayDir, '--pos', opt.pos];
+    const args = [PLAY, '--minutes', opt.minutes, '--seed', clip.seed, '--clip', clip.theme, '--title', title, '--profile', opt.profile, '--out', dayDir, '--pos', opt.pos, '--url', opt.url];
     if (account) args.push('--account', account.id);
+    // Read again for every clip: the control app can switch online play on or off between clips.
+    if (account && playsOnline(loadAccount(account.id))) args.push('--online');
+    // A group's clips: who plays together (tasks/coop.mjs meets them in a `together` clip).
+    if (plan.group) args.push('--group', plan.group.id, '--members', plan.group.members.join(','));
     if (opt.mute) args.push('--mute'); if (opt.sound) args.push('--sound');
     if (opt.headless) args.push('--headless');
     // Videos: <account>_<date>_cNN.mp4 in the account's videos folder (or the day folder without an account).

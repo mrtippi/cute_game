@@ -86,6 +86,12 @@ export function installBotBridge(src: BotSources) {
         titles: [...s.progression.titles], title: s.progression.title, titleRarity: Object.fromEntries(s.progression.titles.map(t => [t, rarityOf(t)])),
         orchard: s.planet === 'home' ? ORCHARD_TREES.filter(t => orchardReady(s, t.index, now)).map(t => t.index) : [],
         bounty: s.progression.bounty ? { type: s.progression.bounty.type, progress: s.progression.bounty.progress, target: s.progression.bounty.target, claimed: s.progression.bounty.claimed } : null,
+        // Online play (src/online.ts): signed in, the connection status ('Online', 'Reconnecting', 'Party {code}'…), the party.
+        online: (() => { const b = document.getElementById('online-button'); return { signedIn: b?.dataset.online === 'true', status: b?.dataset.status ?? '', party: b?.dataset.party || null }; })(),
+        // Other explorers shown in this world (the remote players the server shares with this room).
+        others: [...(w.remotePlayers?.entries() ?? [])].filter(([, r]) => r.mesh.visible).map(([id, r]) => ({ id, name: r.pose.name ?? '', level: r.pose.level ?? null, x: round(r.pose.x), z: round(r.pose.z), d: round(Math.hypot(r.pose.x - w.position.x, r.pose.z - w.position.z)) })),
+        // A friend's garden on screen (online visit): whose it is and its beds as the visitor sees them; null at home.
+        visit: w.state !== s ? { name: w.state.name, plots: w.state.plots.map((p, i) => ({ i, crop: p.crop, progress: round(cropProgress(p, now)) })) } : null,
       };
     },
     /** Journal entries as the player would read them in each tab (claimable ones included). */

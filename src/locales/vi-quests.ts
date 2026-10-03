@@ -96,6 +96,9 @@ export const VI_QUESTS: Record<string, string> = {
   "Conquer planet stars": "Chinh phục sao hành tinh",
   "Star conqueror": "Kẻ chinh phục sao",
   "Earn {count} planet stars": "Đạt {count} sao hành tinh",
+  // Online co-op achievement lines
+  "Together": "Cùng nhau",
+  "Garden guest": "Khách thăm vườn",
   // HUD boards: bosses and today's quests
   "BOSSES": "TRÙM",
   "Out now": "Đang xuất hiện",

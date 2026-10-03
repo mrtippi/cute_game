@@ -127,6 +127,20 @@ test('dropped items are shared in the wild but never cross private home instance
   assert.equal((await h.act('alice','claimDrop',{ownerId:'alice',id:legacy.result.id})).result.item,'carrot');
 });
 
+test('releasing protected loot that another explorer picks up records shareLoot for the owner only',async t=>{
+  const h=await service(t);await h.store.create(account('alice'));await h.store.create(account('bob'));
+  const peer=()=>({active:true,planet:'home',room:'public:home',visit:null,pose:{x:30,z:0}});h.peers.set('alice',peer());h.peers.set('bob',peer());
+  const now=Date.now(),drop=(id,releaseAt)=>({id,ownerId:'alice',item:'carrot',count:1,room:'public:home',planet:'home',space:'wild',x:30,z:0,owner:'alice',releaseAt,expiresAt:now+30000});
+  await h.store.command(spec('alice',0,records=>{records.get('alice').drops=[drop('shared',now+10000),drop('kept',now+10000),drop('expired-guard',now-1)];return true;}));
+  const shared=async()=>(await h.store.get('alice')).profile.progression.totals.shareLoot;
+  await assert.rejects(h.act('bob','claimDrop',{ownerId:'alice',id:'shared'}),status(409),'protected loot waits for its owner');
+  await h.act('alice','releaseDrop',{ownerId:'alice',id:'shared'});assert.equal(await shared(),undefined,'releasing alone is not yet a share');
+  await h.act('bob','claimDrop',{ownerId:'alice',id:'shared'});assert.equal(await shared(),1);
+  assert.equal((await h.store.get('bob')).profile.progression.totals.shareLoot,undefined);
+  await h.act('bob','claimDrop',{ownerId:'alice',id:'expired-guard'});assert.equal(await shared(),1,'loot whose protection ran out by itself is not a share');
+  await h.act('alice','releaseDrop',{ownerId:'alice',id:'kept'});await h.act('alice','claimDrop',{ownerId:'alice',id:'kept'});assert.equal(await shared(),1,'picking up your own loot is not a share');
+});
+
 test('crop theft checks friendship, visit, generation, ripeness, range and six successful crops per UTC day',async t=>{
   let at=2_000_000_000_000;t.mock.method(Date,'now',()=>at);const h=await service(t);
   const actor=account('alice'),owner=account('owner');actor.friends=['owner'];owner.friends=['alice'];owner.profile.level=30;

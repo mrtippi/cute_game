@@ -7,7 +7,7 @@ import { promisify } from 'node:util';
 import { WebSocketServer, WebSocket } from 'ws';
 import * as Game from '../src/model.ts';
 import { createAccountStore } from './account-store.mjs';
-import { createActionService } from './action-service.mjs';
+import { createActionService, commandHash } from './action-service.mjs';
 import { createCombatAuthority } from './combat-authority.mjs';
 import { rememberAccount } from './account-cache.mjs';
 
@@ -30,6 +30,7 @@ const publicHome = account => {
   return { ...publicAccount(account), discovered:source.discovered||['home'], plots: source.plots, decorations: source.decorations || [], farm: source.farm || null, helper: source.helper || null, friends: Array.isArray(source.friends) ? source.friends : [], home: source.home || null, placed: source.placed || [] };
 };
 const send = (socket, payload) => { if (socket.readyState === WebSocket.OPEN) socket.send(JSON.stringify(payload)); };
+const LOOPBACK = new Set(['127.0.0.1', '::1', '::ffff:127.0.0.1', 'localhost']);
 const failure = (status, message) => Object.assign(new Error(message), { status });
 export async function createGameServer(options = {}) {
   const host = options.host || process.env.HOST || '127.0.0.1';
@@ -126,6 +127,16 @@ export async function createGameServer(options = {}) {
     if(intent.type==='dropItem'&&result?.room)for(const peer of peers.values())if(visibleDrop(peer,result))send(peer.socket,{type:'dropSpawn',drop:result});
     if(intent.type==='claimDrop'||intent.type==='releaseDrop')for(const peer of peers.values())if(visibleDrop(peer,result))send(peer.socket,{type:intent.type==='claimDrop'?'dropClaimed':'dropReleased',...result});
   }});
+  // A friend's garden counts once per friend per UTC day (progression.ts); the ledger stays on the server account.
+  function recordVisit(visitorId, friendId) {
+    const ledger = accounts.get(visitorId)?.visitLedger;
+    if (ledger?.day === new Date().toISOString().slice(0, 10) && ledger.friends?.includes(friendId)) return;
+    combatAuthority.internal(visitorId, 'gardenVisit', [], records => {
+      const account = records.get(visitorId), next = Game.recordGardenVisit(account.profile, account.visitLedger, friendId);
+      if (next) account.visitLedger = next;
+      return { friendId, counted: !!next };
+    }).catch(() => {});
+  }
   function endVisit(peer) {
     peer.visit = null; send(peer.socket, { type: 'visit', home: null });
     const party=peer.visitReturnParty&&parties.has(peer.visitReturnParty)?peer.visitReturnParty:null;delete peer.visitReturnParty;
@@ -212,6 +223,23 @@ export async function createGameServer(options = {}) {
     if (!account) throw failure(401, 'Sign in to play online.');
     const authorizedSession=validSession(request);
     const checkAccess=()=>{if(!authorizedSession||validSession(request)!==authorizedSession)throw failure(401,'Sign in to play online.');};
+    if(route==='auth/import-save'&&method==='POST'){
+      // Self-hosted servers only (bot/online.mjs link): a server listening on this machine, a request from this
+      // machine without a proxy, the caller's own account, and only while it is still the untouched new game
+      // (revision 0), so no online progress can ever be replaced. The game's own parseSave checks the save.
+      if(!LOOPBACK.has(host)||!LOOPBACK.has(request.socket.remoteAddress)||request.headers['x-forwarded-for']||request.headers.forwarded)throw failure(403,'Saves can only be imported on a server on this computer.');
+      rate(`import:${account.id}`,5);
+      const data=await body(request),state=typeof data.save==='string'?Game.parseSave(data.save):null;
+      if(!state)throw failure(400,'This save could not be read.');
+      checkAccess();
+      const committed=await store.command({actorId:account.id,requestId:randomUUID(),expectedRevision:0,hash:commandHash({type:'importSave',save:state}),checkAccess,run:records=>{
+        const actor=records.get(account.id);if(actor.authorityVersion)throw failure(409,'This online adventure has already started.');
+        actor.profile=state;actor.importedAt=Date.now();return {level:state.level};
+      }});
+      committed.accounts.forEach(remember);
+      const peer=peers.get(account.id);if(peer)send(peer.socket,{type:'profile',profile:committed.reply.profile,revision:committed.reply.revision,authorityVersion:1});
+      return respond(response,200,{account:publicAccount(accounts.get(account.id)),profile:committed.reply.profile,revision:committed.reply.revision,authorityVersion:1});
+    }
     if(route==='actions'&&method==='POST'){
       rate(`action:${account.id}`,240);
       const data=await body(request);data.payload??={};
@@ -333,6 +361,7 @@ export async function createGameServer(options = {}) {
           if(!peer.visit)peer.visitReturnParty=peer.party;
           join(peer, 'home', peers.get(target.id)?.party || peer.party,target.id); peer.pose = { ...peer.pose, x: 0, z: 3 };
           send(socket, { type: 'visit', home: publicHome(target) }); broadcast(rooms.get(peer.room), { type: 'pose', player: presence(peer) }, account.id);
+          recordVisit(account.id, target.id);
         } else if (message.type === 'leaveVisit') {
           endVisit(peer);
         } else if (message.type === 'enemies' && room?.host === account.id && Array.isArray(message.enemies)) {

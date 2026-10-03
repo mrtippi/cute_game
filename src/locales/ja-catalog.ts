@@ -39,6 +39,7 @@ export const JA_CATALOG: Record<string, string> = {
   "Fashion": "ファッション",
   "Disguises": "変身スーツ",
   "Supplies": "道具",
+  "Decor": "飾り",
   "Space gear": "宇宙装備",
   "Legendary": "レジェンド",
   "Volcano equipment": "火山装備",

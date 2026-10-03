@@ -42,16 +42,19 @@ export async function buyRod(bot) {
 }
 
 /** Crystal upgrades: health first while it is low, then attack, defense, critical. */
-export async function crystalUpgrade(bot, { times = 2 } = {}) {
+/** Crystal upgrades with spare energy, never dipping below `keep` (the last upgrade's price guesses the next one's). */
+export async function crystalUpgrade(bot, { times = 2, keep = 0 } = {}) {
   const { game, rng, note } = bot;
   const opened = await game.goTo(n => n.entities.find(e => e.kind === 'upgrade'), { label: 'crystal', done: n => n.modal === 'upgrade' && n });
   if (!opened) return 'crystal not reached';
-  let bought = 0;
+  let bought = 0, price = 0;
   for (let i = 0; i < times; i++) {
+    const before = (await game.snap()).energy; if (before - price < keep) break;
     const order = rng.chance(.6) ? ['health', 'attack', 'defense', 'crit'] : ['attack', 'health', 'defense', 'crit'];
     let done = false;
     for (const kind of order) if (await game.action('upgrade', { kind })) { note(`crystal upgrade: ${kind}`, 'shop'); bought++; done = true; await sleep(rng.between(400, 800)); break; }
     if (!done) break;
+    price = Math.max(price, before - (await game.snap()).energy);
   }
   await bot.hands.think(500); await game.closePanel();
   return `upgrades ${bought}`;

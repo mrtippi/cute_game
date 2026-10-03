@@ -117,8 +117,10 @@ export function createActionService({store,getPeer,getWorld=()=>null,afterCommit
         if(!drop||drop.claimed||drop.expiresAt<=now||!peer||peer.visit||drop.room!==peer.room||drop.planet!==peer.planet)fail(409,'That dropped item is no longer available.');
         const space=drop.space||(drop.planet==='home'&&Math.hypot(drop.x,drop.z)<18?`home:${drop.ownerId}`:'wild');
         if(space!=='wild'&&space!==`home:${actorId}`)fail(403,'This dropped item belongs to a private garden.');
-        if(data.type==='releaseDrop'){if(drop.owner!==actorId)fail(403,'Only the owner can release this item.');drop.releaseAt=now;result=drop;}
-        else{if(distance(peer.pose,drop)>4.5||now<drop.releaseAt&&drop.owner!==actorId)fail(409,'Move closer or wait for the owner to release this item.');if(!Game.addItem(state,drop.item,drop.count))fail(409,'Your bag cannot hold that item.');drop.claimed=actorId;drop.claimedAt=now;result={id:drop.id,item:drop.item,count:drop.count,ownerId:owner.id,room:drop.room,planet:drop.planet,space,x:drop.x,z:drop.z};}
+        // Releasing still-protected loot is a share: the owner's shareLoot counts once another explorer picks it up.
+        if(data.type==='releaseDrop'){if(drop.owner!==actorId)fail(403,'Only the owner can release this item.');if(now<drop.releaseAt)drop.shared=true;drop.releaseAt=now;result=drop;}
+        else{if(distance(peer.pose,drop)>4.5||now<drop.releaseAt&&drop.owner!==actorId)fail(409,'Move closer or wait for the owner to release this item.');if(!Game.addItem(state,drop.item,drop.count))fail(409,'Your bag cannot hold that item.');drop.claimed=actorId;drop.claimedAt=now;result={id:drop.id,item:drop.item,count:drop.count,ownerId:owner.id,room:drop.room,planet:drop.planet,space,x:drop.x,z:drop.z};
+          if(drop.shared&&drop.owner===owner.id&&owner.id!==actorId){const giver=Game.parseSave(JSON.stringify(owner.profile));if(giver){Game.recordSharedLoot(giver,drop.item,now);owner.profile=giver;}}}
       }else if(data.type==='rideTurtle'){
         const turtle=createEnvironmentLayout(state.planet).turtles[p.index];if(state.planet!=='ocean'||!turtle)fail(400,'That turtle is not here.');requireNear(peer,turtle,4);account.rideUntil=now+45000;account.ridePlanet=state.planet;result={until:account.rideUntil};
       }else if(data.type==='collectMeteor'){

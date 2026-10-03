@@ -188,3 +188,29 @@ test('online lava burns ordinary ground creatures but preserves the burrowing la
  const worm=f.spawn('lavaworm',pool.x,pool.z),slime=f.spawn('magmaslime',pool.x,pool.z),hp=worm.hp;t.mock.timers.tick(50);
  assert.equal(worm.hp,hp);assert.ok(slime.hp<slime.maxHp);
 });
+
+async function partyFixture(t,ids){
+ const dataDir=await mkdtemp(path.join(tmpdir(),'cute-combat-coop-')),store=await createAccountStore({dataDir,databaseUrl:''}),accounts=new Map(),peers=new Map();
+ for(const id of ids){const account=await store.create({id,username:id,hash:'fixture-hash',salt:'fixture-salt',profile:Game.newGame(id),friends:[],requests:[],profileRevision:0});accounts.set(id,account);peers.set(id,{account,active:true,visit:null,planet:'home',room:'public:home',pose:{x:-30,z:1,facing:0,moving:false},socket:{}});}
+ const room={id:'public:home',members:new Set(ids),host:ids[0],enemies:[],killed:new Set()},rooms=new Map([[room.id,room]]),messages=[],waiters=[];
+ const emit=value=>{messages.push(value);for(const waiter of [...waiters])if(waiter.predicate(value)){clearTimeout(waiter.timer);waiters.splice(waiters.indexOf(waiter),1);waiter.resolve(value);}};
+ const remember=value=>{const account=accounts.get(value.id);Object.assign(account,value);return account;};
+ const authority=createCombatAuthority({store,peers,rooms,remember,onError:error=>t.diagnostic(error.stack),send:(_,value)=>emit(value),broadcast:(_,value)=>emit(value)});
+ t.after(async()=>{await authority.close();await store.close();});
+ const next=predicate=>{const found=messages.find(predicate);if(found)return Promise.resolve(found);return new Promise((resolve,reject)=>{const waiter={predicate,resolve,timer:setTimeout(()=>reject(new Error('Missing authority event')),3000)};waiters.push(waiter);});};
+ const definition=enemyRoster('home').find(e=>e.type==='treant');authority.acceptSnapshots(room,[{id:definition.id,type:'treant',x:-30,z:0,hp:1}]);
+ const boss=authority.state(room).enemies.get(definition.id);boss.scaled=true;boss.maxHp=boss.hp=1e6;
+ return {store,peers,authority,boss,next};
+}
+test('a boss defeated by two contributors records co-op progress for both; a solo defeat records none',async t=>{
+ const party=await partyFixture(t,['alice','bob']);
+ party.authority.basic(party.peers.get('bob'),party.boss.id);assert.ok(party.boss.hp<1e6,'the helper landed a hit');
+ party.boss.hp=1;party.authority.basic(party.peers.get('alice'),party.boss.id);
+ const defeat=await party.next(m=>m.type==='defeat'&&m.id===party.boss.id);assert.deepEqual([...defeat.by].sort(),['alice','bob']);
+ for(const id of ['alice','bob']){const totals=(await party.store.get(id)).profile.progression.totals;assert.equal(totals.boss,1,id);assert.equal(totals.coopKill,1,id);assert.equal(totals.coopBoss,1,id);}
+ const solo=await partyFixture(t,['carol','dave']);
+ solo.boss.hp=1;solo.authority.basic(solo.peers.get('carol'),solo.boss.id);
+ assert.deepEqual((await solo.next(m=>m.type==='defeat'&&m.id===solo.boss.id)).by,['carol']);
+ const totals=(await solo.store.get('carol')).profile.progression.totals;assert.equal(totals.boss,1);assert.equal(totals.coopKill,undefined);assert.equal(totals.coopBoss,undefined);
+ assert.equal((await solo.store.get('dave')).profile.progression.totals.boss,undefined,'a bystander who never hit earns nothing');
+});

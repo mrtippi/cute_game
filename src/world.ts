@@ -899,6 +899,9 @@ export class World {
     for(const d of this.state.decorations??[]){const item=M.ITEMS[d.id];if(!item)continue;const g=buildDecoration(d.id);
       g.rotation.y=d.rotation;const e=this.addEntity('decoration',item.name,item.icon??'🏡',g,d.x,d.z,.9);e.id=`home:decoration:${d.uid}`;g.userData.decorationUid=d.uid;this.obstacles.push({x:d.x,z:d.z,r:.65,tag:'decor:'+d.uid});
     }
+    // A decoration set down on the explorer would trap them: step them out beside it.
+    for(const o of this.obstacles){if(!o.tag?.startsWith('decor:'))continue;const dx=this.position.x-o.x,dz=this.position.z-o.z,d=Math.hypot(dx,dz);
+      if(d<o.r+.4){const ux=d>.01?dx/d:1,uz=d>.01?dz/d:0;this.position.x=o.x+ux*(o.r+.7);this.position.z=o.z+uz*(o.r+.7);this.player.position.x=this.position.x;this.player.position.z=this.position.z;this.destination=null;this.route=[];}}
   }
   groundPoint(clientX:number,clientY:number){this.raycaster.setFromCamera(new T.Vector2(clientX/innerWidth*2-1,1-clientY/innerHeight*2),this.camera);const p=this.raycaster.ray.intersectPlane(new T.Plane(UP,0),new T.Vector3());return p?{x:p.x,z:p.z}:null;}
   knockUpEnemy(e:Enemy,height=2,duration=.8){e.liftVelocity=Math.max(e.liftVelocity??0,Math.sqrt(Math.max(0,liftHeight(e.boss,height))*24));e.stun=Math.max(e.stun,duration);}
