@@ -106,7 +106,7 @@ app.whenReady().then(async () => {
   setInterval(() => { const n = backend.live().length; tray.setToolTip(n ? `Zoo Garden – ${n} acc đang chơi` : 'Zoo Garden – chờ lịch'); }, 10000);
 
   // The UI calls the backend by name: api.call('accounts'), api.call('start', id)…
-  const allowed = new Set(['control', 'setSettings', 'setSchedule', 'hardware', 'capacity', 'estimate', 'accounts', 'colors', 'themes', 'newAccount', 'editAccount', 'removeAccount', 'start', 'stop', 'stopAll', 'startNow', 'live', 'messages', 'waves', 'load', 'quickCheck', 'benchmark', 'benchmarkState', 'waiting', 'ensureServer']);
+  const allowed = new Set(['control', 'setSettings', 'setSchedule', 'hardware', 'capacity', 'estimate', 'accounts', 'colors', 'themes', 'scenarios', 'newAccount', 'editAccount', 'removeAccount', 'start', 'stop', 'stopAll', 'startNow', 'live', 'messages', 'waves', 'load', 'quickCheck', 'benchmark', 'benchmarkState', 'waiting', 'ensureServer']);
   ipcMain.handle('call', async (_event, name, ...args) => {
     if (!allowed.has(name)) throw new Error('unknown call ' + name);
     const result = await backend[name](...args);

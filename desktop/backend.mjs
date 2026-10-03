@@ -19,7 +19,7 @@ const NODE = process.env.ZG_NODE ?? (existsSync('D:/autogame/tools/node24/node.e
 const CHILD_ENV = { ...process.env, ...(process.env.ZG_NODE ? { ELECTRON_RUN_AS_NODE: '1' } : {}) };
 const GAME_URL = 'http://127.0.0.1:8787/';
 const { listAccounts, loadAccount, createAccount, updateAccount, COLORS, ACCOUNTS } = await import(pathToFileURL(join(BOT, 'accounts.mjs')).href);
-const { CLIPS } = await import(pathToFileURL(join(BOT, 'clips.mjs')).href);
+const { CLIPS, SCENARIOS } = await import(pathToFileURL(join(BOT, 'clips.mjs')).href);
 const { nvencWorks } = await import(pathToFileURL(join(BOT, 'lib/recorder.mjs')).href);
 
 const CONTROL = `${DATA}/control.json`, HARDWARE = `${DATA}/hardware.json`;
@@ -60,7 +60,9 @@ export function accounts() {
   });
 }
 export const colors = () => COLORS;
-export const themes = () => Object.fromEntries(Object.entries(CLIPS).map(([id, c]) => [id, { ja: c.ja, icon: c.icon }]));
+export const themes = () => Object.fromEntries(Object.entries(CLIPS).map(([id, c]) => [id, { ja: c.ja, vi: c.vi, icon: c.icon }]));
+/** The scenarios a schedule can mix (clips.mjs): 'auto' plus every clip theme. */
+export const scenarios = () => SCENARIOS;
 export function newAccount({ id, name, color, style }) { const a = createAccount(id, name, color, style ?? {}); setSchedule(a.id, { enabled: false }); return a.id; }
 export function editAccount(id, patch) { updateAccount(id, patch); return true; }
 /** Delete = move the folder to accounts/_deleted (videos and save stay recoverable). */
@@ -102,6 +104,9 @@ export async function start(id, { clips, minutes, restarts = 0 } = {}) {
   const args = [join(BOT, 'director.mjs'), 'run', '--account', id, '--date', date, '--clips', String(clips ?? c.schedule[id]?.clips ?? c.settings.clips), '--minutes', String(minutes ?? c.settings.minutes), '--record', '--headless', '--pause', '10'];
   // Muted unless "Âm thanh của bot" is on (Cài đặt or the tray menu); applies from the next clip of each account.
   args.push(c.settings.sound ? '--sound' : '--mute');
+  // The scenarios picked for this account ({ theme: weight }); none = the automatic day.
+  const mix = Object.fromEntries(Object.entries(c.schedule[id]?.mix ?? {}).filter(([k, w]) => CLIPS[k] && w > 0));
+  if (Object.keys(mix).length) args.push('--mix', JSON.stringify(mix));
   const child = spawn(NODE, args, { cwd: BOT, stdio: ['ignore', 'pipe', 'pipe'], windowsHide: true, env: CHILD_ENV });
   child.stdout.pipe(log); child.stderr.pipe(log);
   const run = { child, date, started: Date.now(), restarts, stopping: false };

@@ -21,6 +21,8 @@ const { values: opt, positionals } = parseArgs({ allowPositionals: true, options
   pause: { type: 'string', default: '20' },
   // An account (accounts.mjs): its profile, its days folder, its videos (recorded per clip), its window spot.
   account: { type: 'string' }, record: { type: 'boolean', default: false }, pos: { type: 'string', default: '0,0' }, mute: { type: 'boolean', default: false }, sound: { type: 'boolean', default: false }, headless: { type: 'boolean', default: false },
+  // The scenarios picked in the control app, as JSON { theme: weight } (clips.mjs); none = the automatic day.
+  mix: { type: 'string' },
 } });
 const account = opt.account ? loadAccount(opt.account) : null;
 if (account) { opt.profile = account.profile; opt.root = account.days; }
@@ -48,8 +50,8 @@ function loadPlan() {
   const file = `${dayDir}/plan.json`;
   if (existsSync(file)) return JSON.parse(readFileSync(file, 'utf8'));
   const save = latestSave(), day = seriesDay(), rng = createRng(`director:${account?.id ?? ''}:${date}`);
-  const themes = planDay(save, rng, Number(opt.clips), account?.style);
-  const plan = { date, day, startLevel: save.level ?? 1, clips: themes.map((theme, i) => ({ index: i + 1, theme, seed: `${date}-c${String(i + 1).padStart(2, '0')}`, status: 'planned' })) };
+  const mix = opt.mix ? JSON.parse(opt.mix) : null, themes = planDay(save, rng, Number(opt.clips), account?.style, mix);
+  const plan = { date, day, startLevel: save.level ?? 1, mix, clips: themes.map((theme, i) => ({ index: i + 1, theme, seed: `${date}-c${String(i + 1).padStart(2, '0')}`, status: 'planned' })) };
   writeFileSync(file, JSON.stringify(plan, null, 1));
   return plan;
 }

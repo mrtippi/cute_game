@@ -4,8 +4,11 @@ const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
 const LEVELS = { home: 1, toy: 4, candy: 6, jungle: 8, ice: 10, ocean: 12, lava: 14, cloud: 16, shadow: 20 };
 
 /** The next planet worth visiting: undiscovered ones first (in level order), then a random discovered one. */
-export function nextPlanet(s, rng) {
+export function nextPlanet(s, rng, prefer = []) {
   const open = Object.entries(LEVELS).filter(([id, level]) => id !== 'home' && level <= s.level);
+  // A clip about certain worlds (clips.mjs planets) flies to one of them once they are known.
+  const wanted = open.filter(([id]) => prefer.includes(id) && s.discovered.includes(id));
+  if (wanted.length) return rng.pick(wanted)[0];
   const fresh = open.filter(([id]) => !s.discovered.includes(id)).sort((a, b) => a[1] - b[1]);
   if (fresh.length) return fresh[0][0];
   return open.length ? rng.pick(open)[0] : null;

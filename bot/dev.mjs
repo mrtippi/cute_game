@@ -11,7 +11,7 @@ import { Hands } from './lib/hands.mjs';
 import { Game } from './lib/game.mjs';
 import { startGame, WINDOW, windowArgs, QUIET_ARGS, quietProfile, BROWSER } from './lib/session.mjs';
 
-const PORT = 9333, GAME_URL = 'http://127.0.0.1:8787/?bot';
+const PORT = Number(process.env.DEV_PORT) || 9333, GAME_URL = 'http://127.0.0.1:8787/?bot';
 const [command = 'state', ...rest] = process.argv.slice(2);
 
 if (command === 'open') {

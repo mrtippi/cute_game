@@ -7,11 +7,12 @@ const safe = fn => async (...a) => { try { await fn(...a); } catch (e) { toast('
 
 const TASKS = { garden: 'Làm vườn', fertilize: 'Bón phân', orchard: 'Hái quả', animals: 'Chăm vật nuôi', market: 'Bán hàng', cook: 'Nấu ăn', expand: 'Mở luống',
   fight: 'Đánh quái', gather: 'Săn nguyên liệu', challenge: 'Thử thách nhanh', boss: 'Săn boss', travel: 'Bay sang hành tinh', mine: 'Đào mỏ', fishing: 'Câu cá', harpoon: 'Phóng lao',
-  shop: 'Mua sắm', crystal: 'Nâng pha lê', gearBuy: 'Mua vũ khí', forge: 'Rèn vũ khí', craft: 'Chế tạo', wardrobe: 'Thay đồ', sightsee: 'Dạo chơi', tidy: 'Dọn kho', browse: 'Ngắm nghía', home: 'Về nhà', rescue: 'Cứu bạn', attic: 'Phòng kỷ niệm' };
-const STYLE = { fishing: 'Câu cá', hunt: 'Săn quái', boss: 'Đánh boss', space: 'Du hành vũ trụ', titan: 'Đánh Titan', story: 'Cốt truyện', village: 'Xây làng', forge: 'Rèn đồ' };
+  shop: 'Mua sắm', crystal: 'Nâng pha lê', gearBuy: 'Mua vũ khí', forge: 'Rèn vũ khí', craft: 'Chế tạo', wardrobe: 'Thay đồ', sightsee: 'Dạo chơi', tidy: 'Dọn kho', browse: 'Ngắm nghía', home: 'Về nhà', rescue: 'Cứu bạn', attic: 'Phòng kỷ niệm',
+  penUpgrade: 'Nâng chuồng', penHelper: 'Trợ thủ chuồng trại', dish: 'Nấu món đặc biệt', snack: 'Ăn món hiệu ứng', decorate: 'Trang trí làng', bolt: 'Robot Bolt', lava: 'Hang dung nham', dragon: 'Đánh rồng', gifts: 'Mở quà Đồ chơi', reroll: 'Đổi nhiệm vụ ngày', dressFriend: 'Mặc đồ cho bạn', visitFriend: 'Thăm bạn', disguise: 'Cải trang' };
+const STYLE = { fishing: 'Câu cá', hunt: 'Săn quái', boss: 'Đánh boss', space: 'Du hành vũ trụ', titan: 'Đánh Titan', story: 'Cốt truyện', village: 'Xây làng', forge: 'Rèn đồ', quests: 'Nhiệm vụ', helpers: 'Trợ thủ & bạn bè', events: 'Sự kiện hành tinh' };
 const DAYS = [[1, 'T2'], [2, 'T3'], [3, 'T4'], [4, 'T5'], [5, 'T6'], [6, 'T7'], [0, 'CN']];
 const ago = ms => { if (!ms) return '—'; const m = Math.round((Date.now() - ms) / 60000); return m < 60 ? `${m} phút trước` : m < 1440 ? `${Math.round(m / 60)} giờ trước` : `${Math.round(m / 1440)} ngày trước`; };
-let page = 'overview', colors = {}, themes = {};
+let page = 'overview', colors = {}, themes = {}, scenarios = [];
 
 document.querySelectorAll('.nav button').forEach(b => b.onclick = () => { page = b.dataset.page; document.querySelectorAll('.nav button').forEach(x => x.classList.toggle('active', x === b)); document.querySelectorAll('.page').forEach(p => p.classList.toggle('active', p.id === 'page-' + page)); render(); });
 
@@ -107,26 +108,61 @@ const CLIP_OVERHEAD = 3;
 const timePicker = hm => { const [h, m] = (hm || '08:00').split(':').map(Number); return `<select class="s-h">${Array.from({ length: 24 }, (_, i) => `<option ${i === h ? 'selected' : ''}>${String(i).padStart(2, '0')}</option>`).join('')}</select> : <select class="s-m">${Array.from({ length: 12 }, (_, i) => i * 5).map(i => `<option ${i === m - m % 5 ? 'selected' : ''}>${String(i).padStart(2, '0')}</option>`).join('')}</select>`; };
 /** When an account's day ends: start + clips × (length + overhead), with a +1 day mark past midnight. */
 const finishAt = (hm, clips, minutes) => { const [h, m] = hm.split(':').map(Number), end = h * 60 + m + clips * (minutes + CLIP_OVERHEAD), day = Math.floor(end / 1440), t = end % 1440; return `~${String(Math.floor(t / 60)).padStart(2, '0')}:${String(t % 60).padStart(2, '0')}${day ? ' (hôm sau)' : ''}`; };
+/** Scenario weights: off, a little, normal, a lot. */
+const WEIGHTS = [[0, 'Tắt'], [1, 'Ít'], [2, 'Vừa'], [3, 'Nhiều']];
+const mixOf = mix => Object.entries(mix ?? {}).filter(([, w]) => w > 0);
+/** The schedule's scenario button: clips per scenario for the day, or the automatic day. */
+const mixText = (mix, clips) => { const p = shares(mix, clips); return p.length ? p.map(x => `${themes[x.id]?.icon ?? x.id}${x.n}`).join(' ') : '🎲 Tự động'; };
+/** How many of `clips` each scenario gets (the director's own share-out; scenarios not open yet are skipped then). */
+function shares(mix, clips) {
+  const m = mixOf(mix), total = m.reduce((n, [, w]) => n + w, 0); if (!total) return [];
+  const out = m.map(([id, w]) => ({ id, exact: clips * w / total })).map(p => ({ ...p, n: Math.floor(p.exact) }));
+  for (const p of [...out].sort((a, b) => (b.exact - b.n) - (a.exact - a.n)).slice(0, clips - out.reduce((n, p) => n + p.n, 0))) p.n++;
+  return out.filter(p => p.n);
+}
+/** Pick an account's scenarios and how much of each: saved with the row's current settings. */
+function mixForm(tr, entry) {
+  const m = $('#modal'), f = $('#modal-body'), mix = { ...(entry.mix ?? {}) }, clips = () => Number(tr.querySelector('.s-clips').value) || 10;
+  const draw = () => {
+    const share = shares(mix, clips());
+    f.innerHTML = `<h2 style="margin:0">Kịch bản cho ${esc(tr.dataset.name)}</h2>
+      <p class="small muted" style="margin:0">Chọn một hay nhiều kịch bản và mức nhiều ít. Mỗi clip là một kịch bản, chia theo tỉ lệ, không lặp liền nhau. Kịch bản chưa mở (chưa đủ cấp) sẽ tự bỏ qua. Không chọn gì = Tự động.</p>
+      <div class="mix-list">${scenarios.filter(sc => sc.id !== 'auto').map(sc => `<div class="mix-row"><span>${sc.icon} ${esc(sc.vi)}${sc.need ? ` <span class="small muted">(${esc(sc.need)})</span>` : ''}</span>
+        <div class="seg">${WEIGHTS.map(([w, l]) => `<button type="button" data-mix="${sc.id}" data-w="${w}" class="${(mix[sc.id] ?? 0) === w ? 'on' : ''}">${l}</button>`).join('')}</div></div>`).join('')}</div>
+      <div class="panel small">${share.length ? `${clips()} clip/ngày ≈ ${share.map(p => `${themes[p.id]?.icon} ${esc(themes[p.id]?.vi)} <b>${p.n}</b>`).join(' · ')}` : '🎲 Tự động: sáng Trang trại, tối Thư giãn, giữa trộn đa dạng các kịch bản đã mở.'}</div>
+      <div class="row" style="justify-content:flex-end"><button class="btn" type="button" id="mix-auto">Về Tự động</button><button class="btn" value="cancel">Huỷ</button><button class="btn primary" id="mix-save" type="button">Lưu</button></div>`;
+    f.querySelectorAll('[data-mix]').forEach(b => b.onclick = () => { mix[b.dataset.mix] = Number(b.dataset.w); draw(); });
+    $('#mix-auto').onclick = () => { for (const k of Object.keys(mix)) delete mix[k]; draw(); };
+    $('#mix-save').onclick = safe(async () => {
+      await call('setSchedule', tr.dataset.id, { ...rowEntry(tr), mix: Object.fromEntries(mixOf(mix)) });
+      m.close(); toast('Đã lưu kịch bản'); render();
+    });
+  };
+  draw(); m.showModal();
+}
+/** A schedule row's settings as shown. */
+const rowEntry = tr => ({ enabled: tr.querySelector('.s-on').checked, start: `${tr.querySelector('.s-h').value}:${tr.querySelector('.s-m').value}`, days: [...tr.querySelectorAll('.s-day:checked')].map(i => Number(i.value)), clips: Number(tr.querySelector('.s-clips').value) || 10 });
 async function schedulePage() {
   const [list, c, w, waiting] = await Promise.all([call('accounts'), call('control'), call('waves'), call('waiting')]);
   const rows = list.filter(a => !a.archived).map(a => { const e = c.schedule[a.id] ?? { enabled: false, days: [1, 2, 3, 4, 5, 6, 0], start: '08:00', clips: c.settings.clips };
-    return `<tr data-id="${a.id}"><td><span class="dot" style="background:${a.color}"></span><b>${esc(a.name)}</b> <span class="small muted">${esc(a.id)}</span></td>
+    return `<tr data-id="${a.id}" data-name="${esc(a.name)}"><td><span class="dot" style="background:${a.color}"></span><b>${esc(a.name)}</b> <span class="small muted">${esc(a.id)}</span></td>
       <td><input type="checkbox" class="s-on" ${e.enabled ? 'checked' : ''}></td><td class="row" style="gap:4px;flex-wrap:nowrap">${timePicker(e.start)}</td>
       <td><div class="days">${DAYS.map(([d, l]) => `<label><input type="checkbox" class="s-day" value="${d}" ${e.days?.includes(d) ? 'checked' : ''}>${l}</label>`).join('')}</div></td>
-      <td><input type="number" class="s-clips" min="1" max="20" value="${e.clips ?? c.settings.clips}" style="width:70px"></td><td class="s-end">${finishAt(e.start, e.clips ?? c.settings.clips, c.settings.minutes)}</td><td class="small muted">${c.lastRun[a.id] ? 'đã chạy ' + c.lastRun[a.id] : '—'}</td></tr>`; }).join('');
+      <td><button class="btn small s-mix" type="button" title="Chọn kịch bản">${mixText(e.mix, e.clips ?? c.settings.clips)}</button></td><td><input type="number" class="s-clips" min="1" max="20" value="${e.clips ?? c.settings.clips}" style="width:70px"></td><td class="s-end">${finishAt(e.start, e.clips ?? c.settings.clips, c.settings.minutes)}</td><td class="small muted">${c.lastRun[a.id] ? 'đã chạy ' + c.lastRun[a.id] : '—'}</td></tr>`; }).join('');
   $('#page-schedule').innerHTML = `<h1>Lịch chạy</h1><p class="sub">App chạy ngầm ở khay hệ thống và tự bắt đầu các acc đúng giờ. Khi số acc đến giờ nhiều hơn sức máy, acc sau chờ lượt và tự chạy khi có chỗ.</p>
     ${w.overloaded ? `<div class="warn">Hôm nay có lúc ${w.overlap} acc chạy cùng lúc, máy chỉ chạy được ${w.capacity}. Các acc dư sẽ chờ lượt (xong muộn hơn). Có thể giãn giờ bắt đầu.</div>` : `<div class="ok">Lịch hôm nay vừa sức máy (tối đa ${w.capacity} acc cùng lúc).</div>`}
     ${waiting.length ? `<div class="warn">Đang chờ lượt: ${waiting.map(esc).join(', ')}</div>` : ''}
-    ${rows ? `<table><tr><th>Acc</th><th>Bật</th><th>Giờ bắt đầu</th><th>Ngày</th><th>Số clip</th><th>Xong khoảng</th><th>Lần cuối</th></tr>${rows}</table>
+    ${rows ? `<table><tr><th>Acc</th><th>Bật</th><th>Giờ bắt đầu</th><th>Ngày</th><th>Kịch bản</th><th>Số clip</th><th>Xong khoảng</th><th>Lần cuối</th></tr>${rows}</table>
       <div class="row" style="margin-top:12px"><button class="btn primary" id="s-save">Lưu lịch</button><span class="small muted">Mỗi video dài đúng ${c.settings.minutes} phút; tính cả mở game và chuyển clip, mỗi clip chiếm khoảng ${c.settings.minutes + CLIP_OVERHEAD} phút · 10 clip ≈ ${(10 * (c.settings.minutes + CLIP_OVERHEAD) / 60).toFixed(1).replace('.', ',')} giờ</span></div>` : '<div class="empty">Chưa có acc.</div>'}`;
   const save = $('#s-save'); if (save) save.onclick = safe(async () => {
-    for (const tr of document.querySelectorAll('#page-schedule tr[data-id]')) await call('setSchedule', tr.dataset.id, { enabled: tr.querySelector('.s-on').checked, start: `${tr.querySelector('.s-h').value}:${tr.querySelector('.s-m').value}`, days: [...tr.querySelectorAll('.s-day:checked')].map(i => Number(i.value)), clips: Number(tr.querySelector('.s-clips').value) || 10 });
+    for (const tr of document.querySelectorAll('#page-schedule tr[data-id]')) await call('setSchedule', tr.dataset.id, rowEntry(tr));
     toast('Đã lưu lịch'); render();
   });
   // The finish time follows the start and the clip count as they change.
   for (const tr of document.querySelectorAll('#page-schedule tr[data-id]')) {
     const update = () => { tr.querySelector('.s-end').textContent = finishAt(`${tr.querySelector('.s-h').value}:${tr.querySelector('.s-m').value}`, Number(tr.querySelector('.s-clips').value) || 1, c.settings.minutes); };
     tr.querySelectorAll('select, .s-clips').forEach(el => { el.oninput = update; el.onchange = update; });
+    tr.querySelector('.s-mix').onclick = () => mixForm(tr, c.schedule[tr.dataset.id] ?? {});
   }
 }
 
@@ -198,7 +234,7 @@ async function firstRun(info) {
   m.showModal();
 }
 (async () => {
-  [colors, themes] = await Promise.all([call('colors'), call('themes')]);
+  [colors, themes, scenarios] = await Promise.all([call('colors'), call('themes'), call('scenarios')]);
   const info = await window.api.app('info'); if (info.needsSetup) firstRun(info);
   render(); sidebar();
   setInterval(() => { sidebar(); if (page === 'overview' || (page === 'hardware' && document.querySelector('#h-bench')?.disabled)) render(); }, 3000);

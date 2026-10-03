@@ -1,5 +1,6 @@
 // Village chores beyond the garden: kitchen, workshop and forge, the animal pen, harpoon hunting.
 import { equip } from './shopping.mjs';
+import { chooseAnimal, penFacts, farmWants, feedEach } from './farm.mjs';
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
 const near = kind => n => n.entities.filter(e => e.kind === kind).sort((a, b) => a.d - b.d)[0];
 const enabled = (bot, action, attr) => bot.page.$$eval(`#dialog [data-action="${action}"]:not([disabled])`, (bs, attr) => bs.map(b => b.dataset[attr]), attr);
@@ -43,7 +44,7 @@ export async function forgeOnce(bot) {
   return result;
 }
 
-/** Build the pen, buy animals the energy allows, collect what is ready. */
+/** Build the pen, buy animals the energy allows (the guard dog once, every kind for the pen), collect what is ready. */
 export async function tendAnimals(bot, { spend = .4 } = {}) {
   const { game, rng, note } = bot;
   let s = await game.snap(); if (s.planet !== 'home') return 'not home';
@@ -51,13 +52,16 @@ export async function tendAnimals(bot, { spend = .4 } = {}) {
   let did = [];
   if (await game.action('build-pen')) { note('built the animal pen', 'farm'); did.push('built'); await sleep(800); }
   if (await game.action('collect-farm')) { note('collected animal products', 'farm'); did.push('collected'); await sleep(700); }
-  if (await game.action('feed-all')) { did.push('fed'); await sleep(500); }
+  // Sometimes row by row, like a player tapping each animal.
+  if (rng.chance(.4) && await feedEach(bot)) did.push('fed some');
+  else if (await game.action('feed-all')) { did.push('fed'); await sleep(500); }
   s = await game.snap();
   const kinds = await enabled(bot, 'buy-animal', 'kind');
-  if (kinds.length && s.energy > 150) {
-    const kind = rng.pick(kinds.filter(k => k !== 'dog').length ? kinds.filter(k => k !== 'dog') : kinds);
+  const kind = kinds.length && s.energy > 150 ? chooseAnimal(s, await penFacts(bot), await farmWants(bot), kinds, rng) : null;
+  if (kind) {
     const before = s.energy;
-    if (await game.action('buy-animal', { kind })) { s = await game.snap(); if (before - s.energy > before * spend) note(`bought a ${kind} (a big spend)`, 'farm'); else note(`bought a ${kind}`, 'farm'); did.push('bought ' + kind); }
+    // Counted only when the animal arrives (the panel redraws as meters tick, so a click can miss).
+    if (await game.action('buy-animal', { kind }) && (s = await game.waitFor(n => n.farm.animals > s.farm.animals && n, { timeout: 3000 }))) { if (kind === 'dog') note('adopted a guard dog for the garden', 'farm'); else if (before - s.energy > before * spend) note(`bought a ${kind} (a big spend)`, 'farm'); else note(`bought a ${kind}`, 'farm'); did.push('bought ' + kind); }
   }
   await bot.hands.think(500); await game.closePanel();
   return did.join(', ') || 'nothing to do';
