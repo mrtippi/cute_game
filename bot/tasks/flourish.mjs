@@ -1,6 +1,6 @@
 // The small things people do between tasks: zoom the camera, glance at the map, the journal or the
 // backpack, then carry on. None of it changes the game; it makes a recording look lived-in.
-const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
+import { sleep } from '../lib/util.mjs';
 
 export async function flourish(bot) {
   const { game, hands, rng } = bot;

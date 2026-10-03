@@ -16,6 +16,7 @@ import { loadAccount, playsOnline } from './accounts.mjs';
 import { groupDir, groupSave, leaderOf, readJson } from './groups.mjs';
 import { clipText } from './chapters.mjs';
 import { ensureOnline } from './online.mjs';
+import { assertLocal } from './lib/util.mjs';
 
 const { values: opt, positionals } = parseArgs({ allowPositionals: true, options: {
   date: { type: 'string' }, from: { type: 'string', default: '1' }, clips: { type: 'string', default: '10' }, minutes: { type: 'string', default: '60' },
@@ -30,6 +31,8 @@ const { values: opt, positionals } = parseArgs({ allowPositionals: true, options
   // A group (the control app's Nhóm): its letter and every member's account id. The members plan one shared day.
   group: { type: 'string' }, members: { type: 'string' },
 } });
+// Only ever this PC's own game server.
+assertLocal(opt.url);
 const account = opt.account ? loadAccount(opt.account) : null;
 if (account) { opt.profile = account.profile; opt.root = account.days; }
 const command = positionals[0] ?? 'plan', date = opt.date ?? new Date().toISOString().slice(0, 10);
@@ -115,11 +118,12 @@ if (command === 'run' && account) await ensureOnline(account.id, { url: opt.url,
 const plan = loadPlan();
 if (command === 'plan') show(plan);
 else if (command === 'run') {
-  for (const clip of plan.clips.filter(c => c.index >= Number(opt.from))) {
-    if (clip.status === 'done') continue;
+  const pause = () => new Promise(r => setTimeout(r, Number(opt.pause) * 1000));
+  /** Play one clip and write down how it went (plan.json, the upload text). */
+  async function runClip(clip, again = false) {
     const before = latestSave().level ?? 1;
     clip.title = clipTitle(clip.theme, { day: plan.day, level: before, index: clip.index, name: account?.name }); clip.levelBefore = before; clip.status = 'playing'; clip.started = new Date().toISOString(); savePlan(plan);
-    console.log(`\n=== clip ${clip.index}/${plan.clips.length}: ${clip.title}`);
+    console.log(`\n=== clip ${clip.index}/${plan.clips.length}${again ? ' (again)' : ''}: ${clip.title}`);
     const code = await playClip(clip, clip.title);
     const after = existsSync(`${dayDir}/${clip.seed}/save.json`) ? JSON.parse(readFileSync(`${dayDir}/${clip.seed}/save.json`, 'utf8')) : null;
     Object.assign(clip, { status: code === 0 ? 'done' : 'failed', exit: code, ended: new Date().toISOString(), levelAfter: after?.level ?? null });
@@ -129,7 +133,19 @@ else if (command === 'run') {
       catch (error) { console.log('chapters: ' + error.message); }
     }
     savePlan(plan);
-    if (clip.index < plan.clips.length) await new Promise(r => setTimeout(r, Number(opt.pause) * 1000));
+  }
+  const todo = plan.clips.filter(c => c.index >= Number(opt.from));
+  for (const clip of todo) {
+    if (clip.status === 'done') continue;
+    await runClip(clip);
+    if (clip.index < plan.clips.length) await pause();
+  }
+  // A clip that failed (the browser closed, the game stopped answering) is played once more at the end of the day.
+  for (const clip of todo.filter(c => c.status === 'failed')) {
+    await pause();
+    await runClip(clip, true);
   }
   show(plan);
+  const failed = todo.filter(c => c.status === 'failed');
+  if (failed.length) { console.log(`failed clips: ${failed.map(c => '#' + c.index).join(', ')}`); process.exitCode = 1; }
 } else { console.error('usage: node director.mjs plan|run [--date YYYY-MM-DD] [--from n] [--clips n] [--minutes n]'); process.exit(2); }

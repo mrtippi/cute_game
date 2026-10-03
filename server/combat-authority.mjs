@@ -7,6 +7,7 @@ import {enemyRoster} from '../src/enemy-roster.ts';
 import {zoneAt,createEnvironmentLayout,EnvironmentSimulation} from '../src/environments.ts';
 import {sanitizeTitanAttacks,beginTitanAttack,stepTitanAttack,titanTelegraphs,isTitanSkill} from '../src/titan-patterns.ts';
 import {BOSS_SKILLS,BOSS_WINDUPS,bossTelegraphs,bossPhase,hitControl,BOSS_RESISTED,RESIST_SLOW,liftHeight} from '../src/boss-patterns.ts';
+import {syncedStats,partyScale,tierStats} from '../src/level-sync.ts';
 import {commandHash} from './action-service.mjs';
 import {clearJourney} from './adventure-lifecycle.mjs';
 
@@ -14,6 +15,7 @@ const dist=(a,b)=>Math.hypot(a.x-b.x,a.z-b.z);
 const finite=(value,fallback=0,min=-160,max=160)=>Number.isFinite(value)?Math.max(min,Math.min(max,value)):fallback;
 const snapshot=enemy=>{const {roster,home,changedAt,deadUntil,generation,pending,contributors,scaled,damageAt,cast,nextCastAt,hostPhase,hostAttackCount,combatAttacks,lastHitAt,...publicState}=enemy;return {...publicState,chaseGrace:Math.max(0,Math.min(4,((lastHitAt||0)+4000-Date.now())/1000))};};
 const STATUS=['fear','charm','slow','blind','sheep','taunt'];
+const HEAL_FLUSH_MS=4000;
 
 /** The browser host animates navigation; the server owns HP, skill timing, stats, kills and rewards. */
 export function createCombatAuthority({store,peers,rooms,remember,send,broadcast,onDeath=()=>{},onError=()=>{}}){
@@ -35,6 +37,24 @@ export function createCombatAuthority({store,peers,rooms,remember,send,broadcast
     });
   }
   function state(room){if(!room.combat){const planet=room.id.split(':').at(-1),environment=new EnvironmentSimulation(createEnvironmentLayout(planet));environment.time=Date.now()/1000;environment.weather.time=environment.time;room.combat={planet,roster:new Map(enemyRoster(planet).map(e=>[e.id,e])),enemies:new Map(),environment,id:randomUUID(),at:Date.now(),lastBroadcast:0};}return room.combat;}
+  /**
+   * Creatures keep pace with the room (level-sync.ts, the same rule as offline): the highest level among its own
+   * explorers, so co-op stays a challenge. Health, damage, XP and the shown level all follow; the Dragon never syncs.
+   */
+  function roomLevel(room){return Math.max(0,...[...room.members].map(id=>peers.get(id)).filter(p=>p&&!p.visit).map(p=>p.account.profile.level||1));}
+  /**
+   * Planet stars online: the room fights on one tier, the highest active (chosen and open) tier among its own explorers
+   * (planet-tiers.ts roomTier), mirroring roomLevel. Stars scale the roster first, then the level sync applies on top,
+   * exactly as offline (level-sync.ts tierStats). Each creature carries its tier, and a kill counts at that tier.
+   */
+  function starTier(room){return Game.roomTier([...room.members].map(id=>peers.get(id)).filter(p=>p&&!p.visit).map(p=>p.account.profile),state(room).planet);}
+  function syncLevel(room,enemy){
+    // A creature that appears now takes the room as it is now (someone may have joined since the last tick); the
+    // tick's cached s.level/s.tier only decide which older, untouched creatures to re-scale.
+    const s=state(room),tier=starTier(room),level=roomLevel(room);s.tier||=tier;s.level||=level;
+    const base=tierStats({id:enemy.id,level:enemy.roster.level,maxHp:enemy.roster.baseMaxHp,damage:enemy.roster.baseDamage,xp:enemy.roster.xp},tier);
+    Object.assign(enemy,enemy.type==='dragon'||!level?base:syncedStats(base,level),{tier});
+  }
   function publish(room){
     const now=Date.now();
     for(const enemy of state(room).enemies.values())if(enemy.combatAttacks){
@@ -107,7 +127,7 @@ export function createCombatAuthority({store,peers,rooms,remember,send,broadcast
       let enemy=s.enemies.get(roster.id);
       if(!enemy){
         if(!roster.dormant&&(Math.hypot(raw.x,raw.z)<22||s.planet==='home'&&zoneAt(raw)!==roster.zone))continue;
-        enemy={...roster,roster,home:{x:raw.x,z:raw.z},x:raw.x,z:raw.z,hp:roster.dormant?0:roster.baseMaxHp,maxHp:roster.baseMaxHp,damage:roster.baseDamage,respawn:roster.dormant?999999:0,deadUntil:roster.dormant?Infinity:0,generation:0,contributors:new Map(),changedAt:now,statuses:{},shots:[]};s.enemies.set(roster.id,enemy);
+        enemy={...roster,roster,home:{x:raw.x,z:raw.z},x:raw.x,z:raw.z,hp:0,respawn:roster.dormant?999999:0,deadUntil:roster.dormant?Infinity:0,generation:0,contributors:new Map(),changedAt:now,statuses:{},shots:[]};syncLevel(room,enemy);if(!roster.dormant)enemy.hp=enemy.maxHp;s.enemies.set(roster.id,enemy);
       }
       const elapsed=Math.max(.1,(now-enemy.changedAt)/1000),maximum=(ENEMY_TYPES[roster.type].speed+16)*elapsed+2;
       if(dist(enemy,raw)<=maximum){enemy.x=raw.x;enemy.z=raw.z;}
@@ -129,7 +149,7 @@ export function createCombatAuthority({store,peers,rooms,remember,send,broadcast
     internal(killer.account.id,'combatKill',contributors,records=>{
       let loot=[];
       for(const id of contributors){const account=records.get(id);if(!account||(account.adventureEpoch||0)!==contributorEpochs.get(id))continue;const profile=Game.parseSave(JSON.stringify(account.profile));if(!profile)continue;
-        const rolled=Game.grantDefeat(profile,enemy.type,enemy.roster.xp,enemy.boss,Math.random,false);if(id===killer.account.id)loot=rolled;
+        const rolled=Game.grantDefeat(profile,enemy.type,enemy.xp,enemy.boss,Math.random,false,enemy.tier||1);if(id===killer.account.id)loot=rolled;
         // Co-op progress counts the server's own contributor list, never a client report.
         Game.recordCoopDefeat(profile,enemy.type,enemy.boss||enemy.roster.titan,contributors.length,now);
         if(execute&&id===killer.account.id&&(account.lifeEpoch||0)===killerEpoch.life)profile.hp=Math.min(Game.maxHp(profile),profile.hp+Game.maxHp(profile)*.25);
@@ -140,15 +160,16 @@ export function createCombatAuthority({store,peers,rooms,remember,send,broadcast
       return {enemyId:enemy.id,drops,execute};
     },requestId).then(committed=>{
       if(!committed)throw new Error('Missing killer');enemy.pending=false;enemy.hp=0;enemy.deadUntil=Date.now()+enemy.roster.respawn*1000;enemy.respawn=enemy.roster.respawn;enemy.titanAttacks=[];enemy.shots=[];enemy.skillEffects=[];enemy.telegraphs=[];enemy.combatAttacks=[];enemy.cast=null;
-      room.killed.add(enemy.id);health(room,enemy);broadcast(room,{type:'defeat',id:enemy.id,by:contributors,eventId:requestId});
+      health(room,enemy);broadcast(room,{type:'defeat',id:enemy.id,by:contributors,eventId:requestId});
       for(const drop of committed.reply.result.drops)broadcast(room,{type:'dropSpawn',drop});
       if(execute&&committed.reply.result.execute)send((peers.get(killer.account.id)||killer).socket,{type:'executeResult',id:enemy.id,requestId,ok:true,profile:committed.reply.profile,revision:committed.reply.revision});
-      if(enemy.type==='magmaslime')for(const [i,minion] of [...state(room).enemies.values()].filter(e=>e.type==='minislime'&&e.hp<=0&&!e.pending).slice(0,3).entries()){minion.x=enemy.x+Math.cos(i*Math.PI*2/3)*.9;minion.z=enemy.z+Math.sin(i*Math.PI*2/3)*.9;minion.hp=minion.maxHp;minion.deadUntil=0;minion.respawn=0;minion.generation++;health(room,minion);}
+      if(enemy.type==='magmaslime')for(const [i,minion] of [...state(room).enemies.values()].filter(e=>e.type==='minislime'&&e.hp<=0&&!e.pending).slice(0,3).entries()){minion.x=enemy.x+Math.cos(i*Math.PI*2/3)*.9;minion.z=enemy.z+Math.sin(i*Math.PI*2/3)*.9;syncLevel(room,minion);minion.hp=minion.maxHp;minion.deadUntil=0;minion.respawn=0;minion.generation++;health(room,minion);}
     }).catch(()=>{enemy.pending=false;enemy.hp=Math.max(1,enemy.hp);health(room,enemy);send(killer.socket,{type:'error',message:'The reward could not be saved. Please try again.'});});
   }
   function hit(peer,enemy,impact,execute=false,hazard=false){
     const room=rooms.get(peer.room);if(!room||peer.visit||enemy.hp<=0||enemy.pending)return 0;
-    if(!enemy.scaled&&enemy.boss){const players=[...room.members].map(id=>peers.get(id)).filter(p=>p&&!p.visit&&dist(p.pose,enemy)<28),level=Math.max(...players.map(p=>p.account.profile.level),1),difference=Math.max(0,level-enemy.roster.level);enemy.maxHp=Math.round(enemy.roster.baseMaxHp*(1+.6*Math.max(0,players.length-1))*(enemy.type==='dragon'?1:1+difference*.12));enemy.hp=enemy.maxHp;enemy.damage=enemy.roster.baseDamage*(enemy.type==='dragon'?1:(1+difference*.07)*(1+.1*Math.max(0,players.length-1)));enemy.scaled=true;}
+    // An engaging boss keeps its room-synced level (never a second level step) and grows per extra explorer nearby.
+    if(!enemy.scaled&&enemy.boss){const players=[...room.members].map(id=>peers.get(id)).filter(p=>p&&!p.visit&&dist(p.pose,enemy)<28),party=partyScale(players.length);syncLevel(room,enemy);enemy.maxHp=Math.round(enemy.maxHp*party.hp);enemy.hp=enemy.maxHp;enemy.damage*=party.damage;enemy.scaled=true;}
     const control=hitControl(enemy.boss,impact.stun||0);
     if(!hazard&&!execute&&enemy.type==='magmaturtle')impact={...impact,amount:impact.amount*(enemy.phase==='recover'?2:.12)};
     const dealt=Math.min(enemy.hp,Math.max(0,impact.amount));enemy.contributors.set(peer.account.id,Date.now());enemy.lastHitAt=Date.now();enemy.hp-=dealt;enemy.stun=Math.max(enemy.stun||0,control.stun);
@@ -237,6 +258,8 @@ export function createCombatAuthority({store,peers,rooms,remember,send,broadcast
       const s=state(room),active=[...room.members].map(id=>peers.get(id)).filter(p=>p&&p.active&&!p.visit),actors=[...s.enemies.values()].map(e=>({id:e.id,x:e.x,z:e.z,hp:e.hp,maxHp:e.maxHp,boss:e.boss,flying:ENEMY_TYPES[e.type].flying,lavaImmune:e.type==='lavaworm'}));
       const liveDragon=[...s.enemies.values()].find(e=>e.type==='dragon'&&e.hp>0);s.environment.dragonPhase=liveDragon?bossPhase(liveDragon.hp,liveDragon.maxHp):0;
       s.environment.nearbyPlayers=active.length;
+      // A level-up or star change (or a stronger explorer joining) lifts unhurt creatures at once; hurt ones wait for their respawn.
+      const level=roomLevel(room),tier=starTier(room);if(level&&(level!==s.level||tier!==s.tier)){s.level=level;s.tier=tier;for(const enemy of s.enemies.values())if(enemy.hp>0&&!enemy.pending&&!enemy.scaled&&enemy.hp===enemy.maxHp){syncLevel(room,enemy);enemy.hp=enemy.maxHp;}}
       const before=environmentSnapshot(s.environment),weatherBefore=structuredClone(before.weather),rainBefore=structuredClone(before.fireRain),lightningBefore=structuredClone(before.lightning);
       const focus=active.length?active[(s.focusCursor=(s.focusCursor||0)+1)%active.length].pose:{x:0,z:0};
       const step=s.environment.step(dt,focus,{x:0,z:0},{speed:6,maxHp:100,flying:true},actors);
@@ -250,7 +273,7 @@ export function createCombatAuthority({store,peers,rooms,remember,send,broadcast
         if(enemy.hp>0&&!enemy.pending&&enemy.phase==='return'&&now-(enemy.lastHitAt||0)>4000){enemy.hp=Math.min(enemy.maxHp,enemy.hp+enemy.maxHp*.3*dt);if(enemy.hp===enemy.maxHp)enemy.scaled=false;}
         updateCast(room,enemy,dt,now);
         enemy.stun=Math.max(0,(enemy.stun||0)-dt);for(const key of STATUS)enemy.statuses[key]=Math.max(0,(enemy.statuses[key]||0)-dt);
-        if(enemy.hp<=0&&!enemy.pending&&Number.isFinite(enemy.deadUntil)){enemy.respawn=Math.max(0,(enemy.deadUntil-now)/1000);if(enemy.respawn===0&&active.every(p=>dist(p.pose,enemy.home)>22)){enemy.x=enemy.home.x;enemy.z=enemy.home.z;enemy.hp=enemy.maxHp=enemy.roster.baseMaxHp;enemy.damage=enemy.roster.baseDamage;enemy.scaled=false;enemy.contributors.clear();enemy.generation++;room.killed.delete(enemy.id);health(room,enemy);}}
+        if(enemy.hp<=0&&!enemy.pending&&Number.isFinite(enemy.deadUntil)){enemy.respawn=Math.max(0,(enemy.deadUntil-now)/1000);if(enemy.respawn===0&&active.every(p=>dist(p.pose,enemy.home)>22)){enemy.x=enemy.home.x;enemy.z=enemy.home.z;syncLevel(room,enemy);enemy.hp=enemy.maxHp;enemy.scaled=false;enemy.contributors.clear();enemy.generation++;health(room,enemy);}}
       }
       room.environment=environmentSnapshot(s.environment);
       if(now-s.lastBroadcast>250){s.lastBroadcast=now;publish(room);broadcast(room,{type:'enemies',enemies:room.enemies});broadcast(room,{type:'environment',snapshot:room.environment});}
@@ -261,7 +284,9 @@ export function createCombatAuthority({store,peers,rooms,remember,send,broadcast
 
       }
     }
-    for(const[id,engine]of engines){if((engine.pendingHealth||engine.healthEvents.length)&&now-engine.hpAt>500)flushHealth(engine);if(!peers.has(id)&&!engine.pendingHealth&&!engine.healthEvents.length&&now-engine.lastSeen>600000)engines.delete(id);}
+    // Damage (and a failed batch) settles within half a second; passive healing and regeneration only every few seconds.
+    // Actions that need the latest HP settle it first (flushPeerHealth).
+    for(const[id,engine]of engines){if((engine.pendingHealth||engine.healthEvents.some(event=>event.amount<0))&&now-engine.hpAt>500||engine.healthEvents.length&&now-engine.hpAt>HEAL_FLUSH_MS)flushHealth(engine);if(!peers.has(id)&&!engine.pendingHealth&&!engine.healthEvents.length&&now-engine.lastSeen>600000)engines.delete(id);}
   }
   const timer=setInterval(()=>{if(!stopped)try{tick(.05);}catch(error){onError(error);}},50);timer.unref();
   function bomb(peer,radius,multiplier){const room=rooms.get(peer.room);if(!room||peer.visit)return;for(const enemy of state(room).enemies.values())if(enemy.hp>0&&dist(peer.pose,enemy)<=radius+enemy.radius)hit(peer,enemy,{amount:Math.round(Game.attack(combatProfile(peer))*multiplier),critical:false,stun:.5,lift:0,knock:2,direction:{x:0,z:0}});}

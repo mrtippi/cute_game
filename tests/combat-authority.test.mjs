@@ -9,6 +9,7 @@ import * as Game from '../src/model.ts';
 import {enemyRoster} from '../src/enemy-roster.ts';
 import {ENEMY_TYPES} from '../src/enemy-types.ts';
 import {createEnvironmentLayout,terrainHeight} from '../src/environments.ts';
+import {syncedStats,partyScale,tierStats} from '../src/level-sync.ts';
 
 async function fixture(t,{planet='home',profile:configure=()=>{}}={}){
  const dataDir=await mkdtemp(path.join(tmpdir(),'cute-combat-authority-')),store=await createAccountStore({dataDir,databaseUrl:''}),profile=Game.newGame();profile.planet=planet;configure(profile);
@@ -213,4 +214,65 @@ test('a boss defeated by two contributors records co-op progress for both; a sol
  assert.deepEqual((await solo.next(m=>m.type==='defeat'&&m.id===solo.boss.id)).by,['carol']);
  const totals=(await solo.store.get('carol')).profile.progression.totals;assert.equal(totals.boss,1);assert.equal(totals.coopKill,undefined);assert.equal(totals.coopBoss,undefined);
  assert.equal((await solo.store.get('dave')).profile.progression.totals.boss,undefined,'a bystander who never hit earns nothing');
+});
+
+const synced=(e,level)=>syncedStats({id:e.id,level:e.roster.level,maxHp:e.roster.baseMaxHp,damage:e.roster.baseDamage,xp:e.roster.xp},level);
+test('online creatures keep pace with a Lv40 room: level -1..+2 with the offline health, damage and XP, sent in snapshots',async t=>{
+ const f=await fixture(t,{profile:p=>{p.level=40;}}),enemy=f.spawn('mushroom'),expected=synced(enemy,40);
+ assert.ok(enemy.level>=39&&enemy.level<=42,'Lv'+enemy.level);assert.equal(enemy.level,expected.level);
+ assert.equal(enemy.maxHp,expected.maxHp);assert.equal(enemy.hp,enemy.maxHp);assert.equal(enemy.damage,expected.damage);assert.equal(enemy.xp,expected.xp);assert.ok(enemy.maxHp>enemy.roster.baseMaxHp);
+ const sent=f.room.enemies.find(e=>e.id===enemy.id);assert.equal(sent.level,enemy.level);assert.equal(sent.maxHp,enemy.maxHp);assert.equal(sent.xp,enemy.xp);
+ // A level-up lifts the unhurt creature; a hurt one keeps its stats until it respawns.
+ const hurt=f.spawn('mushroom',-31,2),hurtId=enemyRoster('home').filter(e=>e.type==='mushroom')[0].id;assert.equal(hurt,f.authority.state(f.room).enemies.get(hurtId));
+ const other=enemyRoster('home').find(e=>e.type==='mushroom'&&e.id!==hurtId);f.authority.acceptSnapshots(f.room,[{id:other.id,type:'mushroom',x:-32,z:3}]);const fresh=f.authority.state(f.room).enemies.get(other.id);
+ hurt.hp-=1;const hurtLevel=hurt.level;f.account.profile.level=50;await new Promise(r=>setTimeout(r,150));
+ assert.equal(fresh.level,synced(fresh,50).level);assert.ok(fresh.level>=49);assert.equal(fresh.hp,fresh.maxHp);assert.equal(hurt.level,hurtLevel);
+});
+test('a server kill grants the level-scaled XP, like offline',async t=>{
+ const f=await fixture(t,{profile:p=>{p.level=40;p.xp=0;}}),enemy=f.spawn('mushroom'),before={xp:f.account.profile.xp,level:f.account.profile.level};
+ assert.ok(enemy.xp>enemy.roster.xp);enemy.hp=1;f.authority.basic(f.peer,enemy.id);await f.next(m=>m.type==='defeat'&&m.id===enemy.id,0);
+ const saved=await f.store.get('actor');assert.equal(saved.profile.level,before.level);assert.equal(saved.profile.xp-before.xp,synced(enemy,40).xp);
+});
+test('an engaging boss syncs its level once and adds only the party bonus (no second level step)',async t=>{
+ const f=await fixture(t,{profile:p=>{p.level=40;}}),boss=f.spawn('treant'),expected=synced(boss,40);
+ assert.equal(boss.maxHp,expected.maxHp);f.authority.basic(f.peer,boss.id);assert.equal(boss.scaled,true);
+ assert.equal(boss.level,expected.level);assert.equal(boss.maxHp,expected.maxHp);assert.equal(boss.damage,expected.damage);assert.ok(boss.hp<boss.maxHp);
+ // A second explorer nearby: +60% health and +10% damage on the same synced level.
+ const g=await fixture(t,{profile:p=>{p.level=40;}}),second=await g.store.create({id:'friend',username:'friend',hash:'h',salt:'s',profile:Object.assign(Game.newGame(),{level:20}),friends:[],requests:[],profileRevision:0});
+ g.peers.set('friend',{account:second,active:true,visit:null,planet:'home',room:g.room.id,pose:{x:-29,z:1,facing:0,moving:false},socket:{}});g.room.members.add('friend');
+ const party=g.spawn('treant'),solo=synced(party,40),bonus=partyScale(2);g.authority.basic(g.peer,party.id);
+ assert.equal(party.level,solo.level);assert.equal(party.maxHp,Math.round(solo.maxHp*bonus.hp));assert.ok(Math.abs(party.damage-solo.damage*bonus.damage)<1e-9);
+});
+test('the Dragon is summoned at its own level and never syncs',async t=>{
+ const f=await fixture(t,{planet:'lava',profile:p=>{p.level=60;}}),dragon=f.spawn('dragon',30,0);
+ assert.equal(dragon.level,dragon.roster.level);assert.equal(dragon.maxHp,dragon.roster.baseMaxHp);assert.equal(dragon.xp,dragon.roster.xp);
+});
+const starred=(e,tier,level)=>{const base=tierStats({id:e.id,level:e.roster.level,maxHp:e.roster.baseMaxHp,damage:e.roster.baseDamage,xp:e.roster.xp},tier);return level?syncedStats(base,level):base;};
+const stars=(open,chosen=open)=>({home:{open,chosen,kills:0,bosses:0,titan:0}});
+test('a ★3 room scales creatures by the star first, then the level sync, with the offline formula',async t=>{
+ const f=await fixture(t,{profile:p=>{p.level=40;p.tiers=stars(3);}}),enemy=f.spawn('mushroom'),expected=starred(enemy,3,40),plain=synced(enemy,40);
+ assert.equal(enemy.tier,3);assert.equal(enemy.level,expected.level);assert.equal(enemy.maxHp,expected.maxHp);assert.equal(enemy.hp,enemy.maxHp);assert.equal(enemy.xp,expected.xp);assert.ok(Math.abs(enemy.damage-expected.damage)<1e-9);
+ assert.ok(enemy.maxHp>plain.maxHp&&enemy.xp>plain.xp,'tougher and more rewarding than ★1');
+ const sent=f.room.enemies.find(e=>e.id===enemy.id);assert.equal(sent.maxHp,enemy.maxHp);assert.equal(sent.xp,enemy.xp);assert.equal(sent.level,enemy.level);assert.equal(sent.tier,3);
+ // Choosing an easier star on the star map lowers the room at once for unhurt creatures.
+ f.account.profile.tiers=stars(3,1);await new Promise(r=>setTimeout(r,150));assert.equal(enemy.tier,1);assert.equal(enemy.maxHp,plain.maxHp);
+});
+test('a mixed room fights on the highest chosen star among its explorers; the Dragon is starred but never synced',async t=>{
+ const f=await fixture(t,{profile:p=>{p.level=40;p.tiers=stars(2);}}),second=await f.store.create({id:'friend',username:'friend',hash:'h',salt:'s',profile:Object.assign(Game.newGame(),{level:40,tiers:stars(4)}),friends:[],requests:[],profileRevision:0});
+ f.peers.set('friend',{account:second,active:true,visit:null,planet:'home',room:f.room.id,pose:{x:-29,z:1,facing:0,moving:false},socket:{}});f.room.members.add('friend');
+ const enemy=f.spawn('mushroom');assert.equal(enemy.tier,4);assert.equal(enemy.maxHp,starred(enemy,4,40).maxHp);
+ const g=await fixture(t,{planet:'lava',profile:p=>{p.level=60;p.tiers={lava:{open:3,chosen:3,kills:0,bosses:0,titan:0}};}}),dragon=g.spawn('dragon',30,0),base=starred(dragon,3);
+ assert.equal(dragon.level,base.level);assert.equal(dragon.maxHp,base.maxHp);assert.equal(dragon.xp,base.xp);
+});
+test('an online kill grants the starred XP and counts toward conquering the star',async t=>{
+ const f=await fixture(t,{profile:p=>{p.level=40;p.xp=0;p.tiers=stars(3);}}),enemy=f.spawn('mushroom'),xp=starred(enemy,3,40).xp;
+ enemy.hp=1;f.authority.basic(f.peer,enemy.id);await f.next(m=>m.type==='defeat'&&m.id===enemy.id,0);
+ const saved=await f.store.get('actor');assert.equal(saved.profile.xp,xp);assert.deepEqual(saved.profile.tiers.home,{open:3,chosen:3,kills:1,bosses:0,titan:0});
+});
+test('online conquest: a helper on a lower open star gains progress on it from a harder room, and the star opens',async t=>{
+ const f=await fixture(t,{profile:p=>{p.level=60;p.tiers=stars(4);}}),helper=await f.store.create({id:'friend',username:'friend',hash:'h',salt:'s',profile:Object.assign(Game.newGame(),{level:60,tiers:{home:{open:2,chosen:2,kills:Game.conquestKills(2),bosses:0,titan:0}}}),friends:[],requests:[],profileRevision:0});
+ f.peers.set('friend',{account:helper,active:true,visit:null,planet:'home',room:f.room.id,pose:{x:-29,z:1,facing:0,moving:false},socket:{}});f.room.members.add('friend');
+ const boss=f.spawn('treant');assert.equal(boss.tier,4);f.authority.basic(f.peer,boss.id);assert.equal(boss.scaled,true);boss.contributors.set('friend',Date.now());boss.hp=1;f.authority.engineFor(f.peer).nextBasic=0;f.authority.basic(f.peer,boss.id);await f.next(m=>m.type==='defeat'&&m.id===boss.id,0);
+ assert.deepEqual((await f.store.get('friend')).profile.tiers.home,{open:3,chosen:3,kills:0,bosses:0,titan:0},'★2 conquered from the ★4 room');
+ assert.deepEqual((await f.store.get('actor')).profile.tiers.home,{open:4,chosen:4,kills:0,bosses:1,titan:0});
 });

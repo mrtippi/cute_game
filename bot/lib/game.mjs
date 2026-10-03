@@ -1,6 +1,6 @@
 // What the bot can see and do in Zoo Garden. Reading goes through window.__zg (src/bot-bridge.ts);
 // doing always goes through Hands, i.e. real pointer and keyboard input on the page.
-const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
+import { sleep } from './util.mjs';
 
 export class Game {
   constructor(page, hands, rng, log) { this.page = page; this.hands = hands; this.rng = rng; this.log = log; }

@@ -2,7 +2,7 @@
 // goals pull toward the activities that complete them; chores keep the garden and bag in order;
 // a weighted random pick among the best few keeps every day a little different.
 import { claimable, claimRewards, tendGarden, sellProduce } from './tasks/basics.mjs';
-import { fight, safeTargets, handleFall, recoverBag, recover, inside, leaveHouse } from './tasks/combat.mjs';
+import { fight, safeTargets, handleFall, recoverBag, recover, leaveHouse } from './tasks/combat.mjs';
 import { upgradeWeapon, crystalUpgrade, buyRod } from './tasks/shopping.mjs';
 import { goFishing, hasRod } from './tasks/fishing.mjs';
 import { cook, craftSomething, forgeOnce, tendAnimals, harpoonHunt, mine, fertilizeCrops, expandGarden } from './tasks/home.mjs';
@@ -20,21 +20,26 @@ import { tendBolt, boltDue } from './tasks/helpers.mjs';
 import { lavaPending, lavaEvents, dragonReady, fightDragon, openGifts, rerollDaily } from './tasks/events.mjs';
 import { dressFriend, visitFriend, playDisguise, disguises } from './tasks/friends.mjs';
 import { coopTasks } from './tasks/coop.mjs';
+import { count } from './lib/util.mjs';
+import { isCrop, foodCount } from './lib/items.mjs';
 
 /** Which activities move a quest event forward. */
 const EVENT_TASKS = {
   kill: ['fight'], bounty: ['fight'], skill: ['fight'], chal: ['challenge', 'fight'], hawk: ['fight'], boss: ['boss', 'dragon'], titan: ['boss'], tierUp: ['boss', 'fight', 'travel', 'dragon'],
-  harvest: ['garden', 'orchard'], fruit: ['garden', 'orchard'], expand: [], fertilize: ['fertilize'],
+  harvest: ['garden', 'orchard'], fruit: ['garden', 'orchard'], fertilize: ['fertilize'],
   sell: ['market'], cook: ['cook', 'dish'], craft: ['craft', 'shop'], upgrade: ['crystal'],
   fish: ['fishing', 'harpoon'], fishrare: ['fishing'], legendFish: ['fishing'], mystery: ['fishing'], harpoon: ['harpoon'],
   animal: ['animals'], planet: ['travel'], stardust: ['travel'], mine: ['travel', 'mine', 'lava'],
-  order: ['market'], forge: ['forge'], forgeOk: ['forge'], eat: ['snack', 'dish'], decorate: ['decorate'], dailyDone: [], login: [],
+  order: ['market'], forge: ['forge'], forgeOk: ['forge'], eat: ['snack', 'dish'], decorate: ['decorate'], dailyDone: [],
 };
-const CONDITION_TASKS = { titans: ['boss'], stars: ['boss', 'fight', 'travel'], beds: ['expand'], upgrades: ['crystal'], fishSpecies: ['fishing'], collections: ['travel', 'fight'], level: ['fight'], equipped: ['shop'], visited: ['travel'], pen: ['animals'], animals: ['animals'], dog: ['animals'], forgeMax: ['forge'], harpoon: [], animalKinds: ['animals'], titansAt5: ['boss', 'travel'], titansAt8: ['boss', 'travel'], weaponAttack: ['gearBuy', 'gather', 'shop'] };
+const CONDITION_TASKS = { titans: ['boss'], stars: ['boss', 'fight', 'travel'], beds: ['expand'], plots: ['expand'], upgrades: ['crystal'], collections: ['travel', 'fight'], level: ['fight'], equipped: ['shop'], visited: ['travel'], pen: ['animals'], animals: ['animals'], dog: ['animals'], forgeMax: ['forge'], animalKinds: ['animals'], titansAt5: ['boss', 'travel'], titansAt8: ['boss', 'travel'], weaponAttack: ['gearBuy', 'gather', 'shop'] };
 /** Story goals naming one boss ("boss:home:bear") or one friend ("friend:sprout") go to the hunt and the cages. */
 const conditionTasks = c => c.startsWith('boss:') ? ['boss'] : c.startsWith('friend:') ? ['rescue', 'boss'] : CONDITION_TASKS[c];
-const CROPS = /^(radish|carrot|pumpkin|mint|chili|candy|bean|star|berry|coffee|moonflower|magnetmelon|melon|apple|grape|mango|pineapple|coconut|durian|lychee|peach)$/;
-const count = (bag, test) => Object.entries(bag).filter(([id]) => test(id)).reduce((n, [, c]) => n + c, 0);
+/**
+ * A result that achieved nothing: the activity is left longer (three minutes at least), so one stuck activity cannot
+ * fill the session.
+ */
+export const IDLE = /^(stopped|nothing|no |cannot|could not|need food|.* not reached|kills 0|caught 0|harvested 0, planted false|fertilized 0|mined 0|harpoon hits 0|upgrades 0|gathered \(kills 0\)|(knocked out|stuck indoors) after 0$)/;
 
 export function createPlanner(bot, { minutesLeft }) {
   const { game, rng, log } = bot;
@@ -45,7 +50,6 @@ export function createPlanner(bot, { minutesLeft }) {
   let awaySince = 0, awayFor = 300000, gearAt = 0, idleAt = 0;
   // Energy kept back from the crystal for flights, the helpers, decorations and repairs (more at higher levels).
   const reserve = s => Math.min(3000, 200 + s.level * 15);
-  const mealsIn = s => count(s.bag, id => id.startsWith('cooked_'));
   // A boss clip remembers when this world's bosses return: one due within two minutes keeps the explorer here.
   // An event clip stays on its world while the world still has its event to do (presents, the lava cave).
   const eventsHere = s => !!bot.clip?.planets?.includes(s.planet) && (lavaPending(bot, s) || toyGifts(s));
@@ -59,8 +63,8 @@ export function createPlanner(bot, { minutesLeft }) {
   const TASKS = {
     garden: { can: s => s.planet === 'home' && s.plots.some(p => !p.crop || p.progress >= 1), run: () => tendGarden(bot, { minutesLeft: minutesLeft() }), cool: 30000, base: 6 },
     fertilize: { can: s => s.planet === 'home' && (s.bag.manure > 0 || s.bag.spore > 0) && s.plots.some(p => p.crop && p.progress < .9), run: () => fertilizeCrops(bot, { doses: rng.int(1, 3) }), cool: 240000, base: 1 },
-    cook: { can: s => s.planet === 'home' && count(s.bag, id => CROPS.test(id) || id.startsWith('fish_')) >= 4, run: () => cook(bot, { kinds: rng.int(1, 3) }), cool: 300000, base: 2 },
-    market: { can: s => s.planet === 'home' && (s.orders.some(o => o.have >= o.count) || count(s.bag, id => CROPS.test(id) || id.startsWith('fish_')) >= 5), run: () => sellProduce(bot), cool: 120000, base: 3 },
+    cook: { can: s => s.planet === 'home' && count(s.bag, id => isCrop(id) || id.startsWith('fish_')) >= 4, run: () => cook(bot, { kinds: rng.int(1, 3) }), cool: 300000, base: 2 },
+    market: { can: s => s.planet === 'home' && (s.orders.some(o => o.have >= o.count) || count(s.bag, id => isCrop(id) || id.startsWith('fish_')) >= 5), run: () => sellProduce(bot), cool: 120000, base: 3 },
     shop: { can: s => s.planet === 'home' && s.energy >= 60, run: () => upgradeWeapon(bot), cool: 420000, base: 1 },
     // Spare energy goes into the crystal: more upgrades per visit the richer the explorer is.
     crystal: { can: s => s.planet === 'home' && s.energy >= reserve(s) + 150, run: s => crystalUpgrade(bot, { times: s.energy - reserve(s) > 2000 ? 4 : s.energy - reserve(s) > 800 ? 3 : 2, keep: reserve(s) }), cool: 240000, base: 2, boost: s => s.energy - reserve(s) > 1000 ? 4 : s.energy - reserve(s) > 500 ? 2 : 0 },
@@ -78,7 +82,7 @@ export function createPlanner(bot, { minutesLeft }) {
     // A new look comes first at the workshop; otherwise any recipe the bag allows.
     craft: { can: s => s.planet === 'home', run: async () => { const r = await craftCosmetic(bot); return r.startsWith('crafted') ? r : craftSomething(bot); }, cool: 600000, base: 0 },
     wardrobe: { can: s => s.planet === 'home' && s.energy >= 400, run: () => collectCosmetic(bot, { theme: bot.theme }), cool: 600000, base: 2 },
-    fight: { can: s => (s.hp >= s.maxHp * .7 || mealsIn(s) > 0 || s.planet === 'home') && safeTargets(s, { range: s.planet === 'home' ? 30 : 70 }).length > 0, run: s => fight(bot, { count: rng.int(2, 4), type: s.bounty && s.bounty.progress < s.bounty.target ? s.bounty.type : undefined, range: s.planet === 'home' ? 30 : 70, timeout: 150000 }), cool: 20000, base: 4 },
+    fight: { can: s => (s.hp >= s.maxHp * .7 || foodCount(s) > 0 || s.planet === 'home') && safeTargets(s, { range: s.planet === 'home' ? 30 : 70 }).length > 0, run: s => fight(bot, { count: rng.int(2, 4), type: s.bounty && s.bounty.progress < s.bounty.target ? s.bounty.type : undefined, range: s.planet === 'home' ? 30 : 70, timeout: 150000 }), cool: 20000, base: 4 },
     travel: { can: s => s.planet === 'home' && !bossSoon(s) && s.level >= 4 && s.energy >= 30 && minutesLeft() > 12 && !!nextPlanet(s, rng, eventWorlds(s)), run: async s => { const r = await travelTo(bot, nextPlanet(s, rng, eventWorlds(s))); if (r.startsWith('landed')) { awaySince = Date.now(); awayFor = rng.between(240000, 420000); } return r; }, get cool() { return bot.clip?.planets ? 240000 : 900000; }, base: 1, limit: 300000 },
     mine: { can: s => s.planet !== 'home' && s.entities.some(e => e.kind === 'mine' && e.d < 80), run: () => mine(bot, { count: rng.int(2, 4) }), cool: 120000, base: 3 },
     // A bed pays for itself in minutes; keep a cushion of energy for food and repairs.
@@ -101,8 +105,8 @@ export function createPlanner(bot, { minutesLeft }) {
     bolt: { can: s => boltDue(bot, s), run: () => tendBolt(bot), cool: 300000, base: 3 },
     // Planet events: the lava cave (gate, daily chest, braziers), the volcano dragon, Toybox presents.
     lava: { can: s => lavaPending(bot, s), run: () => lavaEvents(bot), cool: 240000, base: 6, limit: 300000 },
-    // The invasion lasts four minutes: go at once rather than wait on the draw.
-    dragon: { can: s => dragonReady(s), now: () => true, run: () => fightDragon(bot), cool: 60000, base: 10, limit: 260000 },
+    // The invasion lasts four minutes: go at once rather than wait on the draw (with the food the fight needs).
+    dragon: { can: s => dragonReady(s), now: s => foodCount(s) >= 4, run: () => fightDragon(bot), cool: 60000, base: 10, limit: 260000 },
     gifts: { can: s => toyGifts(s), run: async () => { const r = await openGifts(bot, { max: rng.int(2, 5) }); if (r.startsWith('no presents')) bot.toyDone = Date.now(); return r; }, cool: 240000, base: 5, limit: 300000 },
     // Once a day: swap a daily task the bot cannot do (or a hard one barely started).
     reroll: { can: s => !s.space && bot.rerollDay !== new Date(s.now).toISOString().slice(0, 10), run: () => rerollDaily(bot), cool: 900000, base: 4 },
@@ -112,7 +116,7 @@ export function createPlanner(bot, { minutesLeft }) {
     disguise: { can: s => s.planet === 'home' && disguises(s).length > 0, run: () => playDisguise(bot, { seconds: rng.int(30, 60) }), cool: 1500000, base: 1 },
     browse: { can: () => true, run: () => flourish(bot), cool: 150000, base: 1.5 },
     // Back home when the stay is up, the session ends soon, or the explorer is hurt with no food left.
-    home: { can: s => s.planet !== 'home' && (Date.now() - awaySince > awayFor && !bossSoon(s) && !eventsHere(s) || minutesLeft() < 6 || !mealsIn(s) && s.hp < s.maxHp * .8), run: () => goHome(bot), cool: 60000, base: 20 },
+    home: { can: s => s.planet !== 'home' && (Date.now() - awaySince > awayFor && !bossSoon(s) && !eventsHere(s) || minutesLeft() < 6 || !foodCount(s) && s.hp < s.maxHp * .8), run: () => goHome(bot), cool: 60000, base: 20 },
     // Playing with a group (the together clip): group bosses, following the leader, garden visits (tasks/coop.mjs).
     ...coopTasks(bot, { minutesLeft }),
   };
@@ -140,7 +144,7 @@ export function createPlanner(bot, { minutesLeft }) {
       const raw = o.item.replace(/^cooked_/, '');
       if (o.item.startsWith('cooked_')) add(s.bag[raw] > 0 ? ['cook'] : raw.startsWith('fish_') ? ['fishing'] : ['garden'], 2);
       else if (o.item.startsWith('fish_')) add(['fishing'], 2);
-      else if (CROPS.test(o.item)) add(['garden'], 2);
+      else if (isCrop(o.item)) add(['garden'], 2);
       else if (['egg', 'milk', 'duck_egg', 'truffle'].includes(o.item)) add(['animals'], 2);
       else if (DISHES.includes(o.item)) add(['dish'], 2);
       else add(['fight'], 1);
@@ -164,7 +168,7 @@ export function createPlanner(bot, { minutesLeft }) {
     if (s.lumi != null) { await readLumi(bot); return 'listened to Lumi'; }
     if (s.space) { await game.waitFor(n => !n.space && n, { timeout: 60000 }); return 'waited for landing'; }
     if (s.hp < s.maxHp * .6) { await recover(bot); return 'recovered'; }
-    if (inside(s)) { await leaveHouse(bot); return 'left the cottage'; }
+    if (game.indoors(s)) { await leaveHouse(bot); return 'left the cottage'; }
     // The dropped bag, unless it lies by a live boss (then try again in a few minutes).
     if (s.dropped && s.planet === 'home' && s.hp >= s.maxHp * .9 && ready('bag')) { if (await recoverBag(bot)) return 'picked up the bag'; rest('bag', 240000); }
     if (ago('claim') > 90000 && (await claimable(game)).length) { lastRun.claim = Date.now(); return 'rewards → ' + await claimRewards(bot); }
@@ -204,7 +208,7 @@ export function createPlanner(bot, { minutesLeft }) {
     catch (error) { result = 'stopped: ' + error.message; await game.closePanel().catch(() => {}); }
     finally { game.deadline = 0; }
     // Nothing achieved: leave it longer, so one stuck activity cannot fill the session.
-    const idle = /^(stopped|nothing|no |cannot|could not|.* not reached|kills 0|caught 0|harvested 0, planted false|fertilized 0|mined 0|harpoon hits 0|upgrades 0)/.test(String(result));
+    const idle = IDLE.test(String(result));
     rest(pick.name, idle ? Math.max(pick.t.cool, 180000) : pick.t.cool);
     return `${pick.name} → ${result}`;
   }

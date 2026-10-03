@@ -516,4 +516,6 @@ export const VI_UI: Record<string, string> = {
   "Your health is already full.": "Máu của bạn đã đầy rồi.",
   "Try on": "Mặc thử",
   "Trying on": "Đang mặc thử",
+  'attack power': 'sức tấn công',
+  'Zoo Garden · progress saved to your online account': 'Zoo Garden · tiến trình được lưu vào tài khoản trực tuyến',
 };

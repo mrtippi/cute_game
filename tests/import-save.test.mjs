@@ -3,8 +3,10 @@ import assert from 'node:assert/strict';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
+import http from 'node:http';
 import { createGameServer } from '../server/server.mjs';
 import * as Game from '../src/model.ts';
+import { CHAMPION_TITLE } from '../src/titles.ts';
 
 async function fixture(t, host = '127.0.0.1') {
   const directory = await mkdtemp(path.join(tmpdir(), 'cute-game-import-save-'));
@@ -28,7 +30,17 @@ async function fixture(t, host = '127.0.0.1') {
     assert.equal(result.status, 200);
     return result.setCookie.split(';')[0];
   }
-  return { request, register };
+  // fetch() always sends its own Host header; a page rebound to this computer sends its own name.
+  function rebound(cookie, route, data, host) {
+    return new Promise((resolve, reject) => {
+      const payload = JSON.stringify(data);
+      const call = http.request({ host: '127.0.0.1', port: app.port, path: `/api/${route}`, method: 'POST', headers: { Host: host, 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(payload), cookie } }, response => {
+        let text = ''; response.on('data', chunk => { text += chunk; }); response.on('end', () => resolve({ status: response.statusCode, body: JSON.parse(text) }));
+      });
+      call.on('error', reject); call.end(payload);
+    });
+  }
+  return { request, register, rebound };
 }
 const offlineSave = () => JSON.stringify({ ...Game.newGame('さくら', Game.COLORS[1]), level: 17, xp: 40 });
 
@@ -61,4 +73,26 @@ test('a server listening for other machines never imports saves', async t => {
   const f = await fixture(t, '0.0.0.0'), cookie = await f.register('mei');
   assert.equal((await f.request(cookie, 'auth/import-save', { save: offlineSave() })).status, 403);
   assert.equal((await f.request(cookie, 'auth/session')).body.profile.level, 1);
+});
+
+test('a page rebound to this computer (non-loopback Host) cannot import', async t => {
+  const f = await fixture(t), cookie = await f.register('rin');
+  assert.equal((await f.rebound(cookie, 'auth/import-save', { save: offlineSave() }, 'attacker.example:8787')).status, 403);
+  assert.equal((await f.request(cookie, 'auth/session')).body.profile.level, 1);
+  assert.equal((await f.rebound(cookie, 'auth/import-save', { save: offlineSave() }, 'localhost:8787')).status, 200, 'localhost is this computer');
+});
+
+test('an imported save keeps its progress but not the champion title or online co-op totals', async t => {
+  const f = await fixture(t), cookie = await f.register('kaito');
+  const save = { ...Game.newGame('かいと'), level: 40, xp: 12 };
+  save.bag = { ...save.bag, carrot: 77 };
+  save.progression.titles = ['Boss Hunter', CHAMPION_TITLE]; save.progression.title = CHAMPION_TITLE;
+  save.progression.totals = { ...save.progression.totals, kill: 300, coopKill: 50, coopBoss: 20, gardenVisit: 99, shareLoot: 9 };
+  const imported = await f.request(cookie, 'auth/import-save', { save: JSON.stringify(save) });
+  assert.equal(imported.status, 200);
+  const { profile } = imported.body, { progression } = profile;
+  assert.equal(profile.level, 40); assert.equal(profile.bag.carrot, 77); assert.equal(progression.totals.kill, 300);
+  assert.ok(!progression.titles.includes(CHAMPION_TITLE)); assert.ok(progression.titles.includes('Boss Hunter'));
+  assert.equal(progression.title, ''); assert.equal(imported.body.account.title, '');
+  for (const key of ['coopKill', 'coopBoss', 'gardenVisit', 'shareLoot']) assert.equal(progression.totals[key] ?? 0, 0, key);
 });

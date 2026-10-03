@@ -1,9 +1,7 @@
 // Village chores beyond the garden: kitchen, workshop and forge, the animal pen, harpoon hunting.
 import { equip } from './shopping.mjs';
 import { chooseAnimal, penFacts, farmWants, feedEach } from './farm.mjs';
-const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
-const near = kind => n => n.entities.filter(e => e.kind === kind).sort((a, b) => a.d - b.d)[0];
-const enabled = (bot, action, attr) => bot.page.$$eval(`#dialog [data-action="${action}"]:not([disabled])`, (bs, attr) => bs.map(b => b.dataset[attr]), attr);
+import { sleep, near, enabled } from '../lib/util.mjs';
 
 /** Cook what the bag holds (cooked food sells for about twice as much and counts for cooking quests). */
 export async function cook(bot, { kinds = 2 } = {}) {
@@ -136,6 +134,8 @@ export async function expandGarden(bot) {
   const spots = rng.shuffle(beds.flatMap(b => [[2.6, 0], [-2.6, 0], [0, 2.6], [0, -2.6]].map(([dx, dz]) => ({ x: b.x + dx, z: b.z + dz }))))
     .filter(p => !beds.some(b => Math.hypot(b.x - p.x, b.z - p.z) < 2)).slice(0, 14);
   for (const spot of spots) {
+    // The ghost bed gone (placed by a tap, or the placement closed): a click now would land on the world itself.
+    if (!s.placement) return s.plots.length > before ? 'placed' : 'placement closed';
     const p = await game.project(spot.x, spot.z);
     if (!await game.safe(p, s)) continue;
     await hands.click(p.x, p.y); await new Promise(r => setTimeout(r, rng.between(250, 450)));
@@ -146,6 +146,7 @@ export async function expandGarden(bot) {
       if (await confirm.count()) { await hands.clickElement(confirm); await new Promise(r => setTimeout(r, 700)); note(`placed a new garden bed (${(await game.snap()).plots.length} beds)`, 'garden'); return 'placed'; }
     }
   }
-  log('expand: no valid spot found'); await hands.press('Escape');
+  log('expand: no valid spot found');
+  if ((await game.snap()).placement) await hands.press('Escape');
   return 'no spot';
 }

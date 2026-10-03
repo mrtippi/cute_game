@@ -1,7 +1,8 @@
 // Flying between planets the way a player does: launch from the starship station, hold the pointer
 // toward where the ship should go, pick up stardust when the tank runs low, press L over the planet.
-const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
-const LEVELS = { home: 1, toy: 4, candy: 6, jungle: 8, ice: 10, ocean: 12, lava: 14, cloud: 16, shadow: 20 };
+import { sleep } from '../lib/util.mjs';
+/** The level each world opens at (the starship's map). */
+export const LEVELS = { home: 1, toy: 4, candy: 6, jungle: 8, ice: 10, ocean: 12, lava: 14, cloud: 16, shadow: 20 };
 
 /** The next planet worth visiting: undiscovered ones first (in level order), then a random discovered one. */
 export function nextPlanet(s, rng, prefer = []) {

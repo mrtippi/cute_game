@@ -45,7 +45,7 @@ test('an uncertain action keeps the exact receipt identity and revision when ret
   const sent=app.requests.filter(r=>r.url.endsWith('/actions'));assert.equal(sent.length,2);assert.equal(sent[1].options.body,first);
   assert.equal(app.bridge.getState().name,'Newer','an older replay profile cannot replace newer server state');
 });
-const conflict={ok:false,status:409,json:async()=>({error:'A newer adventure is already saved. Reconnect to load it.'})};
+const conflict={ok:false,status:409,json:async()=>({error:'A newer adventure is already saved. Reconnect to load it.',code:'stale'})};
 test('a save that moved on under an intent reloads it and sends the intent once more on the fresh revision',async()=>{
   let conflicts=1;
   const app=await fixture({responseFor:(url,_options,session)=>{if(url.endsWith('/actions')&&conflicts){conflicts--;session.revision=7;session.profile=newGame('Moved on');return conflict;}}});
@@ -66,6 +66,14 @@ test('a retried intent that meets another conflict is refused once, without loop
   await app.bridge.perform({type:'settings',payload:{settings:{sound:true}}}).catch(()=>{});
   const sent=app.requests.filter(r=>r.url.endsWith('/actions')).map(r=>JSON.parse(r.options.body));
   assert.equal(sent.length,4,'the next intent gets its own retry');
+});
+test('a refused action (a 409 without the stale code) is not reloaded and resent: it would only be refused again',async()=>{
+  const refused={ok:false,status:409,json:async()=>({error:'Move closer to use that.'})};
+  const app=await fixture({responseFor:url=>url.endsWith('/actions')?refused:undefined});
+  const sessions=()=>app.requests.filter(r=>r.url.endsWith('/auth/session')).length,before=sessions();
+  await assert.rejects(app.bridge.perform({type:'settings',payload:{settings:{sound:false}}}),/Move closer/);await flush();
+  assert.equal(app.requests.filter(r=>r.url.endsWith('/actions')).length,1);assert.equal(sessions()-before,0);
+  assert.deepEqual(JSON.parse(app.storage.get('cute-game-actions-alice')),[]);
 });
 test('Enter opens chat but composition and typing keep their normal Enter behavior',async()=>{
   const app=await fixture();app.dialog.close();const key=app.document.listeners.get('keydown');let prevented=0;

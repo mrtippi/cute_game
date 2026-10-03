@@ -5,9 +5,8 @@ import { fightCost, recover, collectLoot } from './combat.mjs';
 import { dress } from './wardrobe.mjs';
 import { dodge, dangersOf, inDanger } from '../lib/dodge.mjs';
 import { pickSkill, useSkill } from '../lib/skills.mjs';
-const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
-
-export const foodCount = s => Object.entries(s.bag).filter(([id]) => id.startsWith('cooked_') || ['potion', 'honey', 'omelette', 'pancake', 'milkshake', 'cheese'].includes(id)).reduce((n, [, c]) => n + c, 0);
+import { sleep } from '../lib/util.mjs';
+import { foodCount } from '../lib/items.mjs';
 
 /** Health the fight would cost (boss skills hit harder than their basic damage), against health plus food. */
 export function bossReady(s, boss) {

@@ -5,7 +5,9 @@ import os from 'node:os';
 import path from 'node:path';
 import { PGlite } from '@electric-sql/pglite';
 import { Pool } from 'pg';
-import { createAccountStore, validateImportedAccounts } from '../server/account-store.mjs';
+import { randomUUID } from 'node:crypto';
+import { createAccountStore, validateImportedAccounts, pruneReceipts, RECEIPT_MS, RECEIPTS_PER_ACCOUNT } from '../server/account-store.mjs';
+import { commandHash } from '../server/action-service.mjs';
 
 const account = (id, username = id) => ({
   id, username, hash: `hash-${id}`, salt: `salt-${id}`, createdAt: 1234, friends: [], requests: [],
@@ -250,4 +252,44 @@ test('import validation rejects invalid account revisions and detaches valid sou
   const original = { ...account('alice'), accountRevision: 15 }, validated = validateImportedAccounts([original]);
   assert.equal(validated[0].accountRevision, 15); validated[0].profile.name = 'Changed';
   assert.equal(original.profile.name, 'alice');
+});
+
+const receipt = (actorId, at, revision = 1) => ({ format: 2, actorId, requestId: randomUUID(), hash: commandHash({ test: 'receipt' }), reply: { ok: true, revision }, ...(at === undefined ? {} : { at }) });
+const command = (actorId, expectedRevision) => ({ actorId, expectedRevision, requestId: randomUUID(), hash: commandHash({ test: 'prune' }), run: records => { records.get(actorId).profile.savedAt++; return {}; } });
+
+test("receipt pruning keeps a day of retries and each account's newest receipts", () => {
+  const now = 10 * RECEIPT_MS, receipts = new Map();
+  const old = receipt('alice', now - RECEIPT_MS - 1), fresh = receipt('alice', now - 1000);
+  for (const value of [old, fresh]) receipts.set(`${value.actorId}:${value.requestId}`, value);
+  for (let i = 0; i < RECEIPTS_PER_ACCOUNT + 5; i++) { const value = receipt('bob', now - 500 + i); receipts.set(`bob:${value.requestId}`, value); }
+  pruneReceipts(receipts, now);
+  const kept = [...receipts.values()];
+  assert.ok(!kept.includes(old), 'older than a day'); assert.ok(kept.includes(fresh));
+  const bob = kept.filter(value => value.actorId === 'bob');
+  assert.equal(bob.length, RECEIPTS_PER_ACCOUNT, 'each account keeps its newest receipts');
+  assert.equal(bob[0].at, now - 500 + 5, 'the oldest go first');
+});
+
+for (const kind of ['file', 'postgres']) test(`${kind} store deletes day-old receipts as it commits`, async t => {
+  const directory = await mkdtemp(path.join(os.tmpdir(), 'zoo-receipts-'));
+  const pool = kind === 'postgres' ? await pgPool() : undefined, old = receipt('alice', Date.now() - RECEIPT_MS - 60_000), legacy = receipt('alice');
+  if (kind === 'file') await writeFile(path.join(directory, 'accounts.json'), JSON.stringify({ version: 2, accounts: [account('alice')], receipts: [old, legacy] }));
+  let store = await createAccountStore({ dataDir: directory, pool });
+  t.after(async () => { await store.close(); await rm(directory, { recursive: true, force: true }); });
+  if (kind === 'postgres') {
+    await store.create(account('alice'));
+    for (const value of [old, legacy]) await pool.query('INSERT INTO zoo_action_receipts(actor_id,request_id,receipt) VALUES($1,$2,$3::jsonb)', [value.actorId, value.requestId, JSON.stringify(value)]);
+    await pool.query('UPDATE zoo_action_receipts SET created_at=$2 WHERE request_id=$1', [old.requestId, old.at]);
+  }
+  const committed = command('alice', 0); await store.command(committed);
+  const persisted = async () => kind === 'file' ? JSON.parse(await readFile(path.join(directory, 'accounts.json'), 'utf8')).receipts : (await pool.query('SELECT receipt FROM zoo_action_receipts')).rows.map(row => row.receipt);
+  const ids = (await persisted()).map(value => value.requestId);
+  assert.ok(!ids.includes(old.requestId), 'a day-old receipt is deleted');
+  assert.ok(ids.includes(legacy.requestId), 'receipts without a time count from the store start');
+  assert.ok(ids.includes(committed.requestId));
+  assert.equal((await store.command({ ...committed, expectedRevision: 1 })).reply.replayed, true, 'a recent retry still replays');
+  if (kind === 'file') {
+    for (let revision = 1; revision <= RECEIPTS_PER_ACCOUNT + 3; revision++) await store.command(command('alice', revision));
+    assert.equal((await persisted()).length, RECEIPTS_PER_ACCOUNT, 'the file stays bounded');
+  }
 });

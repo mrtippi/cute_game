@@ -13,11 +13,14 @@ import { createWriteStream, existsSync, mkdirSync, readFileSync, readdirSync, st
 import { parseArgs } from 'node:util';
 import { fileURLToPath } from 'node:url';
 import { createAccount, listAccounts, loadAccount } from './accounts.mjs';
+import { assertLocal } from './lib/util.mjs';
 
 const { values: opt, positionals } = parseArgs({ allowPositionals: true, options: {
   accounts: { type: 'string' }, date: { type: 'string' }, clips: { type: 'string', default: '10' }, minutes: { type: 'string', default: '60' },
   'no-record': { type: 'boolean', default: false }, show: { type: 'boolean', default: false }, stagger: { type: 'string', default: '30' }, url: { type: 'string', default: 'http://127.0.0.1:8787/' },
 } });
+// Only ever this PC's own game server.
+assertLocal(opt.url);
 const [command = 'list', ...rest] = positionals;
 const DIRECTOR = fileURLToPath(new URL('./director.mjs', import.meta.url));
 
@@ -49,7 +52,7 @@ if (command === 'new') {
   const runs = accounts.map((a, i) => new Promise(resolve => setTimeout(() => {
     mkdirSync(`${a.days}/${date}`, { recursive: true });
     const out = createWriteStream(`${a.days}/${date}/director.log`, { flags: 'a' });
-    const args = [DIRECTOR, 'run', '--account', a.id, '--date', date, '--clips', opt.clips, '--minutes', opt.minutes, '--pos', `${i * 64},${i * 36}`, '--mute'];
+    const args = [DIRECTOR, 'run', '--account', a.id, '--date', date, '--clips', opt.clips, '--minutes', opt.minutes, '--pos', `${i * 64},${i * 36}`, '--mute', '--url', opt.url];
     if (!opt['no-record']) args.push('--record');
     // Windowless by default (lib/session.mjs HEADLESS_ARGS); --show opens real windows.
     if (!opt.show) args.push('--headless');

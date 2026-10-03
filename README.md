@@ -1,5 +1,15 @@
 # Zoo Garden
 
+> **Fork for the owner's own use (branch `story`).** This is a fork of [buicongnguyen/cute_game](https://github.com/buicongnguyen/cute_game) (original game by buicongnguyen). The default branch `main` is the upstream game; our work lives on branch **`story`**, and release tags point at a `story` commit. Added here:
+>
+> - Japanese locale (the interface now supports English, Vietnamese and Japanese) and the story 星灯りの村 (Lumi, twenty chapters, village rank), see [docs/story-design.md](docs/story-design.md).
+> - Titles and nameplates for players.
+> - Online play on a **local server** (this PC, port 8787) with **login required**; co-op (parties, group bosses, garden visits, shared loot).
+> - An **auto-play bot** (`bot/`) that plays and records YouTube clips with Japanese titles and chapters.
+> - A **Windows control app** (`desktop/`, Electron, Vietnamese UI): accounts, schedule, hardware check, live view. Installer `ZooGardenControl-Setup-<version>.exe` from [Releases](https://github.com/mrtippi/cute_game/releases).
+>
+> Using the control app: [docs/HUONG-DAN.md](docs/HUONG-DAN.md) (Vietnamese). Developer notes: [desktop/README.md](desktop/README.md). Third-party software: [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md). Old evaluations: [docs/history/](docs/history/).
+
 A browser adventure built against the gameplay of Zoo Pet, with independently authored Three.js code, original Blender assets, and local multiplayer services. The expanded build includes the reference crop, equipment, creature, progression and crafting catalogs, along with full-size worlds and their activities.
 
 ## Run
@@ -67,7 +77,7 @@ The server calculates online spending, rewards, combat damage, health and cooldo
 - Nine Titan encounters, moving dinosaur giant attacks, planet-specific hazards and a home discovery sign showing explored worlds out of nine.
 - Preserved version-1 saves, colors and possessions. Earlier six-bed gardens receive three additional beds.
 
-The interface supports English and Vietnamese with original artwork. Choose a language on the welcome screen or in Settings; the preference stays on this device and does not change saved progress or player names. Vietnamese catalog terms follow the reference game where available, with translations for this game’s additional features. Each panel has its own colour band and icon, messages appear as short pills near the bottom of the screen, and on phones panels open as bottom sheets. Inventory and storage have no slot limit, so migration and reward collection do not discard possessions. These are intentional improvements. Physical-phone performance, browser installation behavior and long-session balancing still benefit from user play-testing.
+The interface supports English, Vietnamese and Japanese with original artwork. Choose a language on the welcome screen or in Settings; the preference stays on this device and does not change saved progress or player names. Vietnamese catalog terms follow the reference game where available, with translations for this game’s additional features. Each panel has its own colour band and icon, messages appear as short pills near the bottom of the screen, and on phones panels open as bottom sheets. Inventory and storage have no slot limit, so migration and reward collection do not discard possessions. These are intentional improvements. Physical-phone performance, browser installation behavior and long-session balancing still benefit from user play-testing.
 
 ## Graphics and phones
 
@@ -101,6 +111,6 @@ Browser saves are local to each website address. The published site starts a sep
 - `art/`: headless Blender generators for the props, scenery, crops, fish, the explorer and every wearable item, weapon, pet, disguise and material icon, plus their contract, previews, Unity FBX exports and the asset guide (`art/ASSET_GUIDE.md`).
 - `src/style.css`: interface design tokens and all HUD, panel, message and label styles.
 - `docs/reference-update-plan-2026-10-02.md`: current update implementation, bilingual reference Help, deliberate differences and remaining hosted/device acceptance.
-- `PARITY_REVIEW.md`: earlier coverage and evaluation history.
+- `docs/history/PARITY_REVIEW.md`: earlier coverage and evaluation history.
 
-The earlier `ANALYSIS.md`, `REVIEW.md`, `EVALUATION.md` and `MULTIPLAYER_ASSESSMENT.md` record the initial evaluation and engine decision. Their old feature-gap lists are superseded by this README and the current parity review. Unity was assessed for browser multiplayer; this implementation keeps the existing web engine.
+The earlier `docs/history/ANALYSIS.md`, `REVIEW.md`, `EVALUATION.md` and `MULTIPLAYER_ASSESSMENT.md` record the initial evaluation and engine decision. Their old feature-gap lists are superseded by this README and the current parity review. Unity was assessed for browser multiplayer; this implementation keeps the existing web engine.

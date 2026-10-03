@@ -514,4 +514,6 @@ export const JA_UI: Record<string, string> = {
   "Your health is already full.": "体力はもう満タンです。",
   "Try on": "試着",
   "Trying on": "試着中",
+  "attack power": "攻撃力",
+  "Zoo Garden · progress saved to your online account": "ズーガーデン · 進行状況はオンラインアカウントに保存されます",
 };

@@ -3,7 +3,7 @@ const $ = s => document.querySelector(s);
 const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);
 const call = (name, ...args) => window.api.call(name, ...args);
 const toast = text => { const t = $('#toast'); t.textContent = text; t.hidden = false; clearTimeout(toast.timer); toast.timer = setTimeout(() => { t.hidden = true; }, 3500); };
-const safe = fn => async (...a) => { try { await fn(...a); } catch (e) { toast('⚠ ' + (e.message ?? e).replace(/^Error invoking remote method 'call': Error: /, '')); } };
+const safe = fn => async (...a) => { try { await fn(...a); } catch (e) { toast('⚠ ' + String(e.message ?? e).replace(/^Error invoking remote method '[^']+': Error: /, '')); } };
 
 const TASKS = { garden: 'Làm vườn', fertilize: 'Bón phân', orchard: 'Hái quả', animals: 'Chăm vật nuôi', market: 'Bán hàng', cook: 'Nấu ăn', expand: 'Mở luống',
   fight: 'Đánh quái', gather: 'Săn nguyên liệu', challenge: 'Thử thách nhanh', boss: 'Săn boss', travel: 'Bay sang hành tinh', mine: 'Đào mỏ', fishing: 'Câu cá', harpoon: 'Phóng lao',
@@ -36,6 +36,7 @@ async function overview() {
         <div class="row"><b><span class="dot" style="background:${r.color}"></span>${esc(r.name)}</b><span class="muted small">${esc(r.id)}</span><span class="chip on" style="margin-left:auto">Clip ${r.clip ? `${r.clip.index}/${r.clip.of}` : `${r.done}/${r.total}`}</span></div>
         <div class="small clip-title">${r.clip ? esc(r.clip.title.replace(/^【[^】]*】/, '')) : 'Chuẩn bị clip…'}</div>
         <div class="small muted">Đang: <b>${esc(TASKS[r.task] ?? r.task ?? '—')}</b>${r.clip?.started ? ` · clip chạy ${Math.round((Date.now() - Date.parse(r.clip.started)) / 60000)} phút` : ''}</div>
+        ${r.broken ? '<div class="small"><span class="chip off">⚠ Thiếu account.json</span></div>' : ''}
         <div class="mono muted small tail">${esc(r.tail.slice(-2).join('\n'))}</div>
         <div class="row"><button class="btn small danger" data-stop="${r.id}">Dừng</button><button class="btn small" data-show="${r.id}" data-on="${r.show ? 1 : 0}">${r.show ? 'Ẩn cửa sổ' : 'Hiện cửa sổ'}</button><span class="small muted hint">(áp dụng từ clip sau)</span></div>
       </div></div>`).join('');
@@ -67,7 +68,7 @@ async function accountsPage() {
   document.querySelectorAll('[data-edit]').forEach(b => b.onclick = () => accountForm(list.find(a => a.id === b.dataset.edit)));
   document.querySelectorAll('[data-link]').forEach(b => b.onclick = () => onlineForm(list.find(a => a.id === b.dataset.link)));
   document.querySelectorAll('[data-online]').forEach(b => b.onclick = safe(async () => { await call('setOnlinePlay', b.dataset.online, true); toast('Từ clip sau acc chơi online'); render(); }));
-  document.querySelectorAll('[data-open]').forEach(b => b.onclick = () => window.api.open(b.dataset.open));
+  document.querySelectorAll('[data-open]').forEach(b => b.onclick = safe(() => window.api.open(b.dataset.open)));
   document.querySelectorAll('[data-archive]').forEach(b => b.onclick = safe(async () => { await call('editAccount', b.dataset.archive, { archived: true }); await call('setSchedule', b.dataset.archive, { enabled: false }); render(); }));
   document.querySelectorAll('[data-unarchive]').forEach(b => b.onclick = safe(async () => { await call('editAccount', b.dataset.unarchive, { archived: false }); render(); }));
   document.querySelectorAll('[data-del]').forEach(b => b.onclick = safe(async () => { if (!confirm(`Xoá acc ${b.dataset.del}? Thư mục (save và video) được chuyển vào accounts/_deleted, có thể lấy lại.`)) return; await call('removeAccount', b.dataset.del); toast('Đã chuyển vào _deleted'); render(); }));
@@ -237,7 +238,7 @@ async function hardwarePage() {
       <div class="panel"><h2 style="margin-top:0">Thông số</h2><table>
         <tr><td>CPU</td><td>${esc(i.cpu)} · ${i.cores} nhân / ${i.threads} luồng</td></tr><tr><td>RAM</td><td>${i.ramGB} GB</td></tr>
         <tr><td>Card đồ hoạ</td><td>${esc(i.gpu)} · driver ${esc(i.driver ?? '—')}</td></tr><tr><td>NVENC (quay bằng card)</td><td>${i.nvenc ? `✅ tối đa ${i.nvencSessions} luồng` : '❌ quay bằng CPU'}</td></tr>
-        <tr><td>Google Chrome</td><td>${i.chrome ? '✅' : '❌ chưa cài'}</td></tr><tr><td>Ổ dữ liệu còn trống</td><td>${i.diskFreeGB ?? '—'} GB (≈ ${i.diskFreeGB ? Math.round(i.diskFreeGB / (Math.max(1, hw?.capacity ?? await call('estimate')) * 10)) : '—'} ngày quay với mỗi acc 10 giờ/ngày)</td></tr></table>
+        <tr><td>${i.browser === 'bundled' ? 'Trình duyệt kèm theo' : 'Google Chrome'}</td><td>${i.chrome ? '✅' : i.browser === 'bundled' ? '❌ không mở được' : '❌ chưa cài'}</td></tr><tr><td>Ổ dữ liệu còn trống</td><td>${i.diskFreeGB ?? '—'} GB (≈ ${i.diskFreeGB ? Math.round(i.diskFreeGB / (Math.max(1, hw?.capacity ?? await call('estimate')) * 10)) : '—'} ngày quay với mỗi acc 10 giờ/ngày)</td></tr></table>
         ${quick.warnings.map(w => `<div class="warn">${esc(w)}</div>`).join('')}<button class="btn small" id="h-quick">Kiểm tra lại</button></div>
       <div class="panel"><h2 style="margin-top:0">Sức máy</h2>
         <div class="big">${hw ? `${hw.capacity} acc` : `≈ ${await call('estimate')} acc`}</div><div class="muted">${hw ? `cùng lúc · giới hạn: ${esc(hw.limit)} · đo lúc ${new Date(hw.at).toLocaleString('vi-VN')}` : 'Ước tính theo số luồng CPU. Bấm “Đo sức máy” để chạy thử thật.'}</div>
@@ -264,10 +265,10 @@ async function settingsPage() {
     <div class="row"><button class="btn primary" id="o-save">Lưu</button></div></div>
     <h2>Thư mục dữ liệu</h2><div class="panel" style="display:grid;gap:10px;max-width:560px"><div class="mono">${esc(info.dataDir)}</div>
       <div class="row"><button class="btn small" id="o-open">Mở thư mục</button><button class="btn small" id="o-move">Đổi thư mục…</button><span class="small muted">Đổi thư mục không chuyển dữ liệu cũ sang; app sẽ khởi động lại.</span></div></div>
-    <h2>Phiên bản và cập nhật</h2><div class="panel" style="display:grid;gap:10px;max-width:560px"><div>Phiên bản <b>${esc(info.version)}</b> · ${updateText(info.update)}</div>
+    <h2>Phiên bản và cập nhật</h2><div class="panel" style="display:grid;gap:10px;max-width:560px"><div>Phiên bản <b>${esc(info.version)}</b> · <span id="o-update">${updateText(info.update)}</span></div>
       <div class="row"><button class="btn small" id="o-check" ${info.packaged ? '' : 'disabled'}>Kiểm tra cập nhật</button>${info.update.status === 'ready' ? '<button class="btn small primary" id="o-install">Cài bản mới ngay</button>' : ''}</div>
       <div class="small muted">App tự kiểm tra bản mới mỗi 6 giờ, tải ngầm và tự cài khi không có acc nào đang chơi.</div></div>`;
-  $('#o-open').onclick = () => window.api.open(info.dataDir);
+  $('#o-open').onclick = safe(() => window.api.open(info.dataDir));
   $('#o-move').onclick = safe(async () => { const dir = await window.api.app('chooseFolder', info.dataDir); if (dir && confirm(`Dùng thư mục ${dir}? App sẽ khởi động lại.`)) await window.api.app('setDataDir', dir); });
   $('#o-check').onclick = safe(async () => { toast('Đang kiểm tra…'); await window.api.app('checkUpdate'); render(); });
   const install = $('#o-install'); if (install) install.onclick = safe(async () => { await window.api.app('installUpdate'); });
@@ -290,13 +291,26 @@ async function firstRun(info) {
     <div class="row" style="justify-content:flex-end"><button class="btn primary" type="button" id="w-go">Bắt đầu</button></div>`;
   $('#w-pick').onclick = safe(async () => { const dir = await window.api.app('chooseFolder', $('#w-dir').value); if (dir) $('#w-dir').value = dir; });
   $('#w-go').onclick = safe(async () => { toast('Đang thiết lập, app sẽ mở lại…'); await window.api.app('setDataDir', $('#w-dir').value.trim()); });
+  // The setup cannot be skipped: Escape never reaches the dialog (Chromium lets a second Escape close it anyway).
+  setupPending = true;
+  document.addEventListener('keydown', e => { if (setupPending && e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); } }, true);
   m.addEventListener('cancel', e => e.preventDefault());
   m.showModal();
 }
+/** The first-run setup is showing (until the app restarts in the chosen folder). */
+let setupPending = false;
 (async () => {
   [colors, themes, scenarios] = await Promise.all([call('colors'), call('themes'), call('scenarios')]);
+  // A dialog closed: the page skipped its refreshes while it was open; the setup one comes straight back.
+  $('#modal').addEventListener('close', () => { if (setupPending) $('#modal').showModal(); else render(); });
+  // A file dropped on the window does nothing (no navigation away from the dashboard).
+  for (const type of ['dragover', 'drop']) document.addEventListener(type, e => e.preventDefault());
   const info = await window.api.app('info'); if (info.needsSetup) firstRun(info);
   render(); sidebar();
-  setInterval(() => { sidebar(); if (page === 'overview' || (page === 'hardware' && document.querySelector('#h-bench')?.disabled)) render(); }, 3000);
+  setInterval(() => {
+    sidebar(); if (page === 'overview' || (page === 'hardware' && document.querySelector('#h-bench')?.disabled)) render();
+    // The update line on the settings page follows the download.
+    if (page === 'settings' && $('#o-update')) window.api.app('info').then(i => { const u = $('#o-update'); if (u) u.innerHTML = updateText(i.update); }).catch(() => {});
+  }, 3000);
   setInterval(() => { if (page === 'accounts' || page === 'schedule') render(); }, 15000);
 })();

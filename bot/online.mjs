@@ -19,13 +19,13 @@ import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
 import { parseArgs } from 'node:util';
 import { pathToFileURL } from 'node:url';
 import { loadAccount, setOnline } from './accounts.mjs';
-import { BROWSER, QUIET_ARGS, quietProfile } from './lib/session.mjs';
+import { BROWSER, HEADLESS_ARGS, QUIET_ARGS, quietProfile } from './lib/session.mjs';
 import { assertLocal, pageApi, usernameFor } from './lib/online.mjs';
 
 export const SAVE_KEY = 'cute-game-save-v1';
 const STUB = '/__zg_link';
 
-/** The newest save.json the account's clips wrote (used only when the profile holds no offline save). */
+/** The newest save.json the account's clips wrote (the further-along of it and the profile's offline save is linked). */
 function latestClipSave(account) {
   let best = null;
   const walk = dir => { if (!existsSync(dir)) return; for (const n of readdirSync(dir)) { const p = `${dir}/${n}`; const st = statSync(p); if (st.isDirectory()) walk(p); else if (n === 'save.json' && (!best || st.mtimeMs > best.t)) best = { p, t: st.mtimeMs }; } };
@@ -48,16 +48,26 @@ export async function linkAccount(id, { url = 'http://127.0.0.1:8787/', saveOrig
   progress('mở hồ sơ trình duyệt của acc…');
   quietProfile(account.profile);
   let context;
-  try { context = await chromium.launchPersistentContext(account.profile, { ...BROWSER, headless: true, args: QUIET_ARGS }); }
-  catch (error) { throw new Error(`the account's browser profile is in use (stop its bot first): ${error.message.split('\n')[0]}`); }
+  // Chrome's new headless mode, as the bot plays (session.mjs): Playwright's own headless:true wants the separate
+  // headless shell, which the installed app does not carry.
+  try { context = await chromium.launchPersistentContext(account.profile, { ...BROWSER, headless: false, args: [...HEADLESS_ARGS, ...QUIET_ARGS] }); }
+  catch (error) {
+    const first = error.message.split('\n')[0];
+    if (/ProcessSingleton|profile.*in use|already in use|exitCode=21/i.test(error.message)) throw new Error(`the account's browser profile is in use (stop its bot first): ${first}`);
+    throw new Error(`the browser did not start: ${first}`);
+  }
   try {
     // A blank page at the game's address: the profile's storage and cookies for that address, without starting
     // the game (which could change the save, or go online with an old session).
     await context.route(request => new URL(request).pathname === STUB, route => route.fulfill({ contentType: 'text/html', body: '<!doctype html><title>link</title>' }));
     const page = context.pages()[0] ?? await context.newPage();
     await page.goto(saveOrigin + STUB);
-    let save = await page.evaluate(key => localStorage.getItem(key), SAVE_KEY), source = 'profile';
-    if (!save) { save = latestClipSave(account); source = 'clip save.json'; }
+    // The further-along of the profile's offline save and the newest clip save.json: a relink after the server lost
+    // its data must not roll the explorer back to an old offline save.
+    const rank = raw => { try { const v = JSON.parse(raw); return (v.level ?? 0) * 1e12 + (v.xp ?? 0); } catch { return -1; } };
+    const kept = await page.evaluate(key => localStorage.getItem(key), SAVE_KEY), clip = latestClipSave(account);
+    let save = kept, source = 'profile';
+    if (clip && (!kept || rank(clip) > rank(kept))) { save = clip; source = 'clip save.json'; }
     let level = null; try { level = save ? JSON.parse(save).level : null; } catch { save = null; }
     progress(save ? `đọc save offline: Lv.${level} (${source})` : 'không có save offline: bắt đầu online từ đầu');
     if (saveOrigin !== origin) await page.goto(origin + STUB);
@@ -96,6 +106,7 @@ export async function linkAccount(id, { url = 'http://127.0.0.1:8787/', saveOrig
 
 /** Whether the game server at `url` requires login (server.mjs requireLogin): true / false, null when it does not answer. */
 export async function serverRequiresLogin(url = 'http://127.0.0.1:8787/') {
+  assertLocal(url);
   try {
     const response = await fetch(`${new URL(url).origin}/api/auth/session`, { signal: AbortSignal.timeout(5000) });
     const body = await response.json();

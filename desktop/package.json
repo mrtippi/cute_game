@@ -1,6 +1,6 @@
 {
   "name": "zoo-garden-control",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "private": true,
   "description": "Bảng điều khiển: quản lý acc, hẹn giờ quay, đo sức máy cho bot Zoo Garden",
   "main": "main.cjs",
@@ -39,6 +39,10 @@
       "package.json"
     ],
     "extraResources": [
+      {
+        "from": "../THIRD_PARTY_NOTICES.md",
+        "to": "THIRD_PARTY_NOTICES.md"
+      },
       {
         "from": "build/zg",
         "to": "zg",

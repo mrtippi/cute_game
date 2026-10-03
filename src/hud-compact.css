@@ -228,3 +228,18 @@
     top: calc(var(--edge) + var(--safe-top) + var(--b) * 2 + var(--gap) + 6px);
   }
 }
+
+/* The tracker column (quest, bounty, HUD boards, effects, quick eat) ends above the skills and the joystick: it takes the
+   height between its top and that reserve, and the boards give up height first (they scroll), so nothing reaches the skills.
+   Tall screens stack the four skills in a column under it (style.css), short ones put them in a row, phones on the right. */
+:root { --stack-top: calc(var(--edge) + var(--safe-top) + 82px); --stack-clear: calc(var(--sk) * 4 + 98px + var(--safe-bottom)); }
+@media (max-height: 720px) and (min-width: 601px) { :root { --stack-clear: calc(var(--sk) + 44px + var(--safe-bottom)); } }
+@media (orientation: portrait) and (max-width: 600px) { :root { --stack-top: calc(var(--edge) + var(--safe-top) + 72px); --stack-clear: calc(var(--edge) + var(--safe-bottom)); } }
+@media (max-height: 520px) and (orientation: landscape) { :root { --stack-top: calc(var(--edge) + var(--safe-top) + 62px); --stack-clear: calc(var(--edge) + var(--safe-bottom)); } }
+#hud.joystick-on { --stack-clear: calc(184px + var(--safe-bottom)); }
+/* A short landscape phone with the joystick has no room for them between the trackers and the stick (the journal has the quests). */
+@media (max-height: 520px) and (orientation: landscape) { #hud.joystick-on .hud-board { display: none; } }
+.tracker-stack { top: var(--stack-top); max-height: calc(100% - var(--stack-top) - var(--stack-clear)); }
+.tracker-stack > *, .tracker-panels > * { flex-shrink: 0; }
+.tracker-stack > .tracker-panels { flex: 0 1 auto; min-height: 0; }
+.tracker-panels > .hud-board { flex: 0 1 auto; min-height: 30px; max-width: none; overflow-y: auto; overscroll-behavior: contain; scrollbar-width: thin; }

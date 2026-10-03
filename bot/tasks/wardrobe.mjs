@@ -1,6 +1,6 @@
 // The explorer's look: collect hats, outfits, boots and companions over time (try on, then buy; or craft),
 // wear something new as soon as it arrives, and dress for what comes next (fishing, a fight, space…).
-const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
+import { sleep } from '../lib/util.mjs';
 const COSMETIC = ['hat', 'outfit', 'boots', 'pet'];
 
 /** Outfits per theme, by slot preference. "hat_t_" style prefixes match every Titan piece. */

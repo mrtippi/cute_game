@@ -1,4 +1,4 @@
-import { ITEMS, CROPS, PLANETS, RECIPES, DISGUISES, FISH, FISH_WEIGHTS, LOOT_TABLES, UPGRADES, STARTING_PLOTS, MAX_EXTRA_PLOTS, MAX_DECORATIONS, STORY_STEPS, canonicalItem, type ItemId, type Inventory, type GearSlot, type CropId, type PlanetId, type BuffKey, type BuffDef, type WeaponDef } from './content.ts';
+import { ITEMS, CROPS, PLANETS, RECIPES, DISGUISES, FISH, FISH_WEIGHTS, LOOT_TABLES, UPGRADES, STARTING_PLOTS, MAX_EXTRA_PLOTS, STORY_STEPS, canonicalItem, type ItemId, type Inventory, type GearSlot, type CropId, type PlanetId, type BuffKey, type BuffDef, type WeaponDef } from './content.ts';
 import { createProgression, normalizeProgression, recordEvent, progressEntries, claimProgress, type ProgressionState } from './progression.ts';
 import { parseHelper, type HelperState } from './helper-state.ts';
 import { parseFriends, parseBosses, noteBossDefeat, type Friend } from './friends-state.ts';
@@ -283,8 +283,6 @@ const bedSpan = (rotation = 0) => BED_HALF * (Math.abs(Math.cos(rotation)) + Mat
  * Whether a bed centred here keeps off the home obstacles, the animal pen (with a path around it), the four trails
  * along the axes and the fence. A turned bed is checked by the square that holds it.
  */
-/** The save's village rank (1 to 5): how far the fence stands (village.ts). */
-export const villageRankOf = (s: { level?: number; progression?: { villageRank?: number } }) => villageRankFor(s);
 /** The farthest a bed corner may reach at this village rank (17.4 m at rank 1). */
 export const bedReach = (rank = 1) => BED_REACH + placementRadius(rank) - placementRadius(1);
 /** Keeps beds and decorations off the zones a bigger village opens (orchard trees, pasture, pond, plaza, houses, deck). */
@@ -328,7 +326,7 @@ const BED_GRID = Array.from({ length: 19 * 19 }, (_, i) => ({ col: i % 19 - 9, r
     .map(({ col, row }) => ({ x: +(GARDEN_CENTRE.x + col * BED_STEP).toFixed(2), z: +(GARDEN_CENTRE.z + row * BED_STEP).toFixed(2) }));
 /** The free grid spot nearest the garden for a new square bed, given the beds already standing, or null. */
 function freeBedSpot(s: SaveState, beds: readonly BedSpot[]) {
-    const free = (p: { x: number; z: number }) => bedClear(p.x, p.z, 0, villageRankOf(s)) && bedRoom(s, p.x, p.z, 0, beds);
+    const free = (p: { x: number; z: number }) => bedClear(p.x, p.z, 0, villageRankFor(s)) && bedRoom(s, p.x, p.z, 0, beds);
     // A spot touching a standing bed first, so the block stays in one piece around paths and buildings.
     const touching = (p: { x: number; z: number }) => beds.some(b => Math.abs(Math.hypot(b.x - p.x, b.z - p.z) - BED_STEP) < .05);
     return BED_GRID.find(p => touching(p) && free(p)) ?? BED_GRID.find(free) ?? null;
@@ -352,7 +350,7 @@ export function settleBeds(s: SaveState) {
         const { x, z } = bedPosition(s, i), r = p.rotation ?? 0;
         const crowded = s.plots.slice(0, i).some((q, j) => { const b = bedPosition(s, j); return !bedsApart(x, z, r, b.x, b.z, q.rotation ?? 0); });
         // The nine starting beds are laid out by hand; only check them against each other.
-        if (!crowded && (i < STARTING_PLOTS || bedClear(x, z, r, villageRankOf(s)))) return;
+        if (!crowded && (i < STARTING_PLOTS || bedClear(x, z, r, villageRankFor(s)))) return;
         const spot = freeBedSpot(s, bedSpots(s).slice(0, i)); if (!spot) return;
         p.x = spot.x; p.z = spot.z; delete p.rotation; moved++;
     });
@@ -380,11 +378,11 @@ export function shrinkGarden(s: SaveState, from = 1) {
 }
 /** Room for a new bed: apart from every other bed's square and clear of decorations, inside the fence. */
 function bedRoom(s: SaveState, x: number, z: number, rotation = 0, beds: readonly BedSpot[] = bedSpots(s)) {
-    return Number.isFinite(x) && Number.isFinite(z) && Math.hypot(x, z) <= placementRadius(villageRankOf(s)) && !s.decorations.some(d => Math.hypot(x - d.x, z - d.z) < (ITEMS[d.id]?.collider || .6) + BED_GAP * .5)
+    return Number.isFinite(x) && Number.isFinite(z) && Math.hypot(x, z) <= placementRadius(villageRankFor(s)) && !s.decorations.some(d => Math.hypot(x - d.x, z - d.z) < (ITEMS[d.id]?.collider || .6) + BED_GAP * .5)
         && beds.every(b => bedsApart(x, z, rotation, b.x, b.z, b.rotation ?? 0));
 }
 export function gardenExpansionCost(s: SaveState) { return 60 + Math.max(0, s.plots.length - STARTING_PLOTS) * 20; }
-function placementFree(s: SaveState, x: number, z: number, radius: number, omit?: string) { const rank = villageRankOf(s); return Number.isFinite(x) && Number.isFinite(z) && Math.hypot(x, z) <= placementRadius(rank) && (rank < 2 || villageZonesClear(x, z, radius * .5, rank, true)) && !s.plots.some((_, i) => { const p = bedPosition(s, i); return Math.hypot(x - p.x, z - p.z) < radius; }) && !s.decorations.some(d => d.uid !== omit && Math.hypot(x - d.x, z - d.z) < (ITEMS[d.id]?.collider || .6) + radius * .5); }
+function placementFree(s: SaveState, x: number, z: number, radius: number, omit?: string) { const rank = villageRankFor(s); return Number.isFinite(x) && Number.isFinite(z) && Math.hypot(x, z) <= placementRadius(rank) && (rank < 2 || villageZonesClear(x, z, radius * .5, rank, true)) && !s.plots.some((_, i) => { const p = bedPosition(s, i); return Math.hypot(x - p.x, z - p.z) < radius; }) && !s.decorations.some(d => d.uid !== omit && Math.hypot(x - d.x, z - d.z) < (ITEMS[d.id]?.collider || .6) + radius * .5); }
 /** Adds a bed (a kit from the bag, else energy): at (x, z) when given, otherwise automatically at the free spot nearest the garden. */
 export function expandGarden(s: SaveState, x?: number, z?: number, rotation = 0) { if (s.planet !== 'home' || s.plots.length >= STARTING_PLOTS + MAX_EXTRA_PLOTS)
     return false; const cost = gardenExpansionCost(s), kit = (s.bag.plot_kit || 0) > 0; if (!kit && s.energy < cost)
@@ -395,7 +393,7 @@ export function expandGarden(s: SaveState, x?: number, z?: number, rotation = 0)
     x = spot.x;
     z = spot.z;
     rotation = 0;
-} if (!bedClear(x, z, rotation, villageRankOf(s)) || !bedRoom(s, x, z, rotation))
+} if (!bedClear(x, z, rotation, villageRankFor(s)) || !bedRoom(s, x, z, rotation))
     return false; if (kit)
     removeItem(s.bag, 'plot_kit');
 else
@@ -415,7 +413,7 @@ export function ripeNearby(s: SaveState, index: number, now = Date.now(), reach 
     return near.sort((a, b) => a.d - b.d || a.i - b.i).map(b => b.i);
 }
 /** Whether a new bed may go here: clear of the cottage, pen, trails and fence (bedClear) and of other beds and decorations. */
-export function bedSpotOk(s: SaveState, x: number, z: number, rotation = 0) { return s.planet === 'home' && bedClear(x, z, rotation, villageRankOf(s)) && bedRoom(s, x, z, rotation); }
+export function bedSpotOk(s: SaveState, x: number, z: number, rotation = 0) { return s.planet === 'home' && bedClear(x, z, rotation, villageRankFor(s)) && bedRoom(s, x, z, rotation); }
 /** Whether a decoration may stand here (clear of beds, other decorations and the animal pen, inside the fence); obstacles are the world's. */
 export function decorSpotOk(s: SaveState, x: number, z: number) { return s.planet === 'home' && placementFree(s, x, z, 1.9) && clearOfPen(x, z, .3, .2) && !inYard(x, z, .5); }
 /**
@@ -437,7 +435,7 @@ export function storeBed(s: SaveState, i: number) {
 }
 /** Reposition a bed without changing its crop or its original growing duration. */
 export function moveBed(s: SaveState, i: number, x: number, z: number, rotation = 0) {
-    if (s.planet !== 'home' || !Number.isInteger(i) || !s.plots[i] || !Number.isFinite(rotation) || !bedClear(x,z,rotation,villageRankOf(s)) || !bedRoom(s,x,z,rotation,bedSpots(s).filter((_,index)=>index!==i))) return false;
+    if (s.planet !== 'home' || !Number.isInteger(i) || !s.plots[i] || !Number.isFinite(rotation) || !bedClear(x,z,rotation,villageRankFor(s)) || !bedRoom(s,x,z,rotation,bedSpots(s).filter((_,index)=>index!==i))) return false;
     Object.assign(s.plots[i], { x, z, rotation }); return true;
 }
 export function looseQuantity(s: SaveState, raw: ItemId) { const id = canonicalItem(raw); return Math.max(0, (s.bag[id] || 0) - (Object.values(s.gear).includes(id) ? 1 : 0)); }
@@ -503,14 +501,14 @@ export function rollLoot(type: string, luck = 0, rng: () => number = Math.random
     if (rng() < Math.min(1, chance * (chance < .5 ? 1 + Math.max(0, luck) : 1)))
         loot.push({ id, count: min + Math.min(max - min, Math.floor(rng() * (max - min + 1))) });
 } return loot; }
-/** bank=false leaves the loot out of the bag: the game tosses it onto the ground instead (drops.ts). */
-export function grantDefeat(s: SaveState, type: string, xp: number, boss = false, rng: () => number = Math.random, bank = true) { gainXp(s, xp); const tier = activeTier(s), loot = rollLoot(type, activeStats(s).luck + tierScale(tier).luck, rng);
+/** bank=false leaves the loot out of the bag: the game tosses it onto the ground instead (drops.ts). `tier` is the star the creature was fought on (the server passes its room's tier). */
+export function grantDefeat(s: SaveState, type: string, xp: number, boss = false, rng: () => number = Math.random, bank = true, tier = activeTier(s)) { gainXp(s, xp); const loot = rollLoot(type, activeStats(s).luck + tierScale(tier).luck, rng);
     // Titans on higher stars leave gems behind.
     if (type.startsWith('titan_')) { if (tier >= 5) loot.push({ id: 'moonstone', count: 1 }); if (tier >= 8) loot.push({ id: 'thunderstone', count: 2 }); } if (bank) for (const item of loot)
     addItem(s, item.id, item.count); recordEvent(s, 'kill', 1, type); if (boss)
     { recordEvent(s, 'boss', 1, type); noteBossDefeat(s, type); } if (type.startsWith('titan_'))
     { recordEvent(s, 'titan', 1, type); noteBossDefeat(s, type); } if (type === 'forest_raptor')
-    recordEvent(s, 'hawk', 1, type); if (recordTierKill(s, type, boss))
+    recordEvent(s, 'hawk', 1, type); if (recordTierKill(s, type, boss, tier))
     recordEvent(s, 'tierUp', 1, s.planet); return loot; }
 export function chooseFish(s: SaveState, water: string = s.planet, rng: () => number = Math.random) { const choices = FISH_WEIGHTS[water] || FISH_WEIGHTS.home, luck = activeStats(s).luck, weighted = choices.map(([id, weight]) => [id, weight * (ITEMS[id].legend ? 1 + luck * 1.5 : ITEMS[id].rare ? 1 + luck : 1)] as const); let draw = rng() * weighted.reduce((sum, [, w]) => sum + w, 0); for (const [id, weight] of weighted) {
     draw -= weight;
@@ -536,7 +534,7 @@ export function grantMysteryCatch(s: SaveState, raw: ItemId, size?: number, supe
     return true;
 }
 export function placeDecoration(s: SaveState, raw: ItemId, x: number, z: number, rotation = 0) { const id = canonicalItem(raw), item = Object.hasOwn(ITEMS, id) ? ITEMS[id] : undefined; if (item?.type === 'placeable')
-    return expandGarden(s, x, z, rotation); if (s.planet !== 'home' || item?.type !== 'decor' || s.decorations.length >= decorationCap(villageRankOf(s)) || !Number.isFinite(rotation) || !placementFree(s, x, z, 1.9) || !removeItem(s.bag, id))
+    return expandGarden(s, x, z, rotation); if (s.planet !== 'home' || item?.type !== 'decor' || s.decorations.length >= decorationCap(villageRankFor(s)) || !Number.isFinite(rotation) || !placementFree(s, x, z, 1.9) || !removeItem(s.bag, id))
     return false; s.decorations.push({ uid: `decor-${s.nextDecorationId++}`, id, x, z, rotation }); recordEvent(s, 'decorate'); return true; }
 export function moveDecoration(s: SaveState, uid: string, x: number, z: number, rotation?: number) { const d = s.decorations.find(d => d.uid === uid); if (!d || s.planet !== 'home' || !placementFree(s, x, z, 1.9, uid) || rotation !== undefined && !Number.isFinite(rotation))
     return false; d.x = x; d.z = z; if (rotation !== undefined)

@@ -1,7 +1,7 @@
 // Spending energy like a sensible player: a better weapon when it is a real step up, crystal
 // upgrades with what is left over.
 import { weaponPower } from '../lib/weapons.mjs';
-const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
+import { sleep } from '../lib/util.mjs';
 
 async function info(bot, ids) { return bot.page.evaluate(ids => window.__zg.items(ids), ids); }
 
@@ -68,23 +68,6 @@ export async function equip(bot, id) {
   if (!await game.waitPanel('bag')) return false;
   let ok = await game.action('equip', { item: id });
   if (!ok) { await game.action('inspect', { item: id }); ok = await game.action('equip', { item: id }); }
-  await hands.think(500); await game.closePanel();
-  return ok;
-}
-
-/** The best owned combat weapon (not a rod, not the harpoon). */
-export async function bestWeapon(bot) {
-  const s = await bot.game.snap(), owned = Object.keys(s.bag).filter(id => s.bag[id] > 0), facts = await info(bot, owned);
-  return owned.filter(id => id !== 'harpoon' && facts[id]?.slot === 'weapon' && facts[id]?.weapon !== 'rod').sort((a, b) => weaponPower(facts[b]) - weaponPower(facts[a]))[0] ?? null;
-}
-
-/** Put the weapon away (bare fists), from the backpack's weapon slot. */
-export async function unequipWeapon(bot) {
-  const { game, hands } = bot;
-  if (!(await game.snap()).gear.weapon) return true;
-  await game.closePanel(); await hands.think(400); await hands.press('i');
-  if (!await game.waitPanel('bag')) return false;
-  const ok = await game.action('unequip');
   await hands.think(500); await game.closePanel();
   return ok;
 }

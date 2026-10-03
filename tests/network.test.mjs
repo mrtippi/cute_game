@@ -10,6 +10,10 @@ import { createAccountStore } from '../server/account-store.mjs';
 import { enemyRoster } from '../src/enemy-roster.ts';
 import { ITEMS } from '../src/model.ts';
 import { beginTitanAttack, titanTelegraphs } from '../src/titan-patterns.ts';
+import { syncedStats } from '../src/level-sync.ts';
+
+// Creatures keep pace with the room's strongest explorer (Lv1 in these rooms).
+const synced = (e, level = 1) => syncedStats({ id: e.id, level: e.level, maxHp: e.baseMaxHp, damage: e.baseDamage, xp: e.xp }, level);
 
 function connect(url, cookie) {
   return new Promise((resolve,reject) => {
@@ -48,7 +52,7 @@ test('local multiplayer: accounts, saves, friendship, privacy, rooms and host mi
   const a=await connect(game.url,alice.cookie);sockets.push(a);const initialA=await a.next(m=>m.type==='joined');assert.equal(initialA.host,alice.data.account.id);
   const b=await connect(game.url,bob.cookie);sockets.push(b);const initialB=await b.next(m=>m.type==='joined');assert.equal(initialB.host,alice.data.account.id);assert.equal(initialB.players.length,2);
   const enemy=enemyRoster('home').find(e=>e.zone==='forest'&&!e.boss);a.send({type:'enemies',enemies:[{id:enemy.id,type:enemy.type,x:-30,z:0,hp:1,maxHp:1}]});
-  assert.equal((await b.next(m=>m.type==='enemies')).enemies[0].hp,enemy.baseMaxHp);
+  assert.equal((await b.next(m=>m.type==='enemies'&&m.enemies.some(e=>e.id===enemy.id))).enemies.find(e=>e.id===enemy.id).hp,synced(enemy).maxHp);
   b.send({type:'chat',message:'Hello, explorer!'});assert.equal((await a.next(m=>m.type==='chat')).message,'Hello, explorer!');
   a.send({type:'active',active:false});assert.equal((await b.next(m=>m.type==='authority'&&m.host===bob.data.account.id)).host,bob.data.account.id);
   b.send({type:'visit',id:alice.data.account.id});assert.equal((await b.next(m=>m.type==='visit')).home.id,alice.data.account.id);
@@ -142,7 +146,7 @@ test('one server-simulated basic kill commits once and forged raw attacks cannot
   host.send({type:'enemies',enemies:[spawn]});await peer.next(m=>m.type==='enemies');peer.send({type:'pose',x:-30,z:1});await host.next(m=>m.type==='pose'&&m.player.id===peer.id);
   const before=await (await fetch(game.url+'/api/auth/session',{headers:{Cookie:peer.cookie}})).json();
   peer.send({type:'basic',targetId:enemy.id});const death=await peer.next(m=>m.type==='defeat'&&m.id===enemy.id);assert.deepEqual(death.by,[peer.id]);
-  const saved=await (await fetch(game.url+'/api/auth/session',{headers:{Cookie:peer.cookie}})).json();assert.equal(saved.profile.counters.kills,before.profile.counters.kills+1);assert.equal(saved.profile.xp-before.profile.xp,enemy.xp);assert.ok(saved.revision>before.revision);
+  const saved=await (await fetch(game.url+'/api/auth/session',{headers:{Cookie:peer.cookie}})).json();assert.equal(saved.profile.counters.kills,before.profile.counters.kills+1);assert.equal(saved.profile.xp-before.profile.xp,synced(enemy).xp);assert.ok(saved.revision>before.revision);
   peer.send({type:'basic',targetId:enemy.id});peer.send({type:'attack',id:enemy.id,damage:1e9});host.send({type:'defeat',id:enemy.id,xp:1e9});await barrier(host,peer);assert.deepEqual(peer.drain(m=>m.type==='defeat'&&m.id===enemy.id),[]);
   const final=await (await fetch(game.url+'/api/auth/session',{headers:{Cookie:peer.cookie}})).json();assert.equal(final.profile.counters.kills,1);assert.equal(final.profile.energy,saved.profile.energy);
 });
@@ -194,12 +198,14 @@ test('invented meteor claims and obsolete host reward acknowledgements cannot gr
 
 test('late join and host migration retain bounded projectiles and Titan attack visuals',async t=>{
   const {host,peer,explorer}=await protocolRoom(t);
+  // The Titan attack ages with the clock: freeze it so a slow, busy machine cannot let it expire mid-test.
+  t.mock.timers.enable({apis:['Date'],now:Date.now()});
   const roster=enemyRoster('home'),first=roster.find(e=>e.zone==='forest'&&!e.boss),titan=roster.find(e=>e.titan),source={x:100,z:0,radius:titan.radius,facing:0},targets=[{id:peer.id,x:95,z:1}];
   const attack=beginTitanAttack('lines',source,titanTelegraphs('lines',source,targets[0],targets,()=>.5),targets);
   const enemy={id:first.id,type:first.type,x:-30,z:2,hp:1,shots:[{id:'shot:one',x:-29,y:1.2,z:2,vx:13,vz:0,life:.8,damage:999999,targetEnemyId:titan.id}]};
   const boss={id:titan.id,type:titan.type,x:100,z:0,hp:1,phase:'windup',skill:'lines',phaseTime:.8,titanAttacks:[attack],telegraphs:attack.marks,titanLift:2,shots:Array.from({length:35},(_,i)=>({id:`titan:shot:${i}`,x:98,y:999,z:1,vx:500,vz:-500,life:500,damage:1e8}))};
   host.send({type:'enemies',enemies:[enemy,boss]});const received=(await peer.next(m=>m.type==='enemies')).enemies;
-  const shot=received[0].shots[0];assert.equal(shot.targetEnemyId,titan.id);assert.equal(shot.damage,first.baseDamage);assert.equal(shot.vx,13);
+  const shot=received[0].shots[0];assert.equal(shot.targetEnemyId,titan.id);assert.equal(shot.damage,synced(first).damage);assert.equal(shot.vx,13);
   assert.equal(received[1].shots.length,30);assert.equal(received[1].shots[0].damage,titan.baseDamage);assert.equal(received[1].shots[0].vx,100);assert.equal(received[1].shots[0].y,50);assert.equal(received[1].shots[0].life,60);assert.deepEqual(received[1].titanAttacks,[attack]);assert.equal(received[1].telegraphs.length,42);
   const late=await explorer('projectile_viewer');assert.deepEqual(late.joined.enemies.map(e=>e.shots),received.map(e=>e.shots));assert.deepEqual(late.joined.enemies[1].titanAttacks,[attack]);
   peer.drain(m=>m.type==='authority');host.send({type:'active',active:false});const migrated=await peer.next(m=>m.type==='authority'&&m.host===peer.id);assert.deepEqual(migrated.enemies[1].titanAttacks,[attack]);assert.equal(migrated.enemies[0].shots[0].targetEnemyId,titan.id);
@@ -221,6 +227,10 @@ test('server-approved actions preserve progress with durable receipts and reject
     const call=async(route,job,method='POST')=>{const response=await fetch(game.url+'/api/'+route,{method,headers:{Cookie:cookie,'Content-Type':'application/json'},body:JSON.stringify(job)});return {status:response.status,data:await response.json()};};
     const first={type:'settings',payload:{name:'Amber',energy:99999},rulesVersion:1,expectedRevision:session.revision,requestId:randomUUID()};const saved=await call('actions',first);assert.equal(saved.status,200);assert.equal(saved.data.profile.energy,0);assert.equal(saved.data.profile.name,'Amber');
     const retried=await call('actions',first);assert.equal(retried.status,200);assert.equal(retried.data.replayed,true);assert.equal(retried.data.revision,saved.data.revision);
+    // The client resends after a stale 409 with the same request ID and a fresh expected revision: a committed first attempt replays.
+    const resent=await call('actions',{...first,expectedRevision:saved.data.revision+3});assert.equal(resent.status,200);assert.equal(resent.data.replayed,true);assert.equal(resent.data.profile.name,'Amber');
+    const stale=await call('actions',{...first,requestId:randomUUID(),expectedRevision:saved.data.revision-1});assert.equal(stale.status,409);assert.equal(stale.data.code,'stale');
+    const refused=await call('actions',{type:'claimDrop',payload:{ownerId:session.account.id,id:'missing-drop'},rulesVersion:1,expectedRevision:saved.data.revision,requestId:randomUUID()});assert.equal(refused.status,409);assert.equal(refused.data.code,undefined,'a refused action is not a stale save');
     assert.equal((await call('actions',{...first,payload:{name:'Modified retry'}})).status,409);
     const planted=await call('actions',{type:'plant',payload:{index:0,id:'carrot'},rulesVersion:1,expectedRevision:saved.data.revision,requestId:randomUUID()});assert.equal(planted.status,200);assert.equal(planted.data.profile.plots[0].crop,'carrot');assert.ok(planted.data.profile.plots[0].plantedAt>Date.now()-5000);
     assert.equal((await call('actions',{...first,requestId:randomUUID()})).status,409);

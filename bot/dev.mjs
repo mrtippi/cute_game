@@ -8,6 +8,8 @@
 // and the game shows only its sign-in screen), e.g. ZG_REQUIRE_LOGIN=0 DATA_DIR=<scratch dir> node server/server.mjs.
 import { chromium } from 'playwright';
 import { readFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { createRng } from './lib/rng.mjs';
 import { Hands } from './lib/hands.mjs';
 import { Game } from './lib/game.mjs';
@@ -51,7 +53,7 @@ try {
     await page.reload(); await page.waitForFunction(() => !!window.__zg); await page.waitForTimeout(2500);
     console.log('started:', !!(await startGame({ page, hands, game, rng }))?.started);
   } else if (command === 'shot') {
-    await page.screenshot({ path: rest[0] ?? 'C:/Users/Admin/AppData/Local/Temp/claude/d--autogame/8f73f40f-5ff7-43e1-a6b1-1a77299db25a/scratchpad/live.png' }); console.log('saved');
+    await page.screenshot({ path: rest[0] ?? join(tmpdir(), 'zoo-garden-live.png') }); console.log('saved');
   } else if (command === 'eval') {
     console.log(JSON.stringify(await page.evaluate(rest[0]), null, 1));
   } else if (command === 'run') {

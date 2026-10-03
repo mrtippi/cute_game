@@ -1964,6 +1964,11 @@ h1 > span {
 /* HUD boards under the bounty tracker: boss times and today's quests (hud-boards.ts). */
 .hud-board { margin-top: 6px; padding: 8px 10px; border-radius: 14px; background: rgba(28, 44, 38, .78); color: #fff; box-shadow: 0 6px 16px rgba(0,0,0,.18); max-width: 260px; pointer-events: auto; }
 .hud-board .eyebrow { font-size: 10px; letter-spacing: .08em; opacity: .8; margin-bottom: 4px; }
+/* The heading folds the board to one line with a count (hud-boards.ts). */
+.board-head { display: flex; width: 100%; align-items: center; justify-content: space-between; gap: 8px; padding: 0; text-align: left; }
+.board-head .eyebrow { margin: 0; }
+.board-head b { flex: none; font-size: 10px; color: #ffd166; white-space: nowrap; }
+.board-head[aria-expanded="true"] { margin-bottom: 4px; }
 .boss-time { display: grid; grid-template-columns: 18px 1fr auto; align-items: center; gap: 6px; font-size: 11px; line-height: 1.5; }
 .boss-time strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 800; }
 .boss-time b { font-size: 10px; white-space: nowrap; }

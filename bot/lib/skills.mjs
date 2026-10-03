@@ -8,7 +8,7 @@
 // close, so gather them first and then spend the skills on the pack.
 import { dodge, dangersOf, inDanger, unstick } from './dodge.mjs';
 const Q = 0, W = 1, E = 2, R = 3;
-const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
+import { sleep } from './util.mjs';
 
 /** Creatures within `r` metres of the explorer. */
 export const around = (s, r) => s.enemies.filter(e => e.d <= r);

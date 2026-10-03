@@ -75,7 +75,7 @@ export function plateHtml(info: PlateInfo) {
 /** Keeps a nameplate over each explorer: `local` gives the local explorer's plate, or null while it is hidden. */
 export function createNameplates(layer: HTMLElement, world: PlateWorld, local: () => PlateInfo | null) {
   layer.insertAdjacentHTML('beforeend', PLATE_DEFS);
-  const plates = new Map<string, { node: HTMLElement; sig: string; at: string }>();
+  const plates = new Map<string, { node: HTMLElement; sig: string; at: string }>(), seen = new Set<string>();
   // The online server tells who holds the champion's crown (online.ts → 'zg-champion'); offline there is none.
   // The champion's id once the server has told it (it also rides in each presence until then).
   let selfChampion = false, championId: string | null | undefined;
@@ -101,7 +101,7 @@ export function createNameplates(layer: HTMLElement, world: PlateWorld, local: (
 
   return {
     update() {
-      const seen = new Set<string>(), mine = local();
+      seen.clear(); const mine = local();
       if (mine) show('self', { ...mine, champion: selfChampion }, world.position.x, PLATE_Y, world.position.z, seen);
       for (const [id, remote] of world.remotePlayers ?? []) {
         const pose = remote.pose; if (!remote.mesh.visible || pose.visual?.stealth || !pose.name) continue;

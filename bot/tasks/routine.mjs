@@ -2,7 +2,7 @@
 // the storage chest, and a stroll to a favourite spot to look around.
 import { fight } from './combat.mjs';
 import { flourish } from './flourish.mjs';
-const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
+import { sleep } from '../lib/util.mjs';
 
 /**
  * A quick challenge from the journal: "use skills" (8 in 45 s) or "defeat creatures" (a few in 75 s),

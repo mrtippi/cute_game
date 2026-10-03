@@ -190,4 +190,6 @@ export const VI_ONLINE: Record<string, string> = {
   'Your online session ended. Sign in again to continue.': 'Phiên trực tuyến đã kết thúc. Hãy đăng nhập lại để chơi tiếp.',
   'You signed out. Sign in to keep playing.': 'Bạn đã đăng xuất. Hãy đăng nhập để chơi tiếp.',
   '○ Signed out': '○ Đã đăng xuất',
+  'Meet beyond the garden gate and say hello.': 'Gặp nhau ngoài cổng vườn và chào hỏi nhé.',
+  '3–24 letters, numbers or _': '3–24 chữ cái, chữ số hoặc _',
 };

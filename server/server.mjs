@@ -10,7 +10,7 @@ import { createAccountStore } from './account-store.mjs';
 import { createActionService, commandHash } from './action-service.mjs';
 import { createCombatAuthority } from './combat-authority.mjs';
 import { rememberAccount } from './account-cache.mjs';
-import { serverChampion, holdChampion, CHAMPION_TITLE, CHAMPION_HOLD_MS } from './champion.mjs';
+import { serverChampion, holdChampion, recentlyActive, CHAMPION_TITLE, CHAMPION_HOLD_MS } from './champion.mjs';
 
 const derive = promisify(scrypt);
 const SESSION_MS = 7 * 24 * 60 * 60 * 1000;
@@ -32,6 +32,10 @@ const publicHome = account => {
 };
 const send = (socket, payload) => { if (socket.readyState === WebSocket.OPEN) socket.send(JSON.stringify(payload)); };
 const LOOPBACK = new Set(['127.0.0.1', '::1', '::ffff:127.0.0.1', 'localhost']);
+const LOOPBACK_HOSTS = new Set(['127.0.0.1', 'localhost', '[::1]']);
+const hostName = value => { try { return new URL(`http://${value}`).hostname; } catch { return ''; } };
+// Totals only the server can count online (progression.ts recordCoopDefeat, recordGardenVisit, recordSharedLoot).
+const ONLINE_TOTALS = ['coopKill', 'coopBoss', 'gardenVisit', 'shareLoot'];
 const failure = (status, message) => Object.assign(new Error(message), { status });
 export async function createGameServer(options = {}) {
   const host = options.host || process.env.HOST || '127.0.0.1';
@@ -47,7 +51,7 @@ export async function createGameServer(options = {}) {
   const requireLogin = options.requireLogin ?? process.env.ZG_REQUIRE_LOGIN !== '0';
   const store = options.accountStore || await createAccountStore({ dataDir, databaseUrl });
   const accounts = new Map(), sessions = new Map(), peers = new Map(), rooms = new Map(), parties = new Map();
-  const limits = new Map(), chatReceipts = new Map();
+  const limits = new Map(), chatReceipts = new Map(), lastSeen = new Map();
   let closing = false;
   const remember=value=>rememberAccount(accounts,value);
   try {
@@ -63,11 +67,17 @@ export async function createGameServer(options = {}) {
         || (options.origins || process.env.ALLOWED_ORIGINS?.split(',') || []).includes(origin);
     } catch { return false; }
   }
-  function rate(key, maximum, period = 60_000) {
+  function count(key, period = 60_000) {
     const now = Date.now(), previous = limits.get(key);
     const entry = previous && now - previous.at < period ? previous : { at: now, count: 0 };
-    entry.count++; limits.set(key, entry);
-    if (entry.count > maximum) throw failure(429, 'Please wait a moment before trying again.');
+    entry.count++; limits.set(key, entry); return entry.count;
+  }
+  function rate(key, maximum, period = 60_000) {
+    if (count(key, period) > maximum) throw failure(429, 'Please wait a moment before trying again.');
+  }
+  function blocked(key, maximum, period = 60_000) {
+    const entry = limits.get(key);
+    if (entry && Date.now() - entry.at < period && entry.count >= maximum) throw failure(429, 'Please wait a moment before trying again.');
   }
   function validSession(request) {
     const token = cookieValue(request), session = token && sessions.get(token);
@@ -158,7 +168,8 @@ export async function createGameServer(options = {}) {
     combatAuthority.internal(id, 'championHold', [], records => ({ titled: holdChampion(records.get(id), ms) })).catch(() => {});
   }
   function checkChampion() {
-    const now = Date.now(), next = serverChampion(accounts.values());
+    // Only explorers online now or seen within a day compete, so an abandoned account does not keep the crown.
+    const now = Date.now(), next = serverChampion(accounts.values(), account => peers.has(account.id) || recentlyActive(account, now, lastSeen.get(account.id)));
     if (champion && peers.has(champion)) championHeld += now - championClock;
     championClock = now;
     const total = (accounts.get(champion)?.championMs || 0) + championHeld;
@@ -198,7 +209,7 @@ export async function createGameServer(options = {}) {
     const existing = rooms.get(key);
     if (existing?.members.size >= 24) throw failure(409, 'This world is full. Join a private party to play together.');
     leave(peer);
-    const room = existing || { id: key, members: new Set(), host: null, enemies: [], environment:null, requests:new Map(), epoch: 0, killed: new Set(), contributors: new Map(), lastSnapshot: 0 };
+    const room = existing || { id: key, members: new Set(), host: null, enemies: [], environment:null, requests:new Map(), epoch: 0, contributors: new Map(), lastSnapshot: 0 };
     rooms.set(key, room); room.members.add(peer.account.id);
     peer.planet = planet; peer.party = party; peer.room = key; peer.visit = visitId; peer.pose = { ...peer.pose, x: 0, z: planet === 'home' ? 0 : 9 };
     elect(room);
@@ -215,19 +226,23 @@ export async function createGameServer(options = {}) {
       return respond(response, 200, { ok: true, online: peers.size, version: 1, storage: store.kind });
     }
     if ((route === 'auth/register' || route === 'auth/login') && method === 'POST') {
-      rate(`auth:${request.socket.remoteAddress}`, 30);
+      // Every bot signs in from this computer: only failures lock out, per username and address, under a sanity cap.
+      rate('auth', 600);
       const data = await body(request), username = text(data.username, 24).toLowerCase(), password = typeof data.password === 'string' ? data.password : '';
       if (!/^[a-z0-9_]{3,24}$/.test(username) || password.length < 8 || password.length > 128) throw failure(400, 'Use a 3–24 character username and a password of at least 8 characters.');
+      const failed = `authFailed:${username}:${request.socket.remoteAddress}`;
+      blocked(failed, 10);
       let account = remember(await store.findByUsername(username));
       if (route === 'auth/register') {
-        if (account) throw failure(409, 'That username is already taken.');
+        if (account) { count(failed); throw failure(409, 'That username is already taken.'); }
         const salt = randomBytes(16).toString('hex'), hash = (await derive(password, salt, 64)).toString('hex');
         account = { id: randomUUID(), username, salt, hash, createdAt: Date.now(), friends: [], requests: [], profile: Game.newGame(text(data.name, 20) || username, Game.COLORS.includes(data.color) ? data.color : Game.COLORS[0]) };
         account = remember(await store.create(account));
       } else {
         const salt = account?.salt || 'missing-user-salt', hash = (await derive(password, salt, 64)).toString('hex');
-        if (!account || !sameString(hash, account.hash)) throw failure(401, 'The username or password is incorrect.');
+        if (!account || !sameString(hash, account.hash)) { count(failed); throw failure(401, 'The username or password is incorrect.'); }
       }
+      lastSeen.set(account.id, Date.now());
       sessionCookie(response, request, account);
       return respond(response, 200, { account: publicAccount(account), profile: account.profile, revision:account.profileRevision||0, authorityVersion:1, ...await refreshFriends(account) });
     }
@@ -249,14 +264,19 @@ export async function createGameServer(options = {}) {
       // Self-hosted servers only (bot/online.mjs link): a server listening on this machine, a request from this
       // machine without a proxy, the caller's own account, and only while it is still the untouched new game
       // (revision 0), so no online progress can ever be replaced. The game's own parseSave checks the save.
-      if(!LOOPBACK.has(host)||!LOOPBACK.has(request.socket.remoteAddress)||request.headers['x-forwarded-for']||request.headers.forwarded)throw failure(403,'Saves can only be imported on a server on this computer.');
+      // The Host check stops a page whose name was rebound to this computer (DNS rebinding).
+      if(!LOOPBACK.has(host)||!LOOPBACK.has(request.socket.remoteAddress)||!LOOPBACK_HOSTS.has(hostName(request.headers.host))||request.headers['x-forwarded-for']||request.headers.forwarded)throw failure(403,'Saves can only be imported on a server on this computer.');
       rate(`import:${account.id}`,5);
       const data=await body(request),state=typeof data.save==='string'?Game.parseSave(data.save):null;
       if(!state)throw failure(400,'This save could not be read.');
+      // Only this server awards the champion title and co-op progress; everything else in the save is kept.
+      const progression=state.progression;progression.titles=progression.titles.filter(title=>title!==CHAMPION_TITLE);
+      if(progression.title===CHAMPION_TITLE)progression.title='';
+      for(const key of ONLINE_TOTALS)delete progression.totals[key];
       checkAccess();
       const committed=await store.command({actorId:account.id,requestId:randomUUID(),expectedRevision:0,hash:commandHash({type:'importSave',save:state}),checkAccess,run:records=>{
         const actor=records.get(account.id);if(actor.authorityVersion)throw failure(409,'This online adventure has already started.');
-        actor.profile=state;actor.importedAt=Date.now();return {level:state.level};
+        actor.profile=state;actor.importedAt=Date.now();delete actor.championMs;return {level:state.level};
       }});
       committed.accounts.forEach(remember);
       const peer=peers.get(account.id);if(peer)send(peer.socket,{type:'profile',profile:committed.reply.profile,revision:committed.reply.revision,authorityVersion:1});
@@ -319,7 +339,7 @@ export async function createGameServer(options = {}) {
       try { data = await readFile(target); } catch { throw failure(404, 'Build the game first, then open its home page.'); }
       response.writeHead(200, { 'Content-Type': mime[path.extname(target)] || 'application/octet-stream', 'Cache-Control': /(?:index\.html|sw\.js|manifest|\.json)$/.test(relative) ? 'no-cache' : 'public, max-age=3600', 'X-Content-Type-Options': 'nosniff' });
       response.end(request.method === 'HEAD' ? undefined : data);
-    } catch (error) { if (!response.headersSent) respond(response, error.status || 500, { error: error.status ? error.message : 'The server could not complete that request.' }); else response.end(); }
+    } catch (error) { if (!response.headersSent) respond(response, error.status || 500, { error: error.status ? error.message : 'The server could not complete that request.', ...(error.status && error.code ? { code: error.code } : {}) }); else response.end(); }
   });
   const sockets = new WebSocketServer({ noServer: true, maxPayload: 256 * 1024, perMessageDeflate: false });
   server.on('upgrade', async (request, socket, head) => {
@@ -339,8 +359,8 @@ export async function createGameServer(options = {}) {
   });
   sockets.on('connection', (socket, request, account) => {
     const previous = peers.get(account.id); if (previous) { leave(previous); previous.socket.close(4001, 'This adventure was opened in another tab.'); }
-    const peer = { socket, account, active: true, visit: null, party: null, room: null, planet: account.profile.planet, pose: { x: 0, z: 0, facing: 0, moving: false }, poseAt: 0, messages: 0 };
-    peers.set(account.id, peer); send(socket, { type: 'welcome', id: account.id, ...friendList(account) }); send(socket, { type: 'champion', id: champion });
+    const peer = { socket, account, active: true, visit: null, party: null, room: null, planet: account.profile.planet, pose: { x: 0, z: 0, facing: 0, moving: false }, poseAt: 0 };
+    peers.set(account.id, peer); lastSeen.set(account.id, Date.now()); send(socket, { type: 'welcome', id: account.id, ...friendList(account) }); send(socket, { type: 'champion', id: champion });
     try { join(peer, Object.hasOwn(Game.PLANETS, account.profile.planet) ? account.profile.planet : 'home'); }
     catch (error) { peers.delete(account.id); send(socket, { type: 'error', message: error.message }); socket.close(1008, 'World unavailable'); return; }
     socket.isAlive = true; socket.on('pong', () => { socket.isAlive = true; });
@@ -358,6 +378,8 @@ export async function createGameServer(options = {}) {
         if (message.type === 'active') { peer.active = message.active === true; if (room) elect(room); }
         else if (message.type === 'join') {if(message.planet!==account.profile.planet)throw failure(403,'Travel to that planet before joining it.');join(peer, message.planet, text(message.party, 8).toUpperCase() || null);}
         else if (message.type === 'party') {
+          // One party per owner: a new code replaces the previous one (players already inside stay until they leave).
+          for (const [old, value] of parties) if (value.owner === account.id) parties.delete(old);
           const code = randomBytes(4).toString('hex').slice(0, 6).toUpperCase(); parties.set(code, { owner: account.id, created: Date.now() });
           join(peer, peer.planet, code); send(socket, { type: 'party', code });
         } else if (message.type === 'pose' && room) {
@@ -418,7 +440,7 @@ export async function createGameServer(options = {}) {
     });
     socket.on('close', () => {
       if (peers.get(account.id) !== peer) return;
-      leave(peer); peers.delete(account.id);
+      leave(peer); peers.delete(account.id); lastSeen.set(account.id, Date.now());
       for (const id of account.friends) if (accounts.has(id)) tellFriends(accounts.get(id));
     });
     socket.on('error', () => {});

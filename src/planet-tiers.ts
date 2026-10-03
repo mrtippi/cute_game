@@ -7,7 +7,8 @@ import { PLANETS, type PlanetId } from './content.ts';
  * star map; it starts at the highest open one. Titans grow with the tier, and the best tier each Titan
  * was beaten on is remembered for quests.
  *
- * Tiers are personal: shared online worlds keep their usual strength (the server roster ignores them).
+ * Tiers are personal offline. Online, a room's creatures all fight on one tier, the room's tier (roomTier), and a
+ * defeat counts at that tier for every explorer who helped.
  */
 export const MAX_TIER = 10;
 export interface PlanetTier { open: number; chosen: number; kills: number; bosses: number; titan: number }
@@ -19,6 +20,11 @@ export const tierOf = (s: TierHolder, planet: PlanetId = s.planet) => s.tiers?.[
 /** The tier the explorer is fighting on right now. */
 export const activeTier = (s: TierHolder, planet: PlanetId = s.planet) => Math.min(tierOf(s, planet).chosen, tierOf(s, planet).open);
 
+/**
+ * The tier of a shared online world (server/combat-authority.mjs): the highest active tier among the explorers in the
+ * room, just as level sync takes the highest level. Every explorer there sees and fights the same starred creatures.
+ */
+export const roomTier = (holders: TierHolder[], planet: PlanetId) => Math.max(1, ...holders.map(h => activeTier(h, planet)));
 /** How much stronger and more rewarding a tier is than ★1. */
 export function tierScale(tier: number) {
   const t = Math.max(1, Math.min(MAX_TIER, tier)) - 1;
@@ -30,19 +36,20 @@ export const tierLevel = (planet: PlanetId, tier: number) => (PLANETS[planet]?.l
 export const conquestKills = (tier: number) => 30 + 10 * tier;
 
 /**
- * A creature defeated on this planet at the active tier. Counts toward conquering the highest open tier
- * (only when playing it), remembers Titans; returns the newly opened tier, or 0.
+ * A creature defeated on this planet at `tier` (the explorer's active tier offline; the room's tier online, see
+ * roomTier). Counts toward conquering the explorer's highest open tier when fought on it or a harder one (only
+ * when playing it offline), remembers Titans; returns the newly opened tier, or 0.
  */
-export function recordTierKill(s: TierHolder, type: string, boss: boolean): number {
+export function recordTierKill(s: TierHolder, type: string, boss: boolean, tier = activeTier(s)): number {
   const planet = s.planet; if (!PLANETS[planet]) return 0;
-  const t = { ...tierOf(s, planet) }, tier = activeTier(s, planet);
-  if (type.startsWith('titan_')) t.titan = Math.max(t.titan, tier);
+  const t = { ...tierOf(s, planet) }, open = t.open;
+  if (type.startsWith('titan_')) t.titan = Math.max(t.titan, Math.min(MAX_TIER, tier));
   let opened = 0;
-  if (tier === t.open && t.open < MAX_TIER) {
+  if (tier >= open && open < MAX_TIER) {
     if (boss) t.bosses++; else t.kills++;
-    if (t.kills >= conquestKills(tier) && t.bosses >= 1 && s.level >= tierLevel(planet, tier + 1)) {
+    if (t.kills >= conquestKills(open) && t.bosses >= 1 && s.level >= tierLevel(planet, open + 1)) {
       t.open++; opened = t.open; t.kills = 0; t.bosses = 0;
-      if (t.chosen === tier) t.chosen = t.open;    // keep climbing unless the explorer chose an easier tier
+      if (t.chosen === open) t.chosen = t.open;    // keep climbing unless the explorer chose an easier tier
     }
   }
   (s.tiers ??= {})[planet] = t;

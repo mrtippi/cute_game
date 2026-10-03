@@ -11,6 +11,9 @@ const VIEWS = {
   'phone 390x844': { viewport: { width: 390, height: 844 }, deviceScaleFactor: 2, isMobile: true, hasTouch: true },
   'small phone 320x568': { viewport: { width: 320, height: 568 }, deviceScaleFactor: 2, isMobile: true, hasTouch: true },
   'desktop 1440x900': { viewport: { width: 1440, height: 900 }, deviceScaleFactor: 1 },
+  'desktop 1600x900': { viewport: { width: 1600, height: 900 }, deviceScaleFactor: 1 },
+  'laptop 1280x720': { viewport: { width: 1280, height: 720 }, deviceScaleFactor: 1 },
+  'tablet 1024x768': { viewport: { width: 1024, height: 768 }, deviceScaleFactor: 1 },
   'landscape 844x390': { viewport: { width: 844, height: 390 }, deviceScaleFactor: 2, isMobile: true, hasTouch: true },
 };
 
@@ -87,6 +90,21 @@ for (const [name, view] of Object.entries(VIEWS)) {
         assert.ok(box.l >= 0 && box.r <= r.W && box.t >= 0 && box.b <= r.H, 'quick eat is on screen');
         for (const [panel, boxes] of Object.entries(r.panels)) if (panel !== 'player') for (const b of boxes) assert.ok(!overlap(box, b), `quick eat overlaps ${panel} at ${name}`);
         for (const [what, frame] of [['boss bar', r.boss], ['target frame', r.target]]) assert.ok(!overlap(box, frame), `quick eat overlaps the ${what} at ${name}`);
+      }
+      // The HUD boards (boss times, today's quests), opened, end above the skill row and quick eat and stay on screen (they scroll).
+      const boards = await page.evaluate(async () => {
+        const chip = document.querySelector('#tracker-chip'); if (chip && !chip.hidden) chip.click();
+        await new Promise(done => setTimeout(done, 300));
+        for (const head of document.querySelectorAll('.board-head[aria-expanded="false"]')) head.click();
+        await new Promise(done => setTimeout(done, 1300));
+        const rect = el => { const b = el.getBoundingClientRect(); return { l: b.left, r: b.right, t: b.top, b: b.bottom }; };
+        return { open: [...document.querySelectorAll('.board-head')].map(head => head.getAttribute('aria-expanded')), boards: [...document.querySelectorAll('.hud-board')].filter(el => !el.closest('[hidden]') && el.getBoundingClientRect().height).map(rect), skills: [...document.querySelectorAll('.skill')].map(rect), eat: rect(document.querySelector('#quick-eat')), pick: rect(document.querySelector('.quick-eat-pick')) };
+      });
+      // A short landscape phone with the joystick has no room for them (hud-compact.css).
+      if (!(name.startsWith('landscape') && view.hasTouch)) { assert.ok(boards.boards.length, `the HUD boards show at ${name}`); assert.ok(boards.open.every(v => v === 'true'), 'the boards open from their heading'); }
+      for (const board of boards.boards) {
+        assert.ok(board.t >= 0 && board.b <= r.H, `a HUD board is on screen at ${name}`);
+        for (const box of [...boards.skills, boards.eat, boards.pick]) assert.ok(!overlap(board, box), `a HUD board overlaps a skill or quick eat at ${name}: ${JSON.stringify({ board, box })}`);
       }
       const mid = { l: r.W * .3, r: r.W * .7, t: r.H * .3, b: r.H * .7 };
       // Very small portraits have no clear corner between both thumb controls and the upper HUD;

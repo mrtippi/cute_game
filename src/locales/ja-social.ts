@@ -238,4 +238,6 @@ export const JA_SOCIAL: Record<string, string> = {
   "Your online session ended. Sign in again to continue.": "オンラインのセッションが終了しました。続けるにはもう一度ログインしてください。",
   "You signed out. Sign in to keep playing.": "ログアウトしました。続けて遊ぶにはログインしてください。",
   "○ Signed out": "○ ログアウト中",
+  "Meet beyond the garden gate and say hello.": "庭の門の外で会って、あいさつしよう。",
+  "3–24 letters, numbers or _": "半角英数字と_ 3〜24文字",
 };

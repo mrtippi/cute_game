@@ -1,8 +1,6 @@
 // The animal pen in depth: the guard dog and all four kinds of animals, a bigger pen and species shelters,
 // the pen helper robot, and the farm dishes at the kitchen (and eating a food with a bonus effect now and then).
-const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
-const near = kind => n => n.entities.filter(e => e.kind === kind).sort((a, b) => a.d - b.d)[0];
-const enabled = (bot, action, attr) => bot.page.$$eval(`#dialog [data-action="${action}"]:not([disabled])`, (bs, attr) => bs.map(b => b.dataset[attr]), attr);
+import { sleep, near, enabled } from '../lib/util.mjs';
 
 // Prices and unlock levels from src/farm.ts (ANIMALS, SPECIES_PEN_COST, PEN_EXPANSIONS) and the helper's HELPER_COST.
 const ANIMAL = { chicken: { price: 25, level: 2 }, cow: { price: 70, level: 5 }, duck: { price: 220, level: 3 }, pig: { price: 380, level: 6 }, dog: { price: 450, level: 3 } };

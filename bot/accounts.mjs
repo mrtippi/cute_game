@@ -2,6 +2,7 @@
 // account.json (the explorer's Japanese name, colour, play style, debugging port), its own Chrome profile (the save),
 // its days of clips and its videos. The explorer's name in the game stays Japanese; the folder id tells the clips apart.
 import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
+import { assertLocal } from './lib/util.mjs';
 
 export const ACCOUNTS = process.env.ZG_ACCOUNTS ?? 'D:/autogame/bot-data/accounts';
 /** The six explorer colours of the game (src/model.ts COLORS), in its order. */
@@ -25,6 +26,8 @@ export async function createAccount(id, name, color = 'blue', style = {}, { link
   if (!/^[a-z0-9_-]{2,24}$/i.test(id)) throw new Error('the folder id takes 2-24 letters, digits, - or _');
   const p = paths(id); if (existsSync(p.file)) throw new Error(`account "${id}" exists already`);
   const hex = COLORS[color] ?? color; if (!Object.values(COLORS).includes(hex)) throw new Error(`colour must be one of ${Object.keys(COLORS).join(', ')}`);
+  // Linked only on this PC's own game server.
+  if (link) assertLocal(url);
   const port = Math.max(9339, ...listAccounts().map(a => a.port ?? 0)) + 1;
   for (const dir of [p.dir, p.profile, p.days, p.videos]) mkdirSync(dir, { recursive: true });
   const account = { id, name: name.slice(0, 20), color: hex, style, port, created: new Date().toISOString().slice(0, 10) };

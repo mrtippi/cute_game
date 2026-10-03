@@ -1,8 +1,7 @@
 // Making the village one's own: decorations made at the workshop and set out in tidy arrangements, a ring before
 // the plaza fountain (village rank 4), a pair by the cottage door, rows along the stepping-stone trails.
-import { inside, leaveHouse } from './combat.mjs';
-const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
-const near = kind => n => n.entities.filter(e => e.kind === kind).sort((a, b) => a.d - b.d)[0];
+import { leaveHouse } from './combat.mjs';
+import { sleep, near } from '../lib/util.mjs';
 const at = (deg, d) => ({ x: Math.cos(deg * Math.PI / 180) * d, z: Math.sin(deg * Math.PI / 180) * d });
 /** village.ts: the fence radius per rank, and the zones decorations must keep off (the plaza paving included). */
 const RADII = [18, 22, 28, 34, 40];
@@ -69,7 +68,7 @@ async function walkNear(bot, p) {
   let d = 0;
   for (let i = 0; i < 12; i++) {
     const s = await game.snap(); d = Math.hypot(s.player.x - p.x, s.player.z - p.z);
-    if (inside(s)) { await leaveHouse(bot); return false; }
+    if (game.indoors(s)) { await leaveHouse(bot); return false; }
     if (d >= 2.5 && d < 6 && Math.hypot(s.player.x - stand.x, s.player.z - stand.z) < 2) return true;
     if (!await game.stepToward(stand.x, stand.z, s)) break;
     await game.waitFor(n => !n.player.moving && n, { timeout: 5000, every: 200 });
@@ -133,8 +132,8 @@ export async function freeExplorer(bot) {
 export async function decorate(bot, { count = 4 } = {}) {
   const { game, rng, note, log } = bot;
   let s = await game.snap(); if (s.planet !== 'home') return 'not home';
-  if (inside(s)) await leaveHouse(bot);
-  if (await freeExplorer(bot) || inside(s)) s = await game.snap();
+  if (game.indoors(s)) await leaveHouse(bot);
+  if (await freeExplorer(bot) || game.indoors(s)) s = await game.snap();
   if (!decorInBag(s).length) return 'no decorations in the bag';
   if (placed(s).length >= cap(s)) return 'cannot place more decorations';
   // Spots that failed stay skipped for the session (behind the cottage, out of reach).

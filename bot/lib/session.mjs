@@ -1,7 +1,7 @@
 // Opens the game in a real Chrome window with a persistent profile (the offline save lives in its
 // localStorage), the drawn cursor, and the bot bridge enabled.
 import { chromium } from 'playwright';
-import { existsSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { Hands } from './hands.mjs';
 import { Game } from './game.mjs';
@@ -21,7 +21,7 @@ export const windowArgs = ({ width, height } = WINDOW, { x = 0, y = 0 } = {}) =>
  */
 export const BROWSER = process.env.ZG_BROWSER === 'bundled' ? {} : { channel: 'chrome' };
 /** Chrome switches that keep its own pop-ups off the screen while the bots play (translate offer, crash bubble, infobars). */
-export const QUIET_ARGS = ['--disable-features=Translate,TranslateUI,DownloadBubble,DownloadBubbleV2', '--hide-crash-restore-bubble', '--disable-session-crashed-bubble', '--noerrdialogs', '--disable-infobars', '--no-default-browser-check', '--no-first-run'];
+export const QUIET_ARGS = ['--disable-features=Translate,TranslateUI,DownloadBubble,DownloadBubbleV2,PasswordManagerOnboarding,PasswordLeakDetection', '--hide-crash-restore-bubble', '--disable-session-crashed-bubble', '--noerrdialogs', '--disable-infobars', '--no-default-browser-check', '--no-first-run'];
 /**
  * No window at all (the desktop app's default): Chrome's new headless mode still draws on the graphics card
  * (measured: GTX 1660 through ANGLE/D3D11, 60 fps, screencast 30 fps), so play and recording are the same.
@@ -32,11 +32,15 @@ export const HEADLESS_ARGS = ['--headless=new', '--use-angle=d3d11', '--enable-g
  * translate offer off in its preferences.
  */
 export function quietProfile(profile) {
-  const file = `${profile}/Default/Preferences`; if (!existsSync(file)) return;
+  const file = `${profile}/Default/Preferences`;
   try {
-    const prefs = JSON.parse(readFileSync(file, 'utf8'));
-    prefs.profile = { ...prefs.profile, exit_type: 'Normal', exited_cleanly: true };
+    // A brand-new profile gets the file now, so its very first sign-in shows no password bubble either.
+    if (!existsSync(file)) mkdirSync(`${profile}/Default`, { recursive: true });
+    const prefs = existsSync(file) ? JSON.parse(readFileSync(file, 'utf8')) : {};
+    prefs.profile = { ...prefs.profile, exit_type: 'Normal', exited_cleanly: true, password_manager_enabled: false, password_manager_leak_detection: false };
     prefs.translate = { ...prefs.translate, enabled: false };
+    // No "Save password?" bubble after the bot signs in to the game server.
+    prefs.credentials_enable_service = false; prefs.credentials_enable_autosignin = false;
     writeFileSync(file, JSON.stringify(prefs));
   } catch { /* a profile being written by a running Chrome: leave it */ }
 }
@@ -52,7 +56,8 @@ export async function openSession({ url = 'http://127.0.0.1:8787/', profile, rng
   // signOut: a linked account playing offline again — its profile drops the server session.
   // A login-required server (the default) has no offline play: only `online` can start there. Offline sessions
   // (bot/dev.mjs, patch-profile.mjs, play.mjs without --account) need a server started with ZG_REQUIRE_LOGIN=0.
-  if (online) assertLocal(url);
+  // Only ever a game server on this PC, online or not.
+  assertLocal(url);
   quietProfile(profile);
   const context = await chromium.launchPersistentContext(profile, {
     ...BROWSER, headless: false, chromiumSandbox: true, viewport: { width, height }, deviceScaleFactor: scale, locale: 'ja-JP', timezoneId: 'Asia/Tokyo',

@@ -1,6 +1,7 @@
 // The everyday routines: rewards, garden, market, and fighting. Each takes the bot context
 // ({ game, hands, rng, log, note }) and returns a short result for the session log.
-const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
+import { sleep } from '../lib/util.mjs';
+import { isCrop } from '../lib/items.mjs';
 const JOURNAL_TABS = ['story', 'side', 'hourly', 'daily', 'weekly', 'achievements', 'bounties', 'pass', 'collection'];
 
 /** Anything waiting to be collected in the journal, as the quests() view reports it. */
@@ -68,8 +69,7 @@ export async function tendGarden(bot, { minutesLeft = 60 } = {}) {
 }
 
 /** Raw produce sells; cooked meals stay as the explorer's healing food. */
-const PRODUCE = id => /^fish_/.test(id) || CROP_IDS.test(id);
-const CROP_IDS = /^(radish|carrot|pumpkin|mint|chili|candy|bean|star|berry|coffee|moonflower|magnetmelon|melon|clover|glowshroom|iceberry|goldcorn|dragonfruit|rainbowrose|apple|grape|mango|pineapple|coconut|durian|lychee|peach)$/;
+const PRODUCE = id => /^fish_/.test(id) || isCrop(id);
 
 /** At the market: deliver every village order the bag can fill, then sell produce no open order still needs. */
 export async function sellProduce(bot) {

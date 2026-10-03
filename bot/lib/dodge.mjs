@@ -2,7 +2,7 @@
 // clear of every circle (they come in many sizes, from a slam at your feet to a quake around the boss).
 // The way out must be open ground: rocks, trees and water are checked along the whole path, and if the
 // explorer stops moving while running (caught on a rock), that direction is dropped and another taken.
-const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
+import { sleep } from './util.mjs';
 const MARGIN = .8;   // the explorer's own size, plus a little room
 const DIRS = 16, STEP = .5, REACH = 14;
 

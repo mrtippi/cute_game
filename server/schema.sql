@@ -19,3 +19,8 @@ CREATE TABLE IF NOT EXISTS zoo_action_receipts (
     receipt JSONB NOT NULL,
     PRIMARY KEY(actor_id,request_id)
 );
+
+-- @statement
+-- Receipts only cover client retries; the server deletes them after a day (account-store.mjs RECEIPT_MS).
+-- Rows from before this column count from the migration.
+ALTER TABLE zoo_action_receipts ADD COLUMN IF NOT EXISTS created_at BIGINT NOT NULL DEFAULT (extract(epoch FROM now()) * 1000)::BIGINT;

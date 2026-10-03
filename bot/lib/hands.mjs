@@ -1,6 +1,6 @@
 // Mouse and keyboard the way a person uses them: curved, slightly uneven paths, reaction delays,
 // the odd overshoot and correction. Every random choice comes from the session's seeded rng.
-const sleep = ms => new Promise(resolve => setTimeout(resolve, Math.max(0, ms)));
+import { sleep } from './util.mjs';
 
 export class Hands {
   constructor(page, rng, { speed = 1 } = {}) {

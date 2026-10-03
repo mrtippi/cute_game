@@ -1,6 +1,6 @@
 // Bolt, the garden robot: hired from a garden bed's panel once energy allows, kept at work, and told which seed to
 // plant (what a village order asks for, else the most XP per minute the bag can keep supplied).
-const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
+import { sleep } from '../lib/util.mjs';
 /** helper-state.ts HELPER_COST. */
 export const HELPER_COST = 1000;
 /** Energy left over after hiring, for food and repairs. */

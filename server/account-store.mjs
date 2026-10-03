@@ -6,8 +6,15 @@ import { randomUUID } from 'node:crypto';
 const failure = (status, message) => Object.assign(new Error(message), { status });
 const object = value => value !== null && typeof value === 'object' && !Array.isArray(value);
 const clone = value => structuredClone(value);
-const conflict = () => failure(409, 'A newer adventure is already saved. Reconnect to load it.');
+// 'stale' tells a client that only the revision moved on (worth a retry on the fresh save), unlike a refused action.
+const conflict = () => Object.assign(failure(409, 'A newer adventure is already saved. Reconnect to load it.'), { code: 'stale' });
 const unavailable = () => failure(404, 'Choose another explorer.');
+// Receipts make a same-ID retry safe. A client retries within minutes (its queue survives a reload), so a day covers
+// it; an older retry fails the revision check instead of applying twice. The per-account cap bounds the local file.
+export const RECEIPT_MS = 24 * 60 * 60 * 1000;
+export const RECEIPTS_PER_ACCOUNT = 256;
+const LOCKED = new Set(['EPERM', 'EBUSY', 'EACCES']);
+const wait = ms => new Promise(resolve => setTimeout(resolve, ms));
 
 function json(value, message) {
   try { return JSON.parse(JSON.stringify(value)); }
@@ -43,7 +50,7 @@ export function validateImportedReceipts(values, accounts) {
   const ids=new Set(accounts.map(account=>account.id)),keys=new Set();
   return values.map(value=>{
     const receipt=json(value,'The action receipts could not be imported.');
-    if(!object(receipt)||!ids.has(receipt.actorId)||typeof receipt.requestId!=='string'||!/^[a-zA-Z0-9-]{16,80}$/.test(receipt.requestId)||typeof receipt.hash!=='string'||!/^[a-f0-9]{64}$/.test(receipt.hash)||!object(receipt.reply)||receipt.reply.ok!==true||(receipt.format!==2&&!object(receipt.reply.profile))||!Number.isSafeInteger(receipt.reply.revision)||receipt.reply.revision<1)throw failure(400,'The action receipts could not be imported.');
+    if(!object(receipt)||!ids.has(receipt.actorId)||typeof receipt.requestId!=='string'||!/^[a-zA-Z0-9-]{16,80}$/.test(receipt.requestId)||typeof receipt.hash!=='string'||!/^[a-f0-9]{64}$/.test(receipt.hash)||!object(receipt.reply)||receipt.reply.ok!==true||(receipt.format!==2&&!object(receipt.reply.profile))||!Number.isSafeInteger(receipt.reply.revision)||receipt.reply.revision<1||receipt.at!==undefined&&(!Number.isSafeInteger(receipt.at)||receipt.at<0))throw failure(400,'The action receipts could not be imported.');
     const key=`${receipt.actorId}:${receipt.requestId}`;if(keys.has(key))throw failure(409,'The import contains duplicate action receipts.');keys.add(key);return receipt;
   });
 }
@@ -90,6 +97,7 @@ async function runCommand(spec, records, receipt) {
     actor.outbox=actor.outbox.slice(-256);
   }
   const changed = [];
+  actor.seenAt = Date.now();
   for (const [id,value] of records) if (id === actor.id || JSON.stringify(value) !== before.get(id)) {
     value.profileRevision = (value.profileRevision || 0) + 1;
     value.accountRevision = nextAccountRevision(value);
@@ -97,9 +105,18 @@ async function runCommand(spec, records, receipt) {
     changed.push(accountRecord(value));
   }
   const reply = {ok:true,profile:clone(actor.profile),revision:actor.profileRevision,authorityVersion:1,result};
-  // Keep the committed random outcome forever without copying a complete farm/save on every click.
+  // Keep the committed random outcome for retries without copying a complete farm/save on every click.
   const {profile,...compactReply}=reply;
-  return {reply,records:changed,receipt:{format:2,actorId:spec.actorId,requestId:spec.requestId,hash:spec.hash,reply:compactReply}};
+  return {reply,records:changed,receipt:{format:2,actorId:spec.actorId,requestId:spec.requestId,hash:spec.hash,reply:compactReply,at:Date.now()}};
+}
+/** Drop receipts older than RECEIPT_MS and all but each account's newest RECEIPTS_PER_ACCOUNT (Map order is commit order). */
+export function pruneReceipts(receipts, now = Date.now()) {
+  const cutoff = now - RECEIPT_MS, kept = new Map();
+  for (const [key, receipt] of [...receipts].reverse()) {
+    const count = (kept.get(receipt.actorId) || 0) + 1; kept.set(receipt.actorId, count);
+    if (receipt.at < cutoff || count > RECEIPTS_PER_ACCOUNT) receipts.delete(key);
+  }
+  return receipts;
 }
 function updateFriends(first, second, action) {
   if (!['request', 'accept', 'decline', 'remove'].includes(action)) throw failure(404, 'Unknown action.');
@@ -127,7 +144,10 @@ async function fileStore(dataDir) {
     const saved = JSON.parse(await readFile(filename, 'utf8'));
     if (!object(saved) || !Array.isArray(saved.accounts)) throw new Error('Invalid account database.');
     accounts = new Map(validateImportedAccounts(saved.accounts).map(account => [account.id, account]));
-    for (const receipt of validateImportedReceipts(saved.receipts || [],[...accounts.values()])) receipts.set(`${receipt.actorId}:${receipt.requestId}`,receipt);
+    // Receipts from before timestamps were kept count from this start.
+    const loadedAt = Date.now();
+    for (const receipt of validateImportedReceipts(saved.receipts || [],[...accounts.values()])) receipts.set(`${receipt.actorId}:${receipt.requestId}`,{...receipt,at:receipt.at??loadedAt});
+    pruneReceipts(receipts, loadedAt);
   } catch (error) {
     if (error.code !== 'ENOENT') throw new Error('The account database could not be read. It has not been overwritten.', { cause: error });
   }
@@ -138,7 +158,11 @@ async function fileStore(dataDir) {
       const file = await open(temporary, 'wx', 0o600);
       try { await file.writeFile(JSON.stringify({ version: 2, accounts: [...next.values()], receipts:[...nextReceipts.values()] })); await file.sync(); }
       finally { await file.close(); }
-      await rename(temporary, filename);
+      // Backup, antivirus and sync tools briefly hold files on Windows; wait for them up to about two seconds.
+      for (let delay = 20, waited = 0; ; waited += delay, delay = Math.min(delay * 2, 250)) {
+        try { await rename(temporary, filename); break; }
+        catch (error) { if (!LOCKED.has(error.code) || waited >= 2000) throw error; await wait(delay); }
+      }
     } finally { await unlink(temporary).catch(error => { if (error.code !== 'ENOENT') throw error; }); }
   }
   function write(operation) {
@@ -147,7 +171,8 @@ async function fileStore(dataDir) {
       const next = new Map(accounts), outcome = await operation(next);
       const nextReceipts = new Map(receipts);
       if (outcome.receipt) nextReceipts.set(`${outcome.receipt.actorId}:${outcome.receipt.requestId}`,outcome.receipt);
-      for(const receipt of outcome.receipts||[])nextReceipts.set(`${receipt.actorId}:${receipt.requestId}`,receipt);
+      for(const receipt of outcome.receipts||[])nextReceipts.set(`${receipt.actorId}:${receipt.requestId}`,{...receipt,at:receipt.at??Date.now()});
+      pruneReceipts(nextReceipts);
       // Publish only after the complete replacement has been written and renamed.
       if (outcome.changed !== false) { await persist(next,nextReceipts); accounts = next; receipts = nextReceipts; }
       return clone(outcome.value);
@@ -233,6 +258,8 @@ async function postgresStore(databaseUrl, injectedPool) {
   async function query(sql, params) { active(); return pool.query(sql, params); }
   const insert = (client, account) => client.query('INSERT INTO zoo_accounts (id, username, account) VALUES ($1, $2, $3::jsonb)', [account.id, account.username, JSON.stringify(account)]);
   const update = (client, account) => client.query('UPDATE zoo_accounts SET account = $2::jsonb WHERE id = $1', [account.id, JSON.stringify(account)]);
+  const addReceipt = (client, receipt) => client.query('INSERT INTO zoo_action_receipts(actor_id,request_id,receipt,created_at) VALUES($1,$2,$3::jsonb,$4)',[receipt.actorId,receipt.requestId,JSON.stringify(receipt),receipt.at??Date.now()]);
+  let prunedAt = 0;
   return {
     kind: 'postgres',
     async command(spec) {
@@ -242,7 +269,9 @@ async function postgresStore(databaseUrl, injectedPool) {
         const receipt = (await client.query('SELECT receipt FROM zoo_action_receipts WHERE actor_id=$1 AND request_id=$2',[spec.actorId,spec.requestId])).rows[0]?.receipt;
         const result = await runCommand(spec,new Map(rows.map(row=>[row.account.id,row.account])),receipt);
         for (const account of result.records) await update(client,account);
-        if (result.receipt) await client.query('INSERT INTO zoo_action_receipts(actor_id,request_id,receipt) VALUES($1,$2,$3::jsonb)',[spec.actorId,spec.requestId,JSON.stringify(result.receipt)]);
+        if (result.receipt) await addReceipt(client,result.receipt);
+        // At most once a minute: old receipts only answer retries that the revision check now rejects anyway.
+        if (result.receipt && Date.now() - prunedAt > 60_000) { prunedAt = Date.now(); await client.query('DELETE FROM zoo_action_receipts WHERE created_at < $1',[Date.now() - RECEIPT_MS]); }
         return {reply:result.reply,accounts:result.records};
       });
     },
@@ -277,7 +306,7 @@ async function postgresStore(databaseUrl, injectedPool) {
         await client.query('LOCK TABLE zoo_accounts IN EXCLUSIVE MODE');
         if ((await client.query('SELECT id FROM zoo_accounts LIMIT 1')).rows.length) throw failure(409, 'Import requires an empty account database.');
         for (const account of records) await insert(client, account);
-        for(const receipt of validatedReceipts)await client.query('INSERT INTO zoo_action_receipts(actor_id,request_id,receipt) VALUES($1,$2,$3::jsonb)',[receipt.actorId,receipt.requestId,JSON.stringify(receipt)]);
+        for(const receipt of validatedReceipts)await addReceipt(client,receipt);
         return records.length;
       });
     },

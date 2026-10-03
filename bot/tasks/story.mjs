@@ -1,6 +1,6 @@
 // The story (星灯りの村): Lumi's lines are read at a reading pace and moved on with the "Next" button, and an
 // open cage (its boss beaten) is walked to and opened, the way a player answers the story.
-const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
+import { sleep } from '../lib/util.mjs';
 
 /** Read Lumi's dialogue line by line: a pause that fits each line's length, then "Next". */
 export async function readLumi(bot) {

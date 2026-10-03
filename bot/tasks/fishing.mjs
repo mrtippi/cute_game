@@ -1,7 +1,7 @@
 // Fishing like a patient player: cast, leave the nibbles alone, strike on the bite, then pull while
 // the line is calm and give slack when the fish surges.
 import { equip } from './shopping.mjs';
-const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
+import { sleep } from '../lib/util.mjs';
 const ROD = /rod/;
 
 export const hasRod = s => Object.keys(s.bag).some(id => ROD.test(id) && s.bag[id] > 0) || ROD.test(s.gear.weapon ?? '');

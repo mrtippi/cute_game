@@ -102,7 +102,8 @@ export class HouseSession {
   /** Trophies for the titles held (attic-view.ts); rebuilt when the list changes. */
   syncTrophies(titles: readonly string[]) {
     const sig = titles.join('|'); if (sig === this.trophySig && this.trophies) return; this.trophySig = sig;
-    if (this.trophies) { this.view.root.remove(this.trophies); this.trophies.traverse(o => { if (o instanceof T.Mesh) o.geometry.dispose(); }); }
+    // Each trophy owns its geometry and materials (attic-view.ts).
+    if (this.trophies) { this.view.root.remove(this.trophies); this.trophies.traverse(o => { if (o instanceof T.Mesh) { o.geometry.dispose(); for (const m of [o.material].flat()) m.dispose(); } }); }
     this.trophies = buildTrophies(titles); this.view.root.add(this.trophies);
   }
   private obstacles() { return [...furnitureObstacles(), ...atticObstacles(), ...(this.open() ? [] : ATTIC_LOCK), ...[...this.view.friends.values()].map(v => ({ x: v.spot.x, z: v.spot.z, r: .3 }))]; }

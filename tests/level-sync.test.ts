@@ -3,6 +3,8 @@ import assert from 'node:assert/strict';
 import * as T from 'three';
 import { World } from '../src/world.ts';
 import * as M from '../src/model.ts';
+import { enemyRoster } from '../src/enemy-roster.ts';
+import { syncedStats, tierStats } from '../src/level-sync.ts';
 
 function world(level: number) {
   const state = M.newGame(); state.level = level;
@@ -41,4 +43,28 @@ test('a level-up lifts unhurt creatures at once; a hurt one keeps its stats unti
   assert.ok(fresh.level! >= 29); assert.equal(hurt.level, hurtLevel);
   hurt.hp = 0; hurt.respawn = 0; w.position.set(hurt.homeX + 40, 0, hurt.homeZ); w.update(.016, false, false, true);
   assert.ok(hurt.level! >= 29, 'resynced on respawn');
+});
+
+test('a rebuild (travel, reset) syncs the new creature set at once, not at the next level-up', () => {
+  const w = world(30); w.build('home'); w.syncLevels(); w.build('home');
+  assert.equal(w.syncedLevel, 0, 'the new creatures start at their base level');
+  w.update(.016, false, false, true);
+  assert.equal(w.syncedLevel, 30);
+  for (const e of w.enemies.filter(e => !e.boss && e.type !== 'dragon' && e.hp > 0)) assert.ok(e.level! >= 29, `${e.type} Lv${e.level}`);
+});
+
+test('planet stars scale the ★1 roster first and level sync applies on top, the same formula the server uses', () => {
+  const w = world(40); w.state.planet = 'candy'; w.state.tiers = { candy: { open: 3, chosen: 3, kills: 0, bosses: 0, titan: 0 } };
+  w.build('candy'); w.syncLevels();
+  const roster = new Map(enemyRoster('candy').map(e => [e.id, e]));
+  assert.ok(w.enemies.length > 20);
+  for (const e of w.enemies) {
+    const r = roster.get(e.id)!; assert.equal(r.type, e.type);
+    const starred = tierStats({ id: r.id, level: r.level, maxHp: r.baseMaxHp, damage: r.baseDamage, xp: r.xp }, 3);
+    assert.equal(e.baseLevel, r.level + 12); assert.equal(e.baseMaxHp, starred.maxHp); assert.equal(e.baseXp, starred.xp);
+    const expected = e.type === 'dragon' ? starred : syncedStats(starred, 40);
+    assert.equal(e.level, expected.level, e.id); assert.equal(e.maxHp, expected.maxHp, e.id); assert.equal(e.xp, expected.xp, e.id);
+    assert.ok(Math.abs(e.damage - expected.damage) < 1e-9, e.id);
+  }
+  assert.deepEqual(tierStats({ id: 'x', level: 4, maxHp: 100, damage: 10, xp: 20 }, 1), { id: 'x', level: 4, maxHp: 100, damage: 10, xp: 20 }, '★1 changes nothing');
 });

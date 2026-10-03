@@ -5,7 +5,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { WebSocket } from 'ws';
 import { createGameServer } from '../server/server.mjs';
-import { serverChampion, holdChampion, CHAMPION_TITLE, CHAMPION_HOLD_MS } from '../server/champion.mjs';
+import { serverChampion, holdChampion, recentlyActive, CHAMPION_TITLE, CHAMPION_HOLD_MS, CHAMPION_ACTIVE_MS } from '../server/champion.mjs';
 import { newGame } from '../src/model.ts';
 
 const explorer = (id, level, xp = 0) => { const profile = newGame(); profile.level = level; profile.xp = xp; return { id, profile }; };
@@ -19,6 +19,18 @@ test('the server champion: highest level, more XP breaks a tie, never alone, los
   sora.profile.level = 71; assert.equal(serverChampion(new Map([[1, mio], [2, sora], [3, haru]]).values()), 'sora', 'overtaken');
   assert.equal(serverChampion([explorer('b', 5, 10), explorer('a', 5, 10)]), 'a', 'equals: the smaller id, so the crown never flickers');
   assert.equal(serverChampion([explorer('a', 5), { id: 'broken' }]), null, 'records without a profile do not count');
+});
+
+test('only explorers online now or seen within a day compete for the crown', () => {
+  const now = 100 * CHAMPION_ACTIVE_MS, online = new Set(['sora']);
+  const active = account => online.has(account.id) || recentlyActive(account, now);
+  const gone = { ...explorer('gone', 99), seenAt: now - CHAMPION_ACTIVE_MS - 1, createdAt: 1 };
+  const mio = { ...explorer('mio', 70), seenAt: now - CHAMPION_ACTIVE_MS + 60_000 }, sora = explorer('sora', 60);
+  assert.equal(serverChampion([gone, mio, sora], active), 'mio', 'the abandoned top account does not hold the crown');
+  assert.equal(serverChampion([gone, sora], active), null, 'one active explorer is alone');
+  online.add('gone'); assert.equal(serverChampion([gone, mio, sora], active), 'gone', 'back online, it competes again');
+  assert.equal(recentlyActive(explorer('new', 1), now, now - 1000), true, 'a sign-in this server remembers counts');
+  assert.equal(serverChampion([gone, mio, sora]), 'gone', 'without a filter every account counts');
 });
 
 test('an hour as champion in all leaves the rainbow title for good', () => {

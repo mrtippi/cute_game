@@ -38,6 +38,7 @@ import {TargetMarker,TARGET_HOLD,TAP_RED} from './target-marker.ts';
 import {TelegraphDecals} from './telegraph.ts';
 import {LAVA_ORE_RULES,type LavaWeatherSnapshot} from './lava-weather.ts';
 import {setVillageRank,shownVillageRadius,MOON_POND,villageRankFor} from './village.ts';
+import {syncedStats,partyScale,tierStats} from './level-sync.ts';
 import {buildVillageZones} from './village-view.ts';
 import {createHarpoonProjectile} from './harpoon-art.ts';
 import {ENEMY_TYPES,HOME_SPAWNS,PLANET_SPAWNS,PLANET_BOSSES,FOREST_RAPTOR_COUNT,enemyScale,type EnemyDefinition} from './enemy-types.ts';
@@ -57,8 +58,9 @@ export interface Enemy { windupTotal?:number;enraged?:boolean;lastHitAt?:number;
 export interface AvatarVisual {size:number;stealth:boolean;shield:boolean;flight:number;bat:boolean}
 export interface Enemy {titanAttacks?:TitanAttack[];titanLift?:number}
 export interface RemotePose {visual?:Partial<AvatarVisual>;id?:string;x:number;z:number;y?:number;facing?:number;color?:string;name?:string;planet?:PlanetId;moving?:boolean;gear?:SaveState['gear'];hp?:number;level?:number;title?:string;champion?:boolean}
+const SCREEN_POINT=new T.Vector3();
 export interface EnemyShotSnapshot {id:string;x:number;y:number;z:number;vx:number;vz:number;life:number;damage:number;targetEnemyId?:string}
-export interface EnemySnapshot {titanAttacks?:TitanAttack[];titanLift?:number;chaseGrace?:number;id:string;type?:string;x:number;z:number;hp:number;maxHp:number;respawn:number;phase?:string;facing?:number;lift?:number;boss?:boolean;phaseTime?:number;stun?:number;statuses?:Record<string,number>;cooldown?:number;targetX?:number;targetZ?:number;bossStage?:number;skill?:BossSkill;attackCount?:number;skillCount?:number;telegraphs?:Enemy['telegraphs'];skillEffects?:Enemy['skillEffects'];spinTick?:number;damage?:number;shots?:EnemyShotSnapshot[]}
+export interface EnemySnapshot {titanAttacks?:TitanAttack[];titanLift?:number;chaseGrace?:number;id:string;type?:string;x:number;z:number;hp:number;maxHp:number;respawn:number;phase?:string;facing?:number;lift?:number;boss?:boolean;phaseTime?:number;stun?:number;statuses?:Record<string,number>;cooldown?:number;targetX?:number;targetZ?:number;bossStage?:number;skill?:BossSkill;attackCount?:number;skillCount?:number;telegraphs?:Enemy['telegraphs'];skillEffects?:Enemy['skillEffects'];spinTick?:number;damage?:number;level?:number;xp?:number;shots?:EnemyShotSnapshot[]}
 export interface EnvironmentSnapshot {time:number;lamps:Array<[number,number]>;eclipseUntil?:number;weather?:LavaWeatherSnapshot;nestLevel?:number;fireRain?:EnvironmentSimulation['fireRain'];lightning?:LightningState}
 export interface EnvironmentAction {kind:'light-pillar'|'collect-ore';id:string;index?:number}
 export interface EnvironmentReward {id:string;count:number}
@@ -489,7 +491,8 @@ export class World {
     if(this.interior){const inside=this.interior;this.interior=null;inside.drop();}
     this.farmView?.dispose();this.farmView=undefined;this.titanView?.clear();this.joystickInput=null;
     this.disposeTree(this.root);this.scene.remove(this.root);this.root=new T.Group();this.scene.add(this.root);
-    this.entities=[];this.enemies=[];this.obstacles=[];this.dynamicObstacles=[];this.plotMeshes=[];this.cropSignatures=[];this.planet=planet;
+    // A new creature set starts at its base level; the next update syncs it to the explorer (syncLevels).
+    this.entities=[];this.enemies=[];this.syncedLevel=0;this.obstacles=[];this.dynamicObstacles=[];this.plotMeshes=[];this.cropSignatures=[];this.planet=planet;
     this.destination=null;this.route=[];this.selected=null;this.ring.visible=false;this.marker.visible=false;this.gateHits=0;
     for(const shot of this.enemyShots??[]){this.scene.remove(shot.mesh);shot.mesh.geometry.dispose();}this.enemyShots=[];
     // The home being shown sets the village size that zoneAt, the scenery and the creatures read (village.ts).
@@ -632,8 +635,8 @@ export class World {
   /** Puts a kit gear piece on the explorer; each piece rides the body part named by its tag. */
   private wearKit(hero:T.Object3D,id:string|undefined,fallback:string){
     const kit=id?this.kitFor(id):null,item=kit&&heroKit.ready?kit.instance(weaponModelName(id!)):null;if(!item)return false;
-    // A shared model in its own colour (the bows: WEAPON_TINTS).
-    const tint=WEAPON_TINTS[id!];if(tint)item.traverse(o=>{const m=o as T.Mesh;if(m.isMesh&&m.material&&!Array.isArray(m.material)){const c=(m.material as T.MeshStandardMaterial).clone();if(c.color)c.color.lerp(new T.Color(tint),.55);m.material=c;}});
+    // A shared model in its own colour (the bows: WEAPON_TINTS); the tinted copies belong to this explorer and are disposed with it.
+    const tint=WEAPON_TINTS[id!];if(tint)item.traverse(o=>{const m=o as T.Mesh;if(m.isMesh&&m.material&&!Array.isArray(m.material)){const c=(m.material as T.MeshStandardMaterial).clone();c.userData.sharedKit=false;c.userData.tinted=true;if(c.color)c.color.lerp(new T.Color(tint),.55);m.material=c;}});
     hero.updateMatrixWorld(true);const toHero=hero.matrixWorld.clone().invert();
     for(const piece of [...item.children]){
       const part=hero.getObjectByName(piece.userData.tag??fallback)??hero;
@@ -728,7 +731,7 @@ export class World {
   refreshPlayer() {
     const gear=this.tryOnGear??this.state.gear;
     this.disposeTree(this.player);this.root.remove(this.player);this.player=this.avatar(this.state.color,{...gear,pet:undefined});this.player.rotation.order='YXZ';
-    this.playerMaterials=[];this.player.traverse(o=>{if(o instanceof T.Mesh&&isLit(o.material)){o.material=o.material.clone();o.material.userData.sharedKit=false;this.playerMaterials.push(o.material);}});this.root.add(this.player);
+    this.playerMaterials=[];this.player.traverse(o=>{if(o instanceof T.Mesh&&isLit(o.material)){const own=o.material;o.material=own.clone();o.material.userData.sharedKit=false;if(own.userData.tinted)own.dispose();this.playerMaterials.push(o.material);}});this.root.add(this.player);
     this.disposeTree(this.companion);this.root.remove(this.companion);this.companion=gear.pet?this.petFor(gear.pet):new T.Group();addOutlines(this.companion,{merge:true});this.root.add(this.companion);
     this.interior?.adopt();
   }
@@ -792,26 +795,23 @@ export class World {
   spawnSpecies(type:string,x:number,z:number,index:number){
     const def=ENEMY_TYPES[type];if(!def)return null;
     const zone=this.planet==='home'?zoneAt({x,z}):this.planet,difficulty=({home:0,forest:1,meadow:1,swamp:2,canyon:3,candy:3,ice:4,lava:5,toy:2,jungle:3,ocean:4,cloud:5,shadow:6} as Record<string,number>)[zone],scale=[1,1,1.7,2.6,3.6,4.8,6.2][difficulty];
-    // Planet stars (planet-tiers.ts) make the whole roster tougher and more rewarding on this explorer's chosen tier.
-    const tier=M.activeTier(this.state,this.planet),star=M.tierScale(tier);
-    const health=Math.round(def.hp*scale*(def.titan?7:def.boss&&type!=='dragon'?2.6:1)*star.hp),damage=def.damage*scale*(def.titan?1.6:def.boss?1.35:1)*star.damage,xp=Math.round(def.xp*(.6+scale*.4)*star.xp);
     const model=this.enemyModel(type,def);
     const e=this.addEntity('enemy',def.name,def.boss?'👑':'⚔️',model,x,z,def.radius,index) as Enemy;
-    const level=difficulty*3-2+(def.boss?6:0)+(tier-1)*6;
+    // Planet stars (planet-tiers.ts) make the whole roster tougher and more rewarding on this explorer's chosen tier,
+    // rounded like the server's roster (level-sync.ts tierStats). Online, the server's room tier replaces these stats.
+    const {level,maxHp:health,damage,xp}=tierStats({id:e.id,level:difficulty*3-2+(def.boss?6:0),maxHp:Math.round(def.hp*scale*(def.titan?7:def.boss&&type!=='dragon'?2.6:1)),damage:def.damage*scale*(def.titan?1.6:def.boss?1.35:1),xp:Math.round(def.xp*(.6+scale*.4))},M.activeTier(this.state,this.planet));
     Object.assign(e,{type,definition:def,hp:health,maxHp:health,baseMaxHp:health,baseDamage:damage,damage,xp,baseXp:xp,baseLevel:level,level,homeX:x,homeZ:z,cooldown:0,respawn:0,boss:def.boss,stun:0,phase:'idle',phaseTime:0,route:[],routeTime:0,lift:0,liftVelocity:0,statuses:{}});this.enemies.push(e);return e;
   }
   /**
-   * Creatures keep pace with the explorer: below the explorer's level, an unhurt creature rises to the explorer's level
-   * -1 to +2 (fixed per creature), with +12% health, +7% damage and +10% XP per level gained (the same steps a boss
-   * takes when it engages). Planet stars still add on top. Hosts and offline only; online peers follow snapshots.
+   * Creatures keep pace with the explorer (level-sync.ts, the same rule the server applies online): below the explorer's
+   * level, an unhurt creature rises to the explorer's level -1 to +2, from its starred base stats. Offline only; online
+   * the server syncs every creature to the room and clients follow its snapshots.
    */
   syncedLevel=0;
   syncLevels(){this.syncedLevel=this.state.level;for(const e of this.enemies)if(e.hp>0&&e.hp===e.maxHp&&!e.scaled)this.syncLevel(e);}
-  syncLevel(e:Enemy){
+  syncLevel(e:Enemy,level=this.state.level){
     if(this.authoritativeAction||e.type==='dragon'||e.baseLevel===undefined)return;
-    let h=0;for(const c of e.id)h=(h*31+c.charCodeAt(0))>>>0;
-    const level=Math.max(e.baseLevel,this.state.level+(h%4)-1),gain=level-e.baseLevel;
-    e.level=level;e.maxHp=Math.round((e.baseMaxHp??e.maxHp)*(1+gain*.12));e.hp=e.maxHp;e.damage=(e.baseDamage??e.damage)*(1+gain*.07);e.xp=Math.round((e.baseXp??e.xp)*(1+gain*.1));
+    Object.assign(e,syncedStats({id:e.id,level:e.baseLevel,maxHp:e.baseMaxHp??e.maxHp,damage:e.baseDamage??e.damage,xp:e.baseXp??e.xp},level));e.hp=e.maxHp;
   }
   environmentStatus():EnvironmentStatus[]{return this.environment?.status(this.position)??[];}
   lightSources(){
@@ -920,7 +920,7 @@ export class World {
   /** Apply server combat facts once; predicted casts never award HP damage locally. */
   applyAuthoritativeEnemyHealth(snapshot:EnemySnapshot&{impactId?:string;impact?:{amount:number;critical?:boolean;stun?:number;lift?:number;knock?:number;direction?:Point}}){
     const e=this.enemies.find(e=>e.id===snapshot.id);if(!e||!Number.isFinite(snapshot.hp))return;
-    const wasAlive=e.hp>0;e.hp=Math.max(0,snapshot.hp);if(Number.isFinite(snapshot.maxHp))e.maxHp=snapshot.maxHp;if(Number.isFinite(snapshot.damage))e.damage=snapshot.damage!;if(Number.isFinite(snapshot.respawn))e.respawn=snapshot.respawn;e.scaled=true;
+    const wasAlive=e.hp>0;e.hp=Math.max(0,snapshot.hp);if(Number.isFinite(snapshot.maxHp))e.maxHp=snapshot.maxHp;if(Number.isFinite(snapshot.damage))e.damage=snapshot.damage!;if(Number.isFinite(snapshot.level))e.level=snapshot.level;if(Number.isFinite(snapshot.xp))e.xp=snapshot.xp!;if(Number.isFinite(snapshot.respawn))e.respawn=snapshot.respawn;e.scaled=true;
     if(Number.isFinite(snapshot.chaseGrace))e.lastHitAt=this.time-4+Math.max(0,Math.min(4,snapshot.chaseGrace!));
     if(snapshot.statuses)e.statuses={...snapshot.statuses};if(Number.isFinite(snapshot.stun))e.stun=snapshot.stun!;
     if(wasAlive&&e.hp<=0){e.dying=.3;e.telegraphs=[];e.skillEffects=[];e.titanAttacks=[];e.titanLift=0;e.knockVX=e.knockVZ=0;this.defeatFeedback(e);return;}
@@ -930,7 +930,7 @@ export class World {
     if(impact.knock&&impact.direction)this.knockEnemy(e,impact.direction.x,impact.direction.z,impact.knock);
     if(impact.lift)this.knockUpEnemy(e,impact.lift,.8);
   }
-  applyEnemySnapshots(snapshots:EnemySnapshot[]){const own=`${this.planet}:`;for(const snapshot of snapshots){if(typeof snapshot.id!=='string'||!snapshot.id.startsWith(own)||!Number.isFinite(snapshot.x)||!Number.isFinite(snapshot.z)||!Number.isFinite(snapshot.hp))continue;let e=this.enemies.find(e=>e.id===snapshot.id);if(!e&&snapshot.type&&ENEMY_TYPES[snapshot.type]){e=this.spawnSpecies(snapshot.type,snapshot.x,snapshot.z,this.enemies.length)??undefined;if(e)e.id=snapshot.id;}if(!e)continue;e.x=snapshot.x;e.z=snapshot.z;e.hp=Math.max(0,snapshot.hp);e.maxHp=snapshot.maxHp;e.respawn=snapshot.respawn;e.phase=snapshot.phase;e.lift=snapshot.lift??0;e.stun=snapshot.stun??0;e.phaseTime=snapshot.phaseTime??0;if(Number.isFinite(snapshot.chaseGrace))e.lastHitAt=this.time-4+Math.max(0,Math.min(4,snapshot.chaseGrace!));e.cooldown=snapshot.cooldown??0;e.statuses={...snapshot.statuses};e.targetX=snapshot.targetX;e.targetZ=snapshot.targetZ;e.bossStage=snapshot.bossStage;e.skill=snapshot.skill;e.attackCount=snapshot.attackCount;e.skillCount=snapshot.skillCount;e.telegraphs=snapshot.telegraphs?.map(p=>({...p}));e.skillEffects=snapshot.skillEffects?.map(p=>({...p}));e.spinTick=snapshot.spinTick;e.damage=snapshot.damage??e.damage;e.titanAttacks=sanitizeTitanAttacks(snapshot.titanAttacks);e.titanLift=snapshot.titanLift??0;e.scaled=true;e.mesh.position.set(e.x,terrainHeight(this.environment.layout,e)+(e.lift??0),e.z);e.mesh.rotation.y=snapshot.facing??0;e.mesh.visible=e.hp>0;
+  applyEnemySnapshots(snapshots:EnemySnapshot[]){const own=`${this.planet}:`;for(const snapshot of snapshots){if(typeof snapshot.id!=='string'||!snapshot.id.startsWith(own)||!Number.isFinite(snapshot.x)||!Number.isFinite(snapshot.z)||!Number.isFinite(snapshot.hp))continue;let e=this.enemies.find(e=>e.id===snapshot.id);if(!e&&snapshot.type&&ENEMY_TYPES[snapshot.type]){e=this.spawnSpecies(snapshot.type,snapshot.x,snapshot.z,this.enemies.length)??undefined;if(e)e.id=snapshot.id;}if(!e)continue;e.x=snapshot.x;e.z=snapshot.z;e.hp=Math.max(0,snapshot.hp);e.maxHp=snapshot.maxHp;e.respawn=snapshot.respawn;e.phase=snapshot.phase;e.lift=snapshot.lift??0;e.stun=snapshot.stun??0;e.phaseTime=snapshot.phaseTime??0;if(Number.isFinite(snapshot.chaseGrace))e.lastHitAt=this.time-4+Math.max(0,Math.min(4,snapshot.chaseGrace!));e.cooldown=snapshot.cooldown??0;e.statuses={...snapshot.statuses};e.targetX=snapshot.targetX;e.targetZ=snapshot.targetZ;e.bossStage=snapshot.bossStage;e.skill=snapshot.skill;e.attackCount=snapshot.attackCount;e.skillCount=snapshot.skillCount;e.telegraphs=snapshot.telegraphs?.map(p=>({...p}));e.skillEffects=snapshot.skillEffects?.map(p=>({...p}));e.spinTick=snapshot.spinTick;e.damage=snapshot.damage??e.damage;if(Number.isFinite(snapshot.level))e.level=snapshot.level;if(Number.isFinite(snapshot.xp))e.xp=snapshot.xp!;e.titanAttacks=sanitizeTitanAttacks(snapshot.titanAttacks);e.titanLift=snapshot.titanLift??0;e.scaled=true;e.mesh.position.set(e.x,terrainHeight(this.environment.layout,e)+(e.lift??0),e.z);e.mesh.rotation.y=snapshot.facing??0;e.mesh.visible=e.hp>0;
       if(snapshot.shots){this.enemyShots??=[];const ids=new Set(snapshot.shots.map(s=>s.id));for(let i=this.enemyShots.length-1;i>=0;i--)if(this.enemyShots[i].ownerId===e.id&&!ids.has(this.enemyShots[i].id)){const old=this.enemyShots[i];this.scene.remove(old.mesh);old.mesh.geometry.dispose();this.enemyShots.splice(i,1);}for(const source of snapshot.shots){if(![source.x,source.y,source.z,source.vx,source.vz,source.life,source.damage].every(Number.isFinite)||source.life<=0)continue;let shot=this.enemyShots.find(s=>s.id===source.id);if(!shot){const model=ball(e.definition?.accent??'#ffbb72',.17);this.scene.add(model);shot={...source,ownerId:e.id,mesh:model};this.enemyShots.push(shot);}Object.assign(shot,{vx:source.vx,vz:source.vz,life:source.life,damage:source.damage,targetEnemyId:source.targetEnemyId});shot.mesh.position.set(source.x,source.y,source.z);}}
     }}
   receiveRemoteHit(id:string,amount:number,stun=0){const e=this.enemies.find(e=>e.id===id);if(!e||e.hp<=0||!Number.isFinite(amount)||amount<0)return false;this.damageEnemy(e,amount,stun);return true;}
@@ -985,7 +985,8 @@ export class World {
     const d=this.state.dropped;if(d&&d.planet===this.planet)this.addEntity('dropped','Your dropped backpack','🎒',group(ball('#dd94b6',.5,0,.5),cyl('#e5bad0',.17,.17,.25,0,1)),d.x,d.z,.8);
   }
   /** CSS pixels of a world point. `front` is false behind the (perspective) camera, where x and y come out mirrored. */
-  screen(x:number,y:number,z:number) { const v=new T.Vector3(x,y,z).project(this.camera);return {x:(v.x+1)*innerWidth/2,y:(1-v.y)*innerHeight/2,visible:v.z<1&&Math.abs(v.x)<1.3&&Math.abs(v.y)<1.3,front:v.z<1}; }
+  /** Screen point of a world position; one scratch vector serves every call (nameplates and labels ask each frame). */
+  screen(x:number,y:number,z:number) { const v=SCREEN_POINT.set(x,y,z).project(this.camera);return {x:(v.x+1)*innerWidth/2,y:(1-v.y)*innerHeight/2,visible:v.z<1&&Math.abs(v.x)<1.3&&Math.abs(v.y)<1.3,front:v.z<1}; }
   /** A tap: an entity picked in screen space (or by the short raycast fallback), else a walk unless it would change nothing. */
   pointer(clientX:number,clientY:number) {
     if(this.onRemotePlayerClick&&this.remotePlayers?.size){this.raycaster.setFromCamera(new T.Vector2(clientX/innerWidth*2-1,1-clientY/innerHeight*2),this.camera);const meshes=[...this.remotePlayers.values()].filter(r=>r.mesh.visible).map(r=>r.mesh);for(const hit of this.raycaster.intersectObjects(meshes,true)){let o:T.Object3D|null=hit.object;while(o&&!o.userData.remoteId)o=o.parent;if(o){this.destination=null;this.route=[];this.selected=null;this.onRemotePlayerClick(o.userData.remoteId);return;}}}
@@ -1146,7 +1147,7 @@ export class World {
     const control=hitControl(e.boss,stun);if(!hazard)e.lastHitAt=this.time??0;
     e.hp=Math.max(0,e.hp-amount);e.stun=Math.max(e.stun,control.stun);if(control.slow&&e.hp>0){e.statuses??={};e.statuses.slow=Math.max(e.statuses.slow??0,control.slow);this.resistFeedback(e);}this.burst(e.x,e.z,'#fff0bb',8);
     if(e.hp===0){e.respawn=e.type==='minislime'||e.type==='dragon'?999999:e.definition?.titan?600:e.boss?90:22+Math.random()*10;e.dying=.3;e.knockVX=e.knockVZ=0;e.telegraphs=[];e.skillEffects=[];e.titanAttacks=[];e.titanLift=0;
-      if(e.type==='magmaslime'&&this.networkRole!=='peer')this.enemies.filter(m=>m.type==='minislime'&&m.hp<=0).slice(0,3).forEach((minion,index)=>{const a=index*Math.PI*2/3;minion.x=e.x+Math.cos(a)*.9;minion.z=e.z+Math.sin(a)*.9;this.resolveOverlap(minion,this.collisionObstacles(),minion.radius);minion.homeX=minion.x;minion.homeZ=minion.z;minion.hp=minion.maxHp;minion.phase='idle';minion.stun=0;minion.respawn=0;});
+      if(e.type==='magmaslime'&&this.networkRole!=='peer')this.enemies.filter(m=>m.type==='minislime'&&m.hp<=0).slice(0,3).forEach((minion,index)=>{const a=index*Math.PI*2/3;minion.x=e.x+Math.cos(a)*.9;minion.z=e.z+Math.sin(a)*.9;this.resolveOverlap(minion,this.collisionObstacles(),minion.radius);minion.homeX=minion.x;minion.homeZ=minion.z;minion.hp=minion.maxHp;this.syncLevel(minion);minion.phase='idle';minion.stun=0;minion.respawn=0;});
       if(this.selected===e){this.selected=null;this.destination=null;this.route=[];this.ring.visible=false;}}
   }
   move(dx:number,dz:number,allowVoid=false) {
@@ -1349,8 +1350,9 @@ export class World {
     const def=e.definition??{speed:2.4,reach:1.8,sight:e.boss?11:6,behavior:'melee',cooldown:1.3,windup:.35,flying:false,titan:false};
     const target=this.enemyTarget(e),distance=target?Math.hypot(target.x-e.x,target.z-e.z):Infinity;
     if(!this.authoritativeAction&&e.boss&&!e.scaled&&distance<def.sight&&e.hp===e.maxHp){
-      const nearby=[...this.remotePlayers?.values()??[]].filter(r=>r.mesh.visible&&(r.pose.hp??1)>0&&Math.hypot(r.pose.x-e.x,r.pose.z-e.z)<32),players=nearby.length+(Math.hypot(this.position.x-e.x,this.position.z-e.z)<32?1:0),level=Math.max(this.state.level,...nearby.map(r=>r.pose.level??1)),difference=Math.max(0,level-(e.level??1));
-      e.maxHp=Math.round(e.maxHp*(1+.6*Math.max(0,players-1))*(e.type==='dragon'?1:1+difference*.12));e.hp=e.maxHp;e.damage=e.damage*(e.type==='dragon'?1:(1+difference*.07)*(1+.1*Math.max(0,players-1)));e.scaled=true;
+      const nearby=[...this.remotePlayers?.values()??[]].filter(r=>r.mesh.visible&&(r.pose.hp??1)>0&&Math.hypot(r.pose.x-e.x,r.pose.z-e.z)<32),players=nearby.length+(Math.hypot(this.position.x-e.x,this.position.z-e.z)<32?1:0),level=Math.max(this.state.level,...nearby.map(r=>r.pose.level??1)),party=partyScale(players);
+      // One rule with the server: the boss syncs to the strongest explorer nearby (never twice), then grows per extra explorer.
+      this.syncLevel(e,level);e.maxHp=Math.round(e.maxHp*party.hp);e.hp=e.maxHp;e.damage*=party.damage;e.scaled=true;
     }
     // Level of detail, like the reference: a calm creature (idle, unhurt, no status) farther than 48 m from every explorer
     // does not think. Between its sight and 48 m it only wanders, so it thinks on every 4th step with the skipped time added.

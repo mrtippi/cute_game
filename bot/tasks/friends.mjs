@@ -1,11 +1,10 @@
 // Rescued friends and dressing up: now and then give a friend in the cottage a spare hat or outfit, look in on a
 // friend at work (and send one back to work after a break), and play in a disguise for a while before changing back.
-import { inside, leaveHouse } from './combat.mjs';
+import { leaveHouse } from './combat.mjs';
 import { THEMES, wear } from './wardrobe.mjs';
 import { flourish } from './flourish.mjs';
-const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
+import { sleep, readSave } from '../lib/util.mjs';
 
-const readSave = bot => bot.page.evaluate(() => JSON.parse(window.__zg.save()));
 const COSMETIC = ['hat', 'outfit', 'boots', 'pet'];
 /** Pieces the bot dresses itself in (wardrobe.mjs THEMES): only a second copy of these is spare. */
 const favourite = id => Object.values(THEMES).some(list => list.some(p => p.endsWith('_') ? id.startsWith(p) : id === p));
@@ -31,8 +30,8 @@ export async function dressFriend(bot) {
   const { game, page, hands, rng, note } = bot;
   if ((await game.snap()).planet !== 'home') return 'not home';
   const gift = await friendGift(bot); if (!gift) return 'nothing spare to give';
-  if (!inside(await game.snap())) {
-    const home = await game.goTo(n => n.entities.find(e => e.kind === 'home'), { label: 'cottage', done: n => inside(n) && n, timeout: 60000 });
+  if (!game.indoors(await game.snap())) {
+    const home = await game.goTo(n => n.entities.find(e => e.kind === 'home'), { label: 'cottage', done: n => game.indoors(n) && n, timeout: 60000 });
     if (!home) return 'cottage not reached';
     await sleep(rng.between(900, 1500));
   }
@@ -58,7 +57,7 @@ export async function dressFriend(bot) {
 /** Look in on a friend at work outside; one on a break goes back to work. */
 export async function visitFriend(bot) {
   const { game, rng, note } = bot;
-  const s = await game.snap(); if (s.planet !== 'home' || inside(s)) return 'not outside at home';
+  const s = await game.snap(); if (s.planet !== 'home' || game.indoors(s)) return 'not outside at home';
   const w = await readSave(bot), friends = (w.friends ?? []).filter(f => f.home);
   const pick = friends.find(f => f.paused) ?? (friends.length ? rng.pick(friends) : null);
   if (!pick) return 'no friends home';

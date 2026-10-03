@@ -12,11 +12,13 @@ import { loadAccount } from '../accounts.mjs';
 import { groupDir, readJson, writeJson, leaderOf } from '../groups.mjs';
 import { VILLAGE_RADII } from '../../src/village.ts';
 import { befriend, createParty, joinParty, leaveToOwnParty, leaveGarden, myParty, ownLootNear, sendChat, shareLoot, visitGarden, whoAmI } from '../lib/online.mjs';
-import { huntBoss, foodCount } from './boss.mjs';
+import { huntBoss } from './boss.mjs';
 import { collectLoot, fight, safeTargets } from './combat.mjs';
-import { travelTo, goHome } from './travel.mjs';
+import { travelTo, goHome, LEVELS } from './travel.mjs';
 import { flourish } from './flourish.mjs';
-const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
+import { sleep, bagTotal } from '../lib/util.mjs';
+import { foodCount } from '../lib/items.mjs';
+import { PLANETS } from '../../src/content.ts';
 setLanguage('ja');
 
 /** How long a member waits for the leader's party (and the leader for its members) before playing alone. */
@@ -110,7 +112,8 @@ export function groupTargets(s, team) {
 /** This explorer and the mates on this world (their last reported strength). */
 const team = (c, s) => [stats(s), ...mates(c).filter(m => m.planet === s.planet && m.stats).map(m => m.stats)];
 const bossJa = b => t(b.name ?? 'Boss');
-const planetJa = id => ({ home: 'クローバー村', toy: 'おもちゃの星', candy: 'おかしの星', jungle: 'ジャングルの星', ice: 'こおりの星', ocean: 'うみの星', lava: 'かざんの星', cloud: 'くもの星', shadow: 'かげの星' })[id] ?? id;
+/** A world's name as the game shows it in Japanese (the same as the chapters, chapters.mjs). */
+const planetJa = id => t(PLANETS[id]?.name ?? id);
 
 // ---- setting up and meeting -------------------------------------------------------------------------------------
 /** The group context for a clip: who plays, who leads, the files. play.mjs keeps it as bot.coop. */
@@ -311,7 +314,6 @@ async function joinBoss(bot, s) {
   return 'group ' + result;
 }
 
-const bagTotal = s => Object.values(s.bag).reduce((n, v) => n + v, 0);
 /** A mate in the log: its name in the game (two explorers may share one) and its account id. */
 const who = m => `${m.name} (${m.id})`;
 /**
@@ -388,7 +390,6 @@ async function follow(bot, { seconds }) {
 async function visitMate(bot) {
   const c = bot.coop, { game, rng, note, hands } = bot;
   const mate = rng.pick(mates(c).filter(m => m.planet === 'home')); if (!mate) return 'nobody to visit';
-  c.visited = true;
   if (!c.friends.includes(c.usernames[mate.id])) await makeFriends(bot);
   if (!c.friends.includes(c.usernames[mate.id])) return `not friends with ${who(mate)} yet`;
   status(c, { visit: { owner: mate.id, at: Date.now() } });
@@ -396,6 +397,8 @@ async function visitMate(bot) {
   // A moment for the host to walk over to its garden.
   await sleep(rng.between(5000, 9000));
   if (!await visitGarden(bot, c.usernames[mate.id])) { status(c, { visit: null }); return `could not visit ${who(mate)}`; }
+  // Once per clip: a visit that did not happen (not friends yet, the garden did not open) is tried again later.
+  c.visited = true;
   status(c, { visit: { ...c.status.visit, arrived: Date.now() } });
   note(`visiting ${who(mate)}'s garden`, 'coop');
   let result = `visited ${who(mate)}'s garden`;
@@ -448,11 +451,10 @@ async function host(bot) {
   return greeted ? `welcomed ${who(call)}` : `${who(call)} did not show up (in sight ${seen}, arrived ${arrived}, ${fromCentre} m from the cottage)`;
 }
 
-const TRIP_LEVELS = { toy: 4, candy: 6, jungle: 8, ice: 10, ocean: 12, lava: 14, cloud: 16, shadow: 20 };
 /** A world the whole group is ready for and the leader knows (null: stay home). */
 function tripPlanet(c, s) {
   const low = Math.min(...team(c, s).map(m => m.level));
-  const open = Object.entries(TRIP_LEVELS).filter(([id, level]) => level <= low && s.discovered.includes(id)).map(([id]) => id);
+  const open = Object.entries(LEVELS).filter(([id, level]) => id !== 'home' && level <= low && s.discovered.includes(id)).map(([id]) => id);
   return open.length ? open[Math.floor((c.seed.length * 7 + new Date().getHours()) % open.length)] : null;
 }
 async function groupTrip(bot, s) {

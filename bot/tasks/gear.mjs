@@ -2,7 +2,7 @@
 // materials still missing and which creatures drop them, hunt those, then buy. Crystal upgrades and
 // forging soak up what is left over.
 import { fight } from './combat.mjs';
-const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
+import { sleep } from '../lib/util.mjs';
 
 import { weaponPower } from '../lib/weapons.mjs';
 const bestOwnedAttack = (s, weapons) => Math.max(0, ...weapons.filter(w => w.id !== 'harpoon' && (s.bag[w.id] > 0 || s.gear.weapon === w.id)).map(weaponPower));

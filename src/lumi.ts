@@ -1,4 +1,5 @@
 import { CHAPTERS, ARCS, type StoryLine } from './story.ts';
+import { esc } from './html.ts';
 
 /**
  * Lumi's dialogue box: a speech panel at the bottom of the screen, one line at a time, that never pauses the game.
@@ -25,8 +26,6 @@ export function chapterHeading(chapter: number, t: (text: string, params?: Recor
   if (!c) return { arc: '', title: t('Beyond the story'), number: chapter + 1 };
   return { arc: t('Arc {count}', { count: c.arc + 1 }) + ' · ' + t(ARCS[c.arc]), title: t(c.title), number: chapter + 1 };
 }
-
-const esc = (text: string) => text.replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]!);
 
 /** One line in the box; `left` is how many lines follow it. */
 export function lumiHtml(line: StoryLine, left: number, heading: string, t: (text: string) => string) {

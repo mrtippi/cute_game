@@ -1,7 +1,7 @@
 // Titles (src/titles.ts): the bot wears one that suits the clip's theme, and after a new title it walks to the
 // memory room behind the study (level 65) to look at the trophy and pin the title on the board, like a proud player.
-import { inside, leaveHouse } from './combat.mjs';
-const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
+import { leaveHouse } from './combat.mjs';
+import { sleep } from '../lib/util.mjs';
 
 /** Preferred titles per clip theme (bot/tasks/wardrobe.mjs THEMES), best first; otherwise the rarest held. */
 export const TITLE_THEMES = {
@@ -41,8 +41,8 @@ export async function wearTitle(bot, theme) {
 export async function visitAttic(bot, theme) {
   const { game, rng, note } = bot;
   let s = await game.snap();
-  if (!inside(s)) {
-    const home = await game.goTo(n => n.entities.find(e => e.kind === 'home'), { label: 'cottage', done: n => inside(n) && n, timeout: 40000 });
+  if (!game.indoors(s)) {
+    const home = await game.goTo(n => n.entities.find(e => e.kind === 'home'), { label: 'cottage', done: n => game.indoors(n) && n, timeout: 40000 });
     if (!home) return 'cottage not reached';
   }
   if (!(await game.snap()).entities.some(e => e.kind === 'house-titleboard')) { await leaveHouse(bot); return 'memory room still locked'; }

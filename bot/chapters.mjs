@@ -13,8 +13,14 @@ import { PLANETS } from '../src/content.ts';
 
 setLanguage('ja');
 /** Planner tasks grouped into the activities a viewer recognises, with their Japanese chapter names. */
-const GROUPS = {
-  farm: { tasks: ['garden', 'fertilize', 'orchard', 'animals', 'market', 'cook', 'expand'], ja: '畑と村のお仕事' },
+export const GROUPS = {
+  farm: { tasks: ['garden', 'fertilize', 'orchard', 'animals', 'market', 'cook', 'expand', 'dish', 'snack'], ja: '畑と村のお仕事' },
+  helpers: { tasks: ['bolt', 'penUpgrade', 'penHelper'], ja: 'お手伝いロボと牧場づくり' },
+  events: { tasks: ['lava', 'dragon', 'gifts'], ja: '惑星イベントに挑戦' },
+  decor: { tasks: ['decorate'], ja: '村のかざりつけ' },
+  quests: { tasks: ['reroll'], ja: '今日のクエストをチェック' },
+  friends: { tasks: ['dressFriend', 'visitFriend'], ja: '仲間とふれあいタイム' },
+  fun: { tasks: ['disguise'], ja: '変装してあそぼう' },
   hunt: { tasks: ['fight', 'gather', 'challenge'], ja: 'モンスター狩り' },
   boss: { tasks: ['boss'], ja: 'ボスに挑戦' },
   travel: { tasks: ['travel', 'mine'], ja: '星の旅' },
@@ -30,13 +36,19 @@ const GROUPS = {
 const groupOf = task => Object.keys(GROUPS).find(g => GROUPS[g].tasks.includes(task)) ?? 'stroll';
 const planetJa = id => t(PLANETS[id]?.name ?? id);
 const MIN_CHAPTER = 120, MAX_CHAPTERS = 15;
+/** YouTube's own rules: at least three chapters, each at least 10 s long. */
+const YT_COUNT = 3, YT_MIN = 10;
 export const stamp = s => { s = Math.max(0, Math.floor(s)); const h = Math.floor(s / 3600), m = Math.floor(s % 3600 / 60), sec = String(s % 60).padStart(2, '0'); return h ? `${h}:${String(m).padStart(2, '0')}:${sec}` : `${m}:${sec}`; };
 
-/** Events of a clip, on the video's clock (seconds since the first recorded frame). */
+/**
+ * Events of a clip, on the video's clock (seconds since the first recorded frame). A file holding more than one run
+ * (a clip played again) counts from its last recording start only.
+ */
 export function readEvents(dir) {
   const file = `${dir}/events.jsonl`; if (!existsSync(file)) return [];
-  const events = readFileSync(file, 'utf8').split('\n').filter(Boolean).map(l => { try { return JSON.parse(l); } catch { return null; } }).filter(Boolean);
-  const start = events.find(e => e.tag === 'record')?.t ?? 0;
+  const all = readFileSync(file, 'utf8').split('\n').filter(Boolean).map(l => { try { return JSON.parse(l); } catch { return null; } }).filter(Boolean);
+  const from = all.findLastIndex(e => e.tag === 'record'), events = from >= 0 ? all.slice(from) : all;
+  const start = from >= 0 ? all[from].t : 0;
   return events.map(e => ({ ...e, at: e.t - start }));
 }
 
@@ -45,14 +57,16 @@ function highlights(events, from, to) {
   const inside = events.filter(e => e.at >= from && e.at < to), out = [];
   for (const e of inside) {
     const boss = /defeated the boss (.+?)!/.exec(e.text ?? ''); if (boss) out.push({ rank: 5, ja: `ボス討伐：${t(boss[1])}！` });
+    if (/^defeated the volcano dragon/.test(e.text ?? '')) out.push({ rank: 5, ja: `ボス討伐：${t('Volcano Dragon')}！` });
     const rescued = /^rescued (.+?)!/.exec(e.text ?? ''); if (rescued) out.push({ rank: 5, ja: `${t(rescued[1])}を救出！` });
     const landed = /^landed on (\w+)/.exec(e.text ?? ''); if (landed) out.push({ rank: 4, ja: `${planetJa(landed[1])}へ` });
     if (e.text === 'flew home') out.push({ rank: 4, ja: '村へ帰還' });
-    if (e.tag === 'level') out.push({ rank: 3, ja: `Lv.${e.level}にアップ` });
+    if (e.tag === 'level') out.push({ rank: 3, ja: `Lv.${e.level}にアップ`, level: e.level });
     const title = /wearing the title (.+)$/.exec(e.text ?? ''); if (title) out.push({ rank: 1, ja: `称号「${t(title[1])}」` });
     if (e.text === 'Lumi speaks') out.push({ rank: 2, ja: 'ルミのお話' });
   }
-  return out.sort((a, b) => b.rank - a.rank);
+  // Among level-ups the highest (the last) one.
+  return out.sort((a, b) => b.rank - a.rank || (b.level ?? 0) - (a.level ?? 0));
 }
 
 /** The chapter list for a clip of `duration` seconds. */
@@ -68,23 +82,35 @@ export function buildChapters(events, duration) {
   }
   if (!segments.length) segments = [{ at: 0, group: 'farm' }];
   segments[0].at = 0;
-  const end = i => i + 1 < segments.length ? segments[i + 1].at : duration;
+  const end = i => i + 1 < segments.length ? segments[i + 1].at : duration, length = i => end(i) - segments[i].at;
+  // A short clip (a test, a few minutes) takes chapters of a third of its length, never under YouTube's 10 s.
+  const least = Math.max(YT_MIN, Math.min(MIN_CHAPTER, Math.floor(duration / YT_COUNT)));
   // Too short to be worth a chapter: fold into the one before (the first into the next).
   for (let changed = true; changed;) {
     changed = false;
-    for (let i = 0; i < segments.length; i++) if (segments.length > 1 && end(i) - segments[i].at < MIN_CHAPTER) {
+    for (let i = 0; i < segments.length; i++) if (segments.length > 1 && length(i) < least) {
       if (i === 0) segments[1].at = 0;
       segments.splice(i, 1); changed = true; break;
     }
     // Neighbours of the same activity become one.
     for (let i = 1; i < segments.length; i++) if (segments[i].group === segments[i - 1].group) { segments.splice(i, 1); changed = true; break; }
   }
-  while (segments.length > MAX_CHAPTERS) { let k = 1; for (let i = 1; i < segments.length; i++) if (end(i) - segments[i].at < end(k) - segments[k].at) k = i; segments.splice(k, 1); }
-  return segments.map((s, i) => {
+  while (segments.length > MAX_CHAPTERS) { let k = 1; for (let i = 1; i < segments.length; i++) if (length(i) < length(k)) k = i; segments.splice(k, 1); }
+  // YouTube shows chapters only from three on: the longest stretch is cut in halves until there are three (while
+  // each half still lasts 10 s).
+  while (segments.length < YT_COUNT) {
+    let k = 0; for (let i = 1; i < segments.length; i++) if (length(i) > length(k)) k = i;
+    if (length(k) < 2 * YT_MIN) break;
+    segments.splice(k + 1, 0, { ...segments[k], at: segments[k].at + length(k) / 2 });
+  }
+  const chapters = segments.map((s, i) => {
     const best = highlights(events, s.at, end(i))[0];
     const where = s.planet && s.planet !== 'home' && ['hunt', 'travel'].includes(s.group) ? `${planetJa(s.planet)}で` : '';
     return { at: Math.round(s.at), title: best && best.rank >= 4 ? best.ja : `${where}${GROUPS[s.group].ja}${best ? '・' + best.ja : ''}` };
   });
+  // The second half of a cut stretch, or the same name twice in a row: "(つづき)".
+  for (let i = 1; i < chapters.length; i++) if (chapters[i].title.replace(/（つづき）$/, '') === chapters[i - 1].title.replace(/（つづき）$/, '')) chapters[i].title = chapters[i].title.replace(/（つづき）$/, '') + '（つづき）';
+  return chapters;
 }
 
 /** The upload text and data for one clip. */
@@ -95,13 +121,16 @@ export function clipText({ dir, video, title, name, day, index, duration = 3600 
   const bosses = events.filter(e => e.at >= 0 && e.at < duration && /defeated the boss/.test(e.text ?? '')).length;
   const worlds = [...new Set(events.filter(e => e.at >= 0 && e.at < duration).map(e => /^landed on (\w+)/.exec(e.text ?? '')?.[1]).filter(Boolean))].map(planetJa);
   const summary = [start ? `Lv.${start}${levels.length ? ` → Lv.${levels.at(-1)}` : ''}` : '', bosses ? `ボス討伐 ${bosses}回` : '', worlds.length ? `訪れた星：${worlds.join('、')}` : ''].filter(Boolean).join(' ・ ');
+  // Whatever is known of the clip (the explorer, the day of the series, the clip of the day); the series alone otherwise.
+  const which = [day ? `${day}日目` : '', index ? `${index}本目` : ''].filter(Boolean).join('・');
+  const series = name || which ? `Zoo Garden を自動プレイでのんびり遊ぶシリーズ。${name ? `${name}の` : ''}${which || 'プレイ'}です。` : 'Zoo Garden を自動プレイでのんびり遊ぶシリーズです。';
   const description = [
-    title, '',
-    `Zoo Garden を自動プレイでのんびり遊ぶシリーズ。${name ? `${name}の` : ''}${day ? `${day}日目` : ''}${index ? `・${index}本目` : ''}です。`,
+    title ?? '', '',
+    series,
     summary ? `この回：${summary}` : '', '',
     '▼ チャプター', ...chapters.map(c => `${stamp(c.at)} ${c.title}`), '',
     '#ZooGarden #自動プレイ #ゲーム #のんびりゲーム',
-  ].filter((line, i, all) => line !== '' || all[i - 1] !== '').join('\n');
+  ].filter((line, i, all) => line !== '' || all[i - 1] !== '').join('\n').replace(/^\n+/, '');
   const data = { title, description, chapters, tags: ['Zoo Garden', '自動プレイ', 'ゲーム', 'のんびりゲーム'], video, account: name, day, index, summary };
   if (video) { writeFileSync(video.replace(/\.mp4$/, '.txt'), description + '\n'); writeFileSync(video.replace(/\.mp4$/, '.json'), JSON.stringify(data, null, 1)); }
   return data;

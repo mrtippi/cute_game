@@ -2,7 +2,7 @@
 // early, and get up again after a fall.
 import { dodge, dangersOf, inDanger, unstick } from '../lib/dodge.mjs';
 import { pickSkill, useSkill, densest, gatherPack, around, burst } from '../lib/skills.mjs';
-const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
+import { sleep } from '../lib/util.mjs';
 
 /**
  * Health this fight would cost: time to defeat the creature times the damage it deals meanwhile,
@@ -46,18 +46,16 @@ export async function recoverBag(bot) {
   return !!done;
 }
 
-/** Inside the cottage only the door, wardrobe, mirror and friends can be tapped. */
-export const inside = s => s.entities.some(e => e.kind === 'house-door');
 export async function leaveHouse(bot) {
   const { game, hands, rng, note } = bot;
-  let out = await game.goTo(n => n.entities.find(e => e.kind === 'house-door'), { label: 'cottage door', done: n => !inside(n) && n, timeout: 30000 });
+  let out = await game.goTo(n => n.entities.find(e => e.kind === 'house-door'), { label: 'cottage door', done: n => !game.indoors(n) && n, timeout: 30000 });
   // Fallback: walk toward the door with the arrow keys, then tap it again.
   for (let i = 0; !out && i < 3; i++) {
     const s = await game.snap(), door = s.entities.find(e => e.kind === 'house-door'); if (!door) { out = s; break; }
     const dx = door.x - s.player.x, dz = door.z - s.player.z;
     const key = Math.abs(dx) > Math.abs(dz) ? (dx > 0 ? 'ArrowRight' : 'ArrowLeft') : (dz > 0 ? 'ArrowDown' : 'ArrowUp');
     await hands.press(key, { hold: rng.between(700, 1400) });
-    out = await game.goTo(n => n.entities.find(e => e.kind === 'house-door'), { label: 'cottage door', done: n => !inside(n) && n, timeout: 15000 });
+    out = await game.goTo(n => n.entities.find(e => e.kind === 'house-door'), { label: 'cottage door', done: n => !game.indoors(n) && n, timeout: 15000 });
   }
   if (out) note('stepped outside', 'home');
   return !!out;
@@ -73,9 +71,9 @@ export async function recover(bot) {
   }
   if (s.hp >= s.maxHp * .7) { note('ate a snack to recover', 'combat'); return; }
   if (s.planet !== 'home') return;
-  const rested = await game.goTo(n => n.entities.find(e => e.kind === 'home' || e.kind === 'house-door'), { label: 'cottage', done: n => (inside(n) || n.hp >= n.maxHp * .95) && n, timeout: 90000 });
+  const rested = await game.goTo(n => n.entities.find(e => e.kind === 'home' || e.kind === 'house-door'), { label: 'cottage', done: n => (game.indoors(n) || n.hp >= n.maxHp * .95) && n, timeout: 90000 });
   if (rested) { await game.waitFor(n => n.hp >= n.maxHp * .9 && n, { timeout: 35000, every: 1000 }); note('rested in the cottage', 'combat'); }
-  if (inside(await game.snap())) await leaveHouse(bot);
+  if (game.indoors(await game.snap())) await leaveHouse(bot);
 }
 
 /** Walk over the loot lying nearby so the pickup magnet takes it (drops vanish after 30 seconds). */
@@ -140,7 +138,7 @@ export async function fight(bot, { count = 3, type, timeout = 180000, range = 30
     if (await handleFall(bot)) return `knocked out after ${kills}`;
     // Hurt: recover first. If that could not help (no food, no cottage on this world), stop rather than loop.
     if (s.hp < s.maxHp * .7) { const before = s.hp; await recover(bot); if ((await game.snap()).hp <= before + 1) { log('fight: too hurt to fight, no way to heal here'); return `kills ${kills}, too hurt`; } continue; }
-    if (inside(s)) { if (!await leaveHouse(bot)) return `stuck indoors after ${kills}`; continue; }
+    if (game.indoors(s)) { if (!await leaveHouse(bot)) return `stuck indoors after ${kills}`; continue; }
     const usable = list => list.filter(e => !(unreachable.get(e.id) > Date.now()));
     // Finish what was started: the creature fought before a rest comes first, then any wounded one.
     const wounded = list => [...list].sort((a, b) => Number(b.hp < b.maxHp) - Number(a.hp < a.maxHp));
@@ -165,7 +163,7 @@ export async function fight(bot, { count = 3, type, timeout = 180000, range = 30
       // A panel opened by a stray tap (a pond's fishing card, a shop) blocks every click: close it and carry on.
       if (s.modal || s.dialog) { await game.closePanel(); engaged = false; best.at = Date.now(); continue; }
       // A stray tap walked into the cottage: no creature can be reached from in there, so out first, then on.
-      if (inside(s)) { log('fight: indoors, stepping out'); if (!await leaveHouse(bot)) break; engaged = false; best.at = Date.now(); continue; }
+      if (game.indoors(s)) { log('fight: indoors, stepping out'); if (!await leaveHouse(bot)) break; engaged = false; best.at = Date.now(); continue; }
       const e = s.enemies.find(x => x.id === id);
       if (!e) { kills++; focus = null; note(`defeated ${target.name}`, 'combat'); await new Promise(r => setTimeout(r, rng.between(300, 700))); await collectLoot(bot); break; }
       if (e.d > range + 25) { log('fight: it got away'); focus = null; break; }

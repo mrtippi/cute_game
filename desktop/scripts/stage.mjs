@@ -21,7 +21,7 @@ step('Build the game'); run(npm, ['run', 'build'], REPO);
 step('Copy game, server and bot');
 rmSync(ZG, { recursive: true, force: true }); mkdirSync(ZG, { recursive: true });
 for (const dir of ['dist', 'server', 'src']) cpSync(join(REPO, dir), join(ZG, dir), { recursive: true });
-cpSync(join(REPO, 'bot'), join(ZG, 'bot'), { recursive: true, filter: p => !/[\\/]bot[\\/](node_modules|.*\.log)(?:[\\/]|$)/.test(p) });
+cpSync(join(REPO, 'bot'), join(ZG, 'bot'), { recursive: true, filter: p => !/[\\/]bot[\\/](node_modules|.*\.log|dev\.mjs|patch-profile\.mjs)(?:[\\/]|$)/.test(p) });
 const root = JSON.parse(readFileSync(join(REPO, 'package.json'), 'utf8')), bot = JSON.parse(readFileSync(join(REPO, 'bot', 'package.json'), 'utf8'));
 const deps = { three: root.dependencies.three, ws: root.dependencies.ws, pg: root.dependencies.pg, playwright: bot.dependencies.playwright };
 writeFileSync(join(ZG, 'package.json'), JSON.stringify({ name: 'zoo-garden-runtime', private: true, type: 'module', dependencies: deps }, null, 1));
@@ -37,7 +37,7 @@ for (const name of existsSync(browsers) ? readdirSync(browsers) : []) if (!name.
 // 4. vendor/ffmpeg/ffmpeg.exe: ffmpeg 6.1.1 (Gyan essentials); 7+ needs NVIDIA driver 570 for NVENC.
 step('ffmpeg 6.1');
 const ffmpeg = join(VENDOR, 'ffmpeg', 'ffmpeg.exe');
-if (!existsSync(ffmpeg)) {
+if (!existsSync(ffmpeg) || !existsSync(join(dirname(ffmpeg), 'LICENSE.txt'))) {
   mkdirSync(dirname(ffmpeg), { recursive: true });
   const zip = join(VENDOR, 'ffmpeg.zip'), tmp = join(VENDOR, 'ffmpeg-tmp');
   const response = await fetch('https://github.com/GyanD/codexffmpeg/releases/download/6.1.1/ffmpeg-6.1.1-essentials_build.zip');
@@ -46,6 +46,9 @@ if (!existsSync(ffmpeg)) {
   // Windows' own unzip (a Git Bash tar on PATH would read "D:" as a remote host).
   execFileSync('powershell', ['-NoProfile', '-Command', `Expand-Archive -LiteralPath '${zip}' -DestinationPath '${tmp}' -Force`], { stdio: 'inherit' });
   cpSync(join(tmp, 'ffmpeg-6.1.1-essentials_build', 'bin', 'ffmpeg.exe'), ffmpeg);
+  // This build is GPL: its licence and the source pointer travel with the binary.
+  for (const name of ['LICENSE', 'README.txt']) { const from = join(tmp, 'ffmpeg-6.1.1-essentials_build', name); if (existsSync(from)) cpSync(from, join(dirname(ffmpeg), name === 'LICENSE' ? 'LICENSE.txt' : name)); }
+  writeFileSync(join(dirname(ffmpeg), 'SOURCE.txt'), 'ffmpeg 6.1.1 essentials build by Gyan Doshi (GPL v3).\nBinary: https://github.com/GyanD/codexffmpeg/releases/tag/6.1.1\nSource: https://ffmpeg.org/releases/ffmpeg-6.1.1.tar.xz\n');
   rmSync(zip, { force: true }); rmSync(tmp, { recursive: true, force: true });
 }
 console.log('\n✔ staged: build/zg, vendor/ms-playwright, vendor/ffmpeg');

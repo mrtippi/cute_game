@@ -3,18 +3,10 @@
 // cookie. Signing in happens inside the page (so the cookie lands in that profile); everything a player does
 // (the party, joining a friend's party, chat) goes through the 👥 dialog with real clicks and typing.
 // Only a server on this machine is ever used: every call checks the page's host first.
-import { setOnline } from '../accounts.mjs';
+import { setOnline, loadAccount } from '../accounts.mjs';
 import { startGame } from './session.mjs';
-
-const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
-const LOCAL = new Set(['127.0.0.1', 'localhost', '[::1]']);
-
-/** Throws unless the address is a server on this machine (127.0.0.1 / localhost). */
-export function assertLocal(url) {
-  let host; try { host = new URL(url).hostname; } catch { throw new Error(`not a game address: ${url}`); }
-  if (!LOCAL.has(host)) throw new Error(`online play only on this PC's own server (127.0.0.1), not ${host}`);
-  return url;
-}
+import { sleep, assertLocal } from './util.mjs';
+export { assertLocal };
 
 /** The server username for an account folder id: lower case, [a-z0-9_], 3-24 characters. */
 export function usernameFor(id, suffix = '') {
@@ -57,6 +49,29 @@ export async function ensureLoggedIn(page, account, { tries = 6, log = () => {} 
 }
 
 /**
+ * Before a linked account plays (its profile not open yet): a server that refuses its password (401) has lost its
+ * account (a new data folder, a reset database). Then the link is cleared and made again once (online.mjs
+ * linkAccount: a new server account with the account's save). Returns the account as it is now.
+ */
+let relinked = false;
+export async function relinkIfLost(account, { url, log = () => {} } = {}) {
+  const { username, password, linkedAt } = account.online ?? {};
+  if (!linkedAt || !username || !password || relinked) return account;
+  const origin = new URL(assertLocal(url)).origin;
+  let status;
+  try { status = (await fetch(`${origin}/api/auth/login`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ username, password }), signal: AbortSignal.timeout(5000) })).status; }
+  catch { return account; }
+  if (status !== 401) return account;
+  relinked = true;
+  log(`online: the server no longer knows ${username}; linking the account again`);
+  setOnline(account.id, { linkedAt: null });
+  // Loaded here only: online.mjs imports this file.
+  const { linkAccount } = await import('../online.mjs');
+  await linkAccount(account.id, { url, progress: text => log('online link: ' + text) });
+  return loadAccount(account.id);
+}
+
+/**
  * Whether this page's game server requires login (server.mjs requireLogin, the default): its game then has no
  * offline play. False for a server elsewhere (the static edition) or one that does not answer.
  */
@@ -89,8 +104,6 @@ export async function reloadGame(page) {
 
 /** The party code this explorer is in (null: the public world or offline). */
 export async function myParty(page) { return (await onlineState(page))?.party ?? null; }
-/** Other explorers visible in this world: [{ id, name, level, x, z, d }] (d: distance from this explorer). */
-export async function roomPlayers(page) { return page.evaluate(() => window.__zg.snapshot().others); }
 
 // ---- the 👥 dialog, by hand -------------------------------------------------------------------------------------
 async function openDialog(bot) {

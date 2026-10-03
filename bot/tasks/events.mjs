@@ -5,12 +5,11 @@ import { fightCost, recover, collectLoot } from './combat.mjs';
 import { dress } from './wardrobe.mjs';
 import { dodge, dangersOf, inDanger } from '../lib/dodge.mjs';
 import { pickSkill, useSkill } from '../lib/skills.mjs';
-const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
+import { sleep, readSave } from '../lib/util.mjs';
+import { foodCount } from '../lib/items.mjs';
 
-const readSave = bot => bot.page.evaluate(() => JSON.parse(window.__zg.save()));
 /** The game's day for the cave chest (model.ts claimCaveChest: the UTC date). */
 const utcDay = now => new Date(now).toISOString().slice(0, 10);
-const foodCount = s => Object.entries(s.bag).filter(([id]) => id.startsWith('cooked_') || ['potion', 'honey', 'omelette', 'pancake', 'milkshake', 'cheese'].includes(id)).reduce((n, [, c]) => n + c, 0);
 const hurt = s => s.hp < s.maxHp * .5;
 
 /** Walk up to a thing. Lava, eruptions and meteors hurt on the way: stop to eat, and give up without food or after a fall. */
@@ -181,8 +180,8 @@ export async function openGifts(bot, { max = 6 } = {}) {
 }
 
 // ---- the daily reroll ----------------------------------------------------------------------
-/** Daily tasks the bot has no activity for (planner EVENT_TASKS maps them to nothing). */
-const CANNOT = new Set(['eat', 'decorate']);
+/** Daily tasks the bot has no activity for (planner EVENT_TASKS maps them to nothing): none now, eating and decorating included. */
+const CANNOT = new Set();
 /** Daily tasks that are a long shot when they have barely started: the boss, hawks, a mystery fish, mining. */
 const HARD = new Set(['boss', 'hawk', 'mystery', 'mine']);
 
