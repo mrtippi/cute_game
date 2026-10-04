@@ -62,8 +62,10 @@ export async function openSession({ url = 'http://127.0.0.1:8787/', profile, rng
   const context = await chromium.launchPersistentContext(profile, {
     ...BROWSER, headless: false, chromiumSandbox: true, viewport: { width, height }, deviceScaleFactor: scale, locale: 'ja-JP', timezoneId: 'Asia/Tokyo',
     // The debugging port lets bot/dev.mjs inspect a running session.
-    args: [`--remote-debugging-port=${port}`, ...windowArgs({ width, height }, position), ...(mute ? ['--mute-audio'] : []), ...(headless ? HEADLESS_ARGS : []), ...QUIET_ARGS, '--disable-background-timer-throttling', '--disable-renderer-backgrounding', '--disable-backgrounding-occluded-windows', '--autoplay-policy=no-user-gesture-required'],
+    args: [`--remote-debugging-port=${port}`, ...windowArgs({ width, height }, position), ...(mute ? ['--mute-audio=true'] : []), ...(headless ? HEADLESS_ARGS : []), ...QUIET_ARGS, '--disable-background-timer-throttling', '--disable-renderer-backgrounding', '--disable-backgrounding-occluded-windows', '--autoplay-policy=no-user-gesture-required'],
     // No "controlled by automated test software" bar.
+    // Playwright's own --mute-audio is dropped so the sound switch works; ours is written as --mute-audio=true,
+    // because ignoreDefaultArgs also strips a plain --mute-audio from our own args (measured: bots played out loud).
     ignoreDefaultArgs: ['--mute-audio', '--enable-automation'],
   });
   await context.addInitScript(CURSOR);

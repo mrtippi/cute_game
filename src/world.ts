@@ -490,6 +490,8 @@ export class World {
     // A rebuild (travel, visiting, reset) always lands outdoors.
     if(this.interior){const inside=this.interior;this.interior=null;inside.drop();}
     this.farmView?.dispose();this.farmView=undefined;this.titanView?.clear();this.joystickInput=null;
+    // The eye glints are kept for the next dark world: off the old root, or they would hold all of it in memory.
+    this.eyeMesh?.removeFromParent();
     this.disposeTree(this.root);this.scene.remove(this.root);this.root=new T.Group();this.scene.add(this.root);
     // A new creature set starts at its base level; the next update syncs it to the explorer (syncLevels).
     this.entities=[];this.enemies=[];this.syncedLevel=0;this.obstacles=[];this.dynamicObstacles=[];this.plotMeshes=[];this.cropSignatures=[];this.planet=planet;

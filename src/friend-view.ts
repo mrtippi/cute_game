@@ -15,9 +15,17 @@ import type { SaveState } from './model.ts';
  */
 export const FRIEND_SCALE = HERO_SCALE * .5;
 type Dresser = (color: string, gear: SaveState['gear']) => T.Group;
-let dresser: Dresser | null = null;
-/** main.ts registers World.friendAvatar here once the world exists. */
-export function setFriendDresser(fn: Dresser | null) { dresser = fn; }
+let dresser: Dresser | null = null, undresser: ((model: T.Object3D) => void) | null = null;
+/** main.ts registers World.friendAvatar here once the world exists, and World.disposeTree to free a model again. */
+export function setFriendDresser(fn: Dresser | null, free: ((model: T.Object3D) => void) | null = null) { dresser = fn; undresser = free; }
+/**
+ * Takes a friend made by buildFriend out of the scene and frees what it owns (its merged parts, its recoloured head,
+ * tinted wear); the kit's shared pieces stay. Without a world (tests) only its own geometry goes.
+ */
+export function disposeFriend(root: T.Object3D) {
+  root.removeFromParent();
+  if (undresser) undresser(root); else root.traverse(o => { if (o instanceof T.Mesh && !o.geometry.userData.sharedKit) o.geometry.dispose(); });
+}
 
 const HAIR = new T.Color('#7C4527'); // hero_spec.py 'Hero hair' (baked into vertex colours by bakeModel)
 const near = (r: number, g: number, b: number) => Math.abs(r - HAIR.r) + Math.abs(g - HAIR.g) + Math.abs(b - HAIR.b) < .03;

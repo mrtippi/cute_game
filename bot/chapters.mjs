@@ -82,19 +82,36 @@ export function buildChapters(events, duration) {
   }
   if (!segments.length) segments = [{ at: 0, group: 'farm' }];
   segments[0].at = 0;
-  const end = i => i + 1 < segments.length ? segments[i + 1].at : duration, length = i => end(i) - segments[i].at;
   // A short clip (a test, a few minutes) takes chapters of a third of its length, never under YouTube's 10 s.
   const least = Math.max(YT_MIN, Math.min(MIN_CHAPTER, Math.floor(duration / YT_COUNT)));
-  // Too short to be worth a chapter: fold into the one before (the first into the next).
-  for (let changed = true; changed;) {
-    changed = false;
-    for (let i = 0; i < segments.length; i++) if (segments.length > 1 && length(i) < least) {
-      if (i === 0) segments[1].at = 0;
-      segments.splice(i, 1); changed = true; break;
+  // The bot switches activity every minute or two: runs of short activities are gathered into chapters of about a
+  // twelfth of the clip (3 min at least, 8 at most), each named after the activity that filled most of it. An
+  // activity long enough on its own keeps its own chapter. (Folding every short one into the one before left a
+  // 90-minute clip with three chapters, one per planet.)
+  const target = Math.max(least, Math.min(480, Math.max(180, duration / 12)));
+  const spanEnd = i => i + 1 < segments.length ? segments[i + 1].at : duration;
+  const raw = segments.map((s, i) => ({ ...s, len: spanEnd(i) - s.at }));
+  const gathered = [];
+  let acc = null;
+  /** The activity (and its world) that took most of a gathered run's time. */
+  const dominant = parts => { const time = {}; for (const p of parts) time[p.group] = (time[p.group] ?? 0) + p.len; const group = Object.entries(time).sort((a, b) => b[1] - a[1])[0][0]; return { group, planet: parts.filter(p => p.group === group).sort((a, b) => b.len - a.len)[0].planet }; };
+  const flush = () => { if (!acc) return; gathered.push({ at: acc.at, ...dominant(acc.parts), len: acc.len, parts: acc.parts }); acc = null; };
+  for (const r of raw) {
+    if (r.len >= target) {
+      // A gathered run too short for a chapter of its own joins this long activity.
+      if (acc && acc.len < least) { const parts = [...acc.parts, r]; gathered.push({ at: acc.at, ...dominant(parts), len: acc.len + r.len, parts }); acc = null; continue; }
+      flush(); gathered.push({ ...r, parts: [r] }); continue;
     }
-    // Neighbours of the same activity become one.
-    for (let i = 1; i < segments.length; i++) if (segments[i].group === segments[i - 1].group) { segments.splice(i, 1); changed = true; break; }
+    acc ??= { at: r.at, len: 0, parts: [] }; acc.parts.push(r); acc.len += r.len;
+    if (acc.len >= target) flush();
   }
+  // What is left at the end: a chapter if long enough, else part of the one before.
+  if (acc) { const last = gathered.at(-1); if (acc.len < least && last) { last.parts.push(...acc.parts); last.len += acc.len; Object.assign(last, dominant(last.parts)); acc = null; } else flush(); }
+  segments = gathered.map(({ at, group, planet }) => ({ at, group, planet }));
+  segments[0].at = 0;
+  const end = i => i + 1 < segments.length ? segments[i + 1].at : duration, length = i => end(i) - segments[i].at;
+  // Neighbours of the same activity become one, unless that makes a chapter much longer than the target.
+  for (let i = 1; i < segments.length; i++) if (segments[i].group === segments[i - 1].group && segments[i].planet === segments[i - 1].planet && length(i - 1) + length(i) <= target * 1.5) { segments.splice(i, 1); i--; }
   while (segments.length > MAX_CHAPTERS) { let k = 1; for (let i = 1; i < segments.length; i++) if (length(i) < length(k)) k = i; segments.splice(k, 1); }
   // YouTube shows chapters only from three on: the longest stretch is cut in halves until there are three (while
   // each half still lasts 10 s).

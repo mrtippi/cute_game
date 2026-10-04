@@ -29,9 +29,9 @@ export function decorIcon(id: string): string {
 
 /**
  * Any model drawn once into a cached icon. Creature portraits borrow the live creature's mesh
- * (dispose=false), so its shared geometry and materials stay untouched.
+ * (dispose=false), so its shared geometry and materials stay untouched; a function frees a model the way its owner does.
  */
-export function modelIcon(key: string, build: () => T.Object3D, dispose = false): string {
+export function modelIcon(key: string, build: () => T.Object3D, dispose: boolean | ((model: T.Object3D) => void) = false): string {
   const known = cache.get(key); if (known !== undefined) return known;
   let url = '';
   try {
@@ -44,7 +44,8 @@ export function modelIcon(key: string, build: () => T.Object3D, dispose = false)
     renderer!.render(scene!, camera!);
     url = renderer!.domElement.toDataURL('image/png');
     scene!.remove(holder);
-    if (dispose) holder.traverse(o => { if (o instanceof T.Mesh) o.geometry.dispose(); });
+    if (typeof dispose === 'function') dispose(model);
+    else if (dispose) holder.traverse(o => { if (o instanceof T.Mesh) o.geometry.dispose(); });
   } catch { url = ''; }
   cache.set(key, url);
   return url;

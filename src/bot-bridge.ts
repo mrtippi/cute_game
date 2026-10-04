@@ -150,6 +150,22 @@ export function installBotBridge(src: BotSources) {
     recipes() { return RECIPES.map((r, index) => ({ index, result: r.result, slot: ITEMS[r.result]?.slot ?? null })); },
     /** A copy of the save, for the bot's daily backup. */
     save() { return JSON.stringify(src.state()); },
+    /** What the page is holding, for long-session soak tests: GPU resources, scene and world counts, DOM nodes. */
+    perf() {
+      const w = src.world(), info = w.renderer.info; let objects = 0, meshes = 0;
+      // Distinct geometries and materials the world scene holds: the renderer's counts running ahead of these point at
+      // resources dropped from the scene without dispose().
+      const geometries = new Set<unknown>(), materials = new Set<unknown>();
+      w.scene.traverse(o => { objects++; const m = o as { isMesh?: boolean; geometry?: unknown; material?: unknown }; if (m.isMesh) meshes++; if (m.geometry) geometries.add(m.geometry); for (const x of [m.material ?? []].flat()) materials.add(x); });
+      const shots = (w as unknown as { enemyShots?: unknown[] }).enemyShots?.length ?? 0;
+      return {
+        planet: src.state().planet, flight: src.flight(),
+        geometries: info.memory.geometries, textures: info.memory.textures, programs: info.programs?.length ?? 0, calls: info.render.calls, triangles: info.render.triangles,
+        objects, meshes, sceneGeometries: geometries.size, sceneMaterials: materials.size, entities: w.entities.length, enemies: w.enemies.length, particles: w.particles.length, shots, remotes: w.remotePlayers?.size ?? 0,
+        fxActive: w.fx?.activeCount ?? 0, fxPooled: w.fx?.pooledCount ?? 0, decals: w.decals?.root.children.length ?? 0, drops: src.drops().length,
+        nameplates: document.querySelectorAll('#world-labels .nameplate').length, floaters: document.querySelectorAll('.float').length, dom: document.getElementsByTagName('*').length,
+      };
+    },
   };
   (globalThis as unknown as { __zg: typeof api }).__zg = api;
 }

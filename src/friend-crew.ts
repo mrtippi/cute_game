@@ -1,7 +1,7 @@
 import * as T from 'three';
 import * as M from './model.ts';
 import { cageKit, heroKit, wearKit, weaponKit, petKit } from './assets.ts';
-import { buildFriend, poseFriend, FRIEND_SCALE, type FriendPose } from './friend-view.ts';
+import { buildFriend, disposeFriend, poseFriend, FRIEND_SCALE, type FriendPose } from './friend-view.ts';
 import { CAGES, FRIENDS, FRIEND_IDS, cageState, friendsOf, inVillage, nextFriendTask, type CageState, type Friend, type FriendId, type FriendTask, type WorkResult } from './friends.ts';
 import type { World, Entity } from './world.ts';
 
@@ -69,7 +69,7 @@ export class FriendCrew {
   private cageSignature() { const s = this.host.world.state; return FRIEND_IDS.map(id => cageState(s, id)).join() + cageKit.ready + this.kitSig(); }
   private buildCages() {
     const w = this.host.world, s = w.state;
-    for (const c of this.cages.values()) { c.group.removeFromParent(); w.entities = w.entities.filter(e => e !== c.entity); }
+    for (const c of this.cages.values()) { c.group.removeFromParent(); w.disposeTree(c.group); w.entities = w.entities.filter(e => e !== c.entity); }
     if (this.builtFor !== w.root) this.spots.clear();
     this.cages.clear(); this.builtFor = w.root; this.cageSig = this.cageSignature();
     for (const id of FRIEND_IDS) {
@@ -126,7 +126,7 @@ export class FriendCrew {
       // The door pops off and tumbles away; the prisoner steps out cheering and starts to follow.
       c.state = 'rescued'; w.entities = w.entities.filter(e => e !== c.entity); this.cageSig = this.cageSignature();
       if (c.door) c.pop = { t: 0, vx: (Math.random() - .5) * 2, vz: 2.6 };
-      if (c.prisoner) { c.prisoner.removeFromParent(); c.prisoner = null; }
+      if (c.prisoner) { disposeFriend(c.prisoner); c.prisoner = null; }
       const a = this.actor(id, own.friends!.find(f => f.id === id)!); a.x = c.x + .9; a.z = c.z + 1.2; a.facing = 0; a.cheerT = 1.6; // out through the door, beside the explorer
       this.host.rescued(id, c); return true;
     } finally { this.rescuing.delete(id); }
@@ -138,7 +138,7 @@ export class FriendCrew {
       if (c.prisoner) poseFriend(c.prisoner, 'sad', t + FRIEND_IDS.indexOf(c.id) * 1.7);
       if (c.pop && c.door) {
         const p = c.pop; p.t += dt; c.door.position.set(p.vx * p.t, Math.max(0, 2.2 * p.t - 4.9 * p.t * p.t), p.vz * p.t); c.door.rotation.x = -p.t * 4;
-        if (p.t > .9) { c.door.removeFromParent(); c.door = null; c.pop = undefined; }
+        if (p.t > .9) { c.door.removeFromParent(); w.disposeTree(c.door); c.door = null; c.pop = undefined; }
       }
       // Walking up to an open cage frees the prisoner too.
       if (c.state === 'open' && this.host.started() && !this.host.visiting() && Math.hypot(w.position.x - c.x, w.position.z - c.z) < RESCUE_REACH) void this.rescue(c.id);
@@ -149,7 +149,7 @@ export class FriendCrew {
   private actor(id: FriendId, f: Friend): Actor {
     let a = this.actors.get(id);
     const sig = JSON.stringify(f.gear) + this.kitSig();
-    if (a && a.sig !== sig) { a.root.removeFromParent(); a.root = this.dress(id, f); a.sig = sig; this.group.add(a.root); }
+    if (a && a.sig !== sig) { disposeFriend(a.root); a.root = this.dress(id, f); a.sig = sig; this.group.add(a.root); }
     if (a) return a;
     const proxy = new T.Group(); proxy.name = 'friend-proxy-' + id;
     // An undrawn box of the friend's height, so the name label (main.ts labelHeight) sits just above its head.
@@ -175,7 +175,7 @@ export class FriendCrew {
     this.group.visible = !this.host.flying();
     if (!this.host.flying()) this.updateCages(dt);
     const friends = friendsOf(s), now = Date.now();
-    for (const [id, a] of this.actors) if (!friends.some(f => f.id === id)) { a.root.removeFromParent(); this.setEntity(a, false); this.actors.delete(id); }
+    for (const [id, a] of this.actors) if (!friends.some(f => f.id === id)) { disposeFriend(a.root); this.setEntity(a, false); this.actors.delete(id); }
     let slot = 0;
     for (const f of friends) {
       const a = this.actor(f.id, f); a.t += dt;

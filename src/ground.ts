@@ -23,6 +23,9 @@ const HOME = { home: new T.Color('#93e06a'), forest: new T.Color('#5cbf57'), mea
 const PATCH: Partial<Record<PlanetId, string>> = { candy: '#ffd0ea', ice: '#b9d6f2', lava: '#55424a', jungle: '#3c9440', ocean: '#f4e2b0', cloud: '#e6f4ff', shadow: '#3b3160' };
 const SAMPLES = [[0, 0], [3, 0], [-3, 0], [0, 3], [0, -3], [2.2, 2.2], [-2.2, -2.2], [2.2, -2.2], [-2.2, 2.2]];
 const scratch = new T.Color();
+// Colours named in hex, parsed once: the ground is coloured vertex by vertex on every world build.
+const parsed = new Map<string, T.Color>();
+const hex = (color: string) => { let c = parsed.get(color); if (!c) parsed.set(color, c = new T.Color(color)); return c; };
 
 export interface Pond { x: number; z: number; r: number }
 export interface GroundOptions {
@@ -42,24 +45,24 @@ export function groundColor(planet: PlanetId, x: number, z: number, ponds: reado
     out.multiplyScalar(1 / SAMPLES.length);
     out.offsetHSL(0, 0, (noise2(x * .15, z * .15) * .7 + noise2(x * .6, z * .6) * .3 - .5) * .09);
     const trail = trailDistance(x, z);
-    if (trail < 2.2 && r < RIM_START - 3) out.lerp(scratch.set(zoneAt({ x, z }) === 'canyon' ? '#e8a868' : '#e8cf92'), 1 - smoothstep(trail, 1.2, 2.2));
+    if (trail < 2.2 && r < RIM_START - 3) out.lerp(scratch.copy(hex(zoneAt({ x, z }) === 'canyon' ? '#e8a868' : '#e8cf92')), 1 - smoothstep(trail, 1.2, 2.2));
     if (Math.abs(r - shownVillageRadius()) < .9) out.offsetHSL(0, 0, -.04);
-    if (r > 146) out.lerp(scratch.set('#3f8f4a'), smoothstep(r, 146, 156));
+    if (r > 146) out.lerp(scratch.copy(hex('#3f8f4a')), smoothstep(r, 146, 156));
   } else {
     const def = PLANETS[planet], [low, high, pad] = def.ground, n = noise2(x * .08, z * .08) * .65 + noise2(x * .4, z * .4) * .35;
     // The toy play-mat squares come from a texture (vertex colours would blur them); this only shades it.
-    if (planet === 'toy') out.set('#ffffff').offsetHSL(0, 0, (n - .5) * .06);
-    else out.set(low).lerp(scratch.set(high), smoothstep(n, .3, .75));
+    if (planet === 'toy') out.setRGB(1, 1, 1).offsetHSL(0, 0, (n - .5) * .06);
+    else out.copy(hex(low)).lerp(scratch.copy(hex(high)), smoothstep(n, .3, .75));
     // Patches and a fine dapple, so the plain between props reads as ground rather than a flat fill.
     const patch = PATCH[planet];
-    if (patch) { out.lerp(scratch.set(patch), smoothstep(noise2(x * .11 + 31, z * .11 - 17), .5, .72) * .85); out.offsetHSL(0, 0, (noise2(x * .3 + 5, z * .3) - .5) * .08); }
-    if (planet === 'lava') out.lerp(scratch.set('#3a2f3a'), Math.max(0, noise2(x * .2 + 7, z * .2) - .55) * 1.5);
-    out.lerp(scratch.set(pad), (1 - smoothstep(r, 9, 11.5)) * .8);
+    if (patch) { out.lerp(scratch.copy(hex(patch)), smoothstep(noise2(x * .11 + 31, z * .11 - 17), .5, .72) * .85); out.offsetHSL(0, 0, (noise2(x * .3 + 5, z * .3) - .5) * .08); }
+    if (planet === 'lava') out.lerp(scratch.copy(hex('#3a2f3a')), Math.max(0, noise2(x * .2 + 7, z * .2) - .55) * 1.5);
+    out.lerp(scratch.copy(hex(pad)), (1 - smoothstep(r, 9, 11.5)) * .8);
     if (Math.abs(r - 11) < .5) out.offsetHSL(0, 0, -.05);
-    if (r > 146) out.lerp(scratch.set(pad).offsetHSL(0, 0, -.15), smoothstep(r, 146, 156));
+    if (r > 146) out.lerp(scratch.copy(hex(pad)).offsetHSL(0, 0, -.15), smoothstep(r, 146, 156));
   }
   // A sandy halo blends each pond into the grass.
-  for (const p of ponds) { const d = Math.hypot(x - p.x, z - p.z); if (d < p.r * 1.05 + 1.6) out.lerp(scratch.set(planet === 'candy' ? '#ffd8ec' : '#ecd9a0'), (1 - smoothstep(d, p.r, p.r * 1.05 + 1.6)) * .85); }
+  for (const p of ponds) { const d = Math.hypot(x - p.x, z - p.z); if (d < p.r * 1.05 + 1.6) out.lerp(scratch.copy(hex(planet === 'candy' ? '#ffd8ec' : '#ecd9a0')), (1 - smoothstep(d, p.r, p.r * 1.05 + 1.6)) * .85); }
   return out;
 }
 
@@ -77,6 +80,8 @@ function checker(a: string, b: string) {
 export function buildGround({ planet, ponds, base, height, segments = 20 }: GroundOptions): T.Group {
   const group = new T.Group(), material = toonMaterial({ vertexColors: true, map: planet === 'toy' ? checker(PLANETS.toy.ground[0], PLANETS.toy.ground[1]) : null }), color = new T.Color();
   group.name = 'ground'; group.userData.environment = true;
+  // The toy checker is this ground's own: it goes with the material when the world is rebuilt (World.disposeTree).
+  material.addEventListener('dispose', () => material.map?.dispose());
   const step = GROUND_TILE, cells = Math.round(segments * step / 40);
   for (let tx = -200; tx < 200; tx += step) for (let tz = -200; tz < 200; tz += step) {
     const geometry = new T.PlaneGeometry(step, step, cells, cells).rotateX(-Math.PI / 2).translate(tx + step / 2, 0, tz + step / 2);

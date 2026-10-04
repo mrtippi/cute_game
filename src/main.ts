@@ -701,7 +701,7 @@ const farmHelperController=new FarmHelperController({state:()=>state,context:far
   if(modal==='pen')penDialog();
 }});
 // Rescued friends (friends.ts rules, friend-crew.ts cages/following/jobs, friend-view.ts looks, friend-ui.ts panel).
-setFriendDresser((color,gear)=>world.friendAvatar(color,gear));
+setFriendDresser((color,gear)=>world.friendAvatar(color,gear),model=>world.disposeTree(model));
 const crew=new FriendCrew({world,own:()=>state,visiting:()=>!!visiting,flying:()=>!!flight||world.boarded,started:()=>started,
   robotBed:()=>helperView.task?.index,animalAt:uid=>world.farmView?.positionOf(uid)??undefined,perform,
   rescued(id,at){const [hi,story]=RESCUE_LINES[id];setTimeout(()=>{const line=sideLine(state,'friend:'+id);if(line)sayLumi([line],storyChapter(),sideHeading('friend:'+id));},2600);tone('level');world.fx?.burst({x:at.x,z:at.z},{n:30,color:['#ffe66d','#ffffff',FRIENDS[id].tint],size:.14,speed:5,up:6,y:.8});floating(hi,at.x,at.z,'level',1.4);toast(t(story),'💖');},
@@ -881,7 +881,8 @@ async function finishFishingCatch(f:FishingRound){
 
 
 world.onAlert=()=>tone('alert');
-world.onBuilt=()=>{if(fishGame)endFishing();stockPonds();minimap.invalidate();};
+// A rebuilt world has new ponds: the last one fished belongs to the old world (and would keep it all in memory).
+world.onBuilt=()=>{if(fishGame)endFishing();fishPond=null;stockPonds();minimap.invalidate();};
 stockPonds();
 // Fish models stream in after the first build; restock the ponds when they arrive.
 void fishKit.load().then(()=>{if(fishKit.ready&&!fishGame)stockPonds();});

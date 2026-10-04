@@ -12,7 +12,7 @@ import { HOUSE, INDOOR_Y, ATTIC_LEVEL } from './house.ts';
 import { HouseSession, type FriendEntity } from './house-session.ts';
 import { houseKit } from './house-view.ts';
 import { FRIENDS, friendsOf, type FriendId } from './friends.ts';
-import { buildFriend } from './friend-view.ts';
+import { buildFriend, disposeFriend } from './friend-view.ts';
 import { modelIcon } from './icons.ts';
 import { toonMaterial } from './toon.ts';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
@@ -115,7 +115,7 @@ export function initHouse(d: HouseDeps) {
       if (!pending && !d.blocked() && world.moving && world.position.z > HOUSE.spawn.z + .65 && Math.abs(world.position.x) < .75 && Math.cos(world.facing) > .5) leave();
     } else if (!pending && !d.blocked() && world.planet === 'home' && world.moving && Math.hypot(world.position.x - HOUSE.outdoorDoor.x, world.position.z - HOUSE.outdoorDoor.z) < 1.45 && Math.cos(world.facing) < -.5) enter();
   };
-  const portrait = (id: FriendId) => { const f = friendList().find(x => x.id === id); return f ? modelIcon(`friend:${id}:${JSON.stringify(f.gear)}:${houseKit.ready}`, () => buildFriend(id, f.gear)) : ''; };
+  const portrait = (id: FriendId) => { const f = friendList().find(x => x.id === id); return f ? modelIcon(`friend:${id}:${JSON.stringify(f.gear)}:${houseKit.ready}`, () => buildFriend(id, f.gear), disposeFriend) : ''; };
   const dress = (id: FriendId) => {
     dressing = id;
     d.openDialog('dress', t('Dress {name}', { name: t(FRIENDS[id].name) }), dressHtml(world.state, id, { readOnly: d.visiting(), portrait: portrait(id), iconUrl: d.iconUrl }), t('A FRIEND AT HOME'), '👗');
